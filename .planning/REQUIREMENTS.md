@@ -167,15 +167,15 @@ Deferred to future release. Tracked but not in current roadmap.
 | DISC-03 | Phase 4 | Pending |
 | DEPL-01 | Phase 4 | Pending |
 | DEPL-02 | Phase 4 | Pending |
-| DEPL-03 | Phase 6 | Pending |
-| DEPL-04 | Phase 6 | Pending |
+| DEPL-03 | Phase 5 | Pending |
+| DEPL-04 | Phase 5 | Pending |
 | DEPL-05 | Phase 1 | Pending |
 | TEST-01 | Phase 1 | Pending |
 | TEST-02 | Phase 1 | Pending |
 | TEST-03 | Phase 1 | Pending |
 | TEST-04 | Phase 1 | Pending |
 | TEST-05 | Phase 1 | Pending |
-| TEST-06 | Phase 2 | Pending |
+| TEST-06 | Phase 1 | Pending |
 | TEST-07 | Phase 2 | Pending |
 | TEST-08 | Phase 1 | Pending |
 | TEST-09 | Phase 3 | Pending |
@@ -190,4 +190,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-04-07*
-*Last updated: 2026-04-07 after initial definition*
+*Last updated: 2026-04-07 — traceability finalized to 5-phase coarse roadmap (DEPL-03, DEPL-04 moved Phase 6 → Phase 5; TEST-06 moved Phase 2 → Phase 1)*
