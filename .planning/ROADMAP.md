@@ -30,7 +30,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A UTXO with insufficient value, already registered, or with an invalid BIP-322 proof is rejected at registration time
   4. Unit tests for blind sig, FSM transitions, UTXO validation, TX construction, and protocol serialization all pass
   5. Coordinator emits no IP addresses, UTXOs, or input-output pairs in its logs
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Cargo workspace + shared crate (protocol types, blind token hasher, error shapes)
+- [ ] 01-02-PLAN.md — RSA blind signer + round FSM + HMAC session tokens + unit tests
+- [ ] 01-03-PLAN.md — Bitcoin RPC client + UTXO validation + BIP-322 + CoinJoin PSBT construction
+- [ ] 01-04-PLAN.md — HTTP handlers (5 endpoints) + coordinator config + startup health checks
+- [ ] 01-05-PLAN.md — Client binary (bdk_wallet, blind blinding, round participation flow)
+- [ ] 01-06-PLAN.md — Integration test scaffold + full unit test suite run + phase verification
 
 ### Phase 2: Blame & Hardening
 **Goal**: The coordinator detects non-signers, bans their UTXOs with persistence across restarts, restarts the round with remaining participants, and wipes all round state from memory after broadcast
@@ -82,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Protocol | 0/TBD | Not started | - |
+| 1. Core Protocol | 0/6 | Not started | - |
 | 2. Blame & Hardening | 0/TBD | Not started | - |
 | 3. Client CLI | 0/TBD | Not started | - |
 | 4. Discovery & Deployment | 0/TBD | Not started | - |
