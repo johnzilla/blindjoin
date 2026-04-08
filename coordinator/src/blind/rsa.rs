@@ -45,6 +45,24 @@ impl RsaBlindSigner {
     pub fn blind_sign(&self, blinded_msg: &BlindMessage) -> Result<BlindSignature, blind_rsa_signatures::Error> {
         self.secret_key.blind_sign(blinded_msg)
     }
+
+    /// Reconstruct an RsaBlindSigner from DER-encoded secret key bytes.
+    /// Used to reload the signer from round state inner storage.
+    pub fn from_der_secret_key(der: &[u8]) -> Result<Self, blind_rsa_signatures::Error> {
+        let secret_key = BjSecretKey::from_der(der)?;
+        let public_key = secret_key.public_key()?;
+        Ok(Self { public_key, secret_key })
+    }
+
+    /// Export the secret key as DER bytes for storage in round state inner.
+    pub fn secret_key_der(&self) -> Result<Vec<u8>, blind_rsa_signatures::Error> {
+        self.secret_key.to_der()
+    }
+
+    /// Export the public key as SPKI DER bytes.
+    pub fn public_key_spki_der(&self) -> Result<Vec<u8>, blind_rsa_signatures::Error> {
+        self.public_key.to_spki()
+    }
 }
 
 #[cfg(test)]

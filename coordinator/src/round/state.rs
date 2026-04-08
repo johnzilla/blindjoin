@@ -124,6 +124,9 @@ pub struct RoundState {
     pub round_id: Uuid,
     /// SHA-256 of the DER-encoded RSA public key — None when Idle.
     pub rsa_pubkey_hash: Option<[u8; 32]>,
+    /// DER-encoded SubjectPublicKeyInfo bytes of the RSA public key — None when Idle.
+    /// Published in GET /info so clients can verify and use for blinding (D-02).
+    pub rsa_pubkey_der: Option<Vec<u8>>,
     pub participant_count: u32,
     /// Sensitive material — None when Idle (dropped and zeroed after round completion).
     pub inner: Option<RoundStateInner>,
@@ -141,6 +144,7 @@ impl RoundState {
             phase: Phase::Idle,
             round_id: Uuid::new_v4(),
             rsa_pubkey_hash: None,
+            rsa_pubkey_der: None,
             participant_count: 0,
             inner: None,
         }
@@ -159,6 +163,7 @@ impl RoundState {
         if next == Phase::Idle {
             self.inner = None; // triggers ZeroizeOnDrop on RoundStateInner
             self.rsa_pubkey_hash = None;
+            self.rsa_pubkey_der = None;
             self.participant_count = 0;
             self.round_id = Uuid::new_v4(); // fresh round ID for next round
         }
@@ -208,6 +213,7 @@ mod tests {
         let mut state = RoundState::new_idle();
         // Simulate having entered a round
         state.phase = Phase::Signing;
+        state.rsa_pubkey_der = Some(vec![1, 2, 3]); // simulate active round
         state.inner = Some(RoundStateInner {
             rsa_signing_key: vec![1, 2, 3],
             round_secret: [0xab; 32],
