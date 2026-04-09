@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-tor-release/05-01-PLAN.md
-last_updated: "2026-04-09T20:36:30.495Z"
+stopped_at: Completed 05-tor-release/05-02-PLAN.md
+last_updated: "2026-04-09T20:46:33.371Z"
 last_activity: 2026-04-09
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 17
-  completed_plans: 15
-  percent: 88
+  completed_plans: 16
+  percent: 94
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-07)
 ## Current Position
 
 Phase: 05 (tor-release) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-04-09
 
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-discovery-deployment P01 | 3 | 2 tasks | 11 files |
 | Phase 04-discovery-deployment P02 | 150 | 2 tasks | 4 files |
 | Phase 05-tor-release P01 | 61 | 2 tasks | 7 files |
+| Phase 05-tor-release P02 | 298 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,9 @@ Recent decisions affecting current work:
 - [Phase 05-tor-release]: tor-cell added as direct dep for Connected::new_empty() — not re-exported by tor-hsservice
 - [Phase 05-tor-release]: main task parked with std::future::pending() — both Tor and clearnet servers run in tokio::spawn
 - [Phase 05-tor-release]: sqlite linker: arti-client pulls rusqlite which needs libsqlite3.so; use SQLITE3_LIB_DIR symlink on systems without sqlite-devel
+- [Phase 05-tor-release]: In-process SOCKS5 proxy (tokio TcpListener + TorClient::connect) used — arti-client 0.41 has no launch_socks5_listener(); bridges arti isolation to reqwest Proxy::all()
+- [Phase 05-tor-release]: tor-rtcompat added as direct dep to client — PreferredRuntime not re-exported by arti-client 0.41
+- [Phase 05-tor-release]: reqwest socks feature added to workspace dep — required for Proxy::all(socks5h://...) in client Tor path
 
 ### Pending Todos
 
@@ -120,6 +124,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T20:36:30.492Z
-Stopped at: Completed 05-tor-release/05-01-PLAN.md
+Last session: 2026-04-09T20:46:33.368Z
+Stopped at: Completed 05-tor-release/05-02-PLAN.md
 Resume file: None

@@ -51,7 +51,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **CLI-02**: Wallet management via bdk_wallet 1.0 (key management, UTXO selection, PSBT signing)
 - [x] **CLI-03**: Full round participation: input registration → blind token → output registration → verify TX → sign
 - [x] **CLI-04**: Transaction verification before signing: own output present, fee reasonable, output count matches participant count
-- [ ] **CLI-05**: Fresh Tor circuit per phase (input registration circuit ≠ output registration circuit)
+- [x] **CLI-05**: Fresh Tor circuit per phase (input registration circuit ≠ output registration circuit)
 
 ### Privacy & Security
 
@@ -157,7 +157,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | CLI-02 | Phase 3 | Complete |
 | CLI-03 | Phase 3 | Complete |
 | CLI-04 | Phase 3 | Complete |
-| CLI-05 | Phase 5 | Pending |
+| CLI-05 | Phase 5 | Complete |
 | PRIV-01 | Phase 2 | Complete |
 | PRIV-02 | Phase 1 | Complete |
 | PRIV-03 | Phase 5 | Complete |
