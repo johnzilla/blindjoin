@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use bitcoin::{OutPoint, Script, ScriptBuf};
 use bitcoin::secp256k1::{Secp256k1, Message as SecpMessage, ecdsa::Signature};
-use bitcoin::hashes::{sha256, HashEngine, Hash};
+use shared::bip322::{bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign};
 use shared::protocol::OwnershipProof;
 use crate::bitcoin::rpc::{BitcoinRpc, RpcError};
 
@@ -174,59 +174,8 @@ pub fn verify_bip322_simple(
     Ok(())
 }
 
-/// BIP-340 tagged hash: SHA256(SHA256("BIP0322-signed-message") || SHA256("BIP0322-signed-message") || message)
-fn bip322_message_hash(message: &[u8]) -> [u8; 32] {
-    let tag = b"BIP0322-signed-message";
-    let tag_hash = sha256::Hash::hash(tag);
-    let mut engine = sha256::HashEngine::default();
-    engine.input(tag_hash.as_ref());
-    engine.input(tag_hash.as_ref());
-    engine.input(message);
-    sha256::Hash::from_engine(engine).to_byte_array()
-}
-
-fn build_bip322_to_spend(script_pubkey: &Script, msg_hash: &[u8; 32]) -> bitcoin::Transaction {
-    use bitcoin::{Transaction, TxIn, TxOut, Sequence, Witness, Amount};
-    // scriptSig = OP_0 <sha256(message)> per BIP-322 Section 4
-    // BIP-322 specifies nVersion=0 for to_spend tx
-    let script_sig = bitcoin::blockdata::script::Builder::new()
-        .push_opcode(bitcoin::opcodes::OP_0)
-        .push_slice(msg_hash)
-        .into_script();
-    Transaction {
-        version: bitcoin::transaction::Version(0),
-        lock_time: bitcoin::absolute::LockTime::ZERO,
-        input: vec![TxIn {
-            previous_output: OutPoint::null(),
-            script_sig,
-            sequence: Sequence::ZERO,
-            witness: Witness::new(),
-        }],
-        output: vec![TxOut {
-            value: Amount::ZERO,
-            script_pubkey: script_pubkey.to_owned(),
-        }],
-    }
-}
-
-fn build_bip322_to_sign(to_spend: &bitcoin::Transaction) -> bitcoin::Transaction {
-    use bitcoin::{Transaction, TxIn, TxOut, Sequence, Witness, Amount, ScriptBuf};
-    let to_spend_txid = to_spend.compute_txid();
-    Transaction {
-        version: bitcoin::transaction::Version::TWO,
-        lock_time: bitcoin::absolute::LockTime::ZERO,
-        input: vec![TxIn {
-            previous_output: OutPoint::new(to_spend_txid, 0),
-            script_sig: ScriptBuf::new(),
-            sequence: Sequence::ZERO,
-            witness: Witness::new(),
-        }],
-        output: vec![TxOut {
-            value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return(&[]),
-        }],
-    }
-}
+// bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign are now
+// provided by shared::bip322 (imported at the top of this file).
 
 #[cfg(test)]
 mod tests {

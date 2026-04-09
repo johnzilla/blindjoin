@@ -4,8 +4,8 @@ use blind_rsa_signatures::{
     BlindSignature, DefaultRng,
     Sha384, PSS, Randomized,
 };
-use bitcoin::hashes::Hash;
 use shared::token::compute_blind_token_message;
+use shared::bip322::{bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign};
 use shared::protocol::{InputRegRequest, InfoResponse};
 use crate::wallet::ClientWallet;
 use crate::http::CoordinatorClient;
@@ -96,8 +96,8 @@ pub async fn register_input(
 /// Generate a BIP-322 Simple witness stack for our P2WPKH UTXO.
 ///
 /// Returns the raw witness stack (not yet hex-encoded) — caller wraps in OwnershipProof.
-/// Duplicates the BIP-322 logic from coordinator/src/bitcoin/utxo.rs for Phase 1.
-/// In Phase 3, these helpers move to shared/.
+/// Uses shared::bip322 primitives to ensure byte-identical transaction construction
+/// with the coordinator's verifier.
 fn generate_bip322_witness(wallet: &ClientWallet, message: &str) -> Result<Vec<Vec<u8>>> {
     use bitcoin::sighash::{SighashCache, EcdsaSighashType};
     use bitcoin::secp256k1::{Secp256k1, Message};
@@ -134,59 +134,5 @@ fn generate_bip322_witness(wallet: &ClientWallet, message: &str) -> Result<Vec<V
     Ok(vec![sig_bytes, pubkey_bytes])
 }
 
-/// BIP-322 tagged message hash (identical to coordinator's bip322_message_hash).
-fn bip322_message_hash(message: &[u8]) -> [u8; 32] {
-    use bitcoin::hashes::{sha256, HashEngine, Hash};
-    // BIP-322 uses double-SHA256 of "BIP0322-signed-message" tag + message
-    let tag = b"BIP0322-signed-message";
-    let tag_hash: [u8; 32] = sha256::Hash::hash(tag).to_byte_array();
-
-    let mut engine = sha256::Hash::engine();
-    engine.input(&tag_hash);
-    engine.input(&tag_hash);
-    engine.input(message);
-    sha256::Hash::from_engine(engine).to_byte_array()
-}
-
-/// Build BIP-322 to_spend transaction (Section 4).
-fn build_bip322_to_spend(script_pubkey: &bitcoin::Script, msg_hash: &[u8; 32]) -> bitcoin::Transaction {
-    use bitcoin::{Transaction, TxIn, TxOut, Sequence, Witness, Amount, OutPoint};
-    let script_sig = bitcoin::blockdata::script::Builder::new()
-        .push_opcode(bitcoin::opcodes::OP_0)
-        .push_slice(msg_hash)
-        .into_script();
-    Transaction {
-        version: bitcoin::transaction::Version(0),
-        lock_time: bitcoin::absolute::LockTime::ZERO,
-        input: vec![TxIn {
-            previous_output: OutPoint::null(),
-            script_sig,
-            sequence: Sequence::ZERO,
-            witness: Witness::new(),
-        }],
-        output: vec![TxOut {
-            value: Amount::ZERO,
-            script_pubkey: script_pubkey.to_owned(),
-        }],
-    }
-}
-
-/// Build BIP-322 to_sign transaction (Section 5).
-fn build_bip322_to_sign(to_spend: &bitcoin::Transaction) -> bitcoin::Transaction {
-    use bitcoin::{Transaction, TxIn, TxOut, Sequence, Witness, Amount, ScriptBuf, OutPoint};
-    let to_spend_txid = to_spend.compute_txid();
-    Transaction {
-        version: bitcoin::transaction::Version::TWO,
-        lock_time: bitcoin::absolute::LockTime::ZERO,
-        input: vec![TxIn {
-            previous_output: OutPoint::new(to_spend_txid, 0),
-            script_sig: ScriptBuf::new(),
-            sequence: Sequence::ZERO,
-            witness: Witness::new(),
-        }],
-        output: vec![TxOut {
-            value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return(&[]),
-        }],
-    }
-}
+// bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign are now
+// provided by shared::bip322 (imported at the top of this file).
