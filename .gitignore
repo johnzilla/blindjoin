@@ -1,1 +1,4 @@
 /target/
+
+# Local environment overrides — contains bot signing keys (BOT_WIF); never commit
+.env

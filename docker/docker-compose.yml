@@ -1,0 +1,97 @@
+# blindjoin Docker Compose stack
+# Starts: bitcoind (signet) + coordinator + liquidity-bot
+# Startup order: bitcoind → coordinator → liquidity-bot (healthcheck-gated)
+#
+# Usage:
+#   cp .env.example .env          # fill in BOT_UTXO, BOT_UTXO_VALUE_SATS, BOT_WIF
+#   docker compose up -d
+#   docker compose logs -f coordinator
+#
+# The coordinator logs its PKARR public key on startup:
+#   "PKARR identity ready — share this key with clients: pk:..."
+
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:27
+    # bitcoin.conf is mounted to the datadir inside the container.
+    # The image entrypoint reads /home/bitcoin/.bitcoin/bitcoin.conf automatically.
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+      - ./bitcoind/bitcoin.conf:/home/bitcoin/.bitcoin/bitcoin.conf:ro
+    ports:
+      # Expose signet RPC for local tooling (bitcoin-cli from host)
+      - "38332:38332"
+    healthcheck:
+      # bitcoin-cli -signet getblockchaininfo exits 0 when bitcoind is up and accepting RPC.
+      # start_period: 60s handles slow peer connection on signet (can take 30-120s).
+      # retries: 20 gives up to 200s of retry window after start_period.
+      test:
+        - "CMD-SHELL"
+        - "bitcoin-cli -signet -rpcuser=blindjoin -rpcpassword=blindjoin -rpcconnect=127.0.0.1 -rpcport=38332 getblockchaininfo || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
+  coordinator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.coordinator
+    environment:
+      BLINDJOIN__NETWORK__BITCOIN_RPC_URL: "http://bitcoind:38332"
+      BLINDJOIN__NETWORK__BITCOIN_RPC_USER: "blindjoin"
+      BLINDJOIN__NETWORK__BITCOIN_RPC_PASS: "blindjoin"
+      BLINDJOIN__NETWORK__BITCOIN_NETWORK: "signet"
+      BLINDJOIN__COORDINATOR__LISTEN_ADDR: "0.0.0.0:8080"
+      # PKARR keypair is stored in the named volume at /app/keys
+      BLINDJOIN__DISCOVERY__PKARR_KEY_FILE: "/app/keys/coordinator_pkarr.key"
+      # Set coordinator_public_addr to the host's IP/domain for external discovery.
+      # Default is local Docker bridge; suitable for local testing only.
+      BLINDJOIN__DISCOVERY__COORDINATOR_PUBLIC_ADDR: "coordinator:8080"
+    volumes:
+      # Named volume persists the PKARR keypair across container restarts.
+      # Losing this volume means the coordinator gets a new DHT identity.
+      - coordinator-keys:/app/keys
+    ports:
+      - "8080:8080"
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    healthcheck:
+      # curl -sf returns non-zero on HTTP error or connection failure.
+      test:
+        - "CMD-SHELL"
+        - "curl -sf http://localhost:8080/info || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  liquidity-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bot
+    environment:
+      BLINDJOIN_COORDINATOR_URL: "http://coordinator:8080"
+      BLINDJOIN_NETWORK: "signet"
+      # These must be set via .env file or docker compose --env-file.
+      # The bot will exit with a clear error if these are missing.
+      BLINDJOIN_UTXO: "${BOT_UTXO}"
+      BLINDJOIN_UTXO_VALUE_SATS: "${BOT_UTXO_VALUE_SATS}"
+      BLINDJOIN_UTXO_WIF: "${BOT_WIF}"
+      BLINDJOIN_TARGET_DENOMINATION_SATS: "1000000"
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    # Bot exits after each successful round (UTXO spent).
+    # restart: unless-stopped re-launches it; operator must update .env with new UTXO.
+    restart: unless-stopped
+
+volumes:
+  bitcoin-data:
+    # Stores the signet blockchain data. Survives container restarts.
+  coordinator-keys:
+    # Stores the coordinator's PKARR Ed25519 keypair.
+    # IMPORTANT: do not delete this volume — it is the coordinator's DHT identity.
