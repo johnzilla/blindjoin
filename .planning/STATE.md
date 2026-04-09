@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-blame-hardening/02-03-PLAN.md
-last_updated: "2026-04-09T14:08:53.224Z"
-last_activity: 2026-04-09 -- Phase 3 planning complete
+stopped_at: Completed 03-client-cli/03-01-PLAN.md
+last_updated: "2026-04-09T14:20:01.712Z"
+last_activity: 2026-04-09
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 11
-  completed_plans: 9
-  percent: 82
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 2 — Blame & Hardening
+**Current focus:** Phase 3 — Client CLI
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
+Phase: 3 (Client CLI) — EXECUTING
+Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-04-09 -- Phase 3 planning complete
+Last activity: 2026-04-09
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-blame-hardening P01 | 123 | 2 tasks | 5 files |
 | Phase 02-blame-hardening P02 | 4 | 2 tasks | 7 files |
 | Phase 02-blame-hardening P03 | 4 | 2 tasks | 3 files |
+| Phase 03-client-cli P01 | 35 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,9 @@ Recent decisions affecting current work:
 - [Phase 02-blame-hardening]: Blame unit tests (TEST-07) placed in signing.rs test block using crate::round::blame imports — avoids import cycle, keeps blame logic co-located
 - [Phase 02-blame-hardening]: OutputReg→Blame FSM transition added to can_transition_to — on_output_reg_timeout was silently failing without this edge
 - [Phase 02-blame-hardening]: Integration blame test uses shared Arc<RwLock<BanList>> for direct assertion — faster than HTTP retry, tests same production ban path
+- [Phase 03-client-cli]: peek_address(0) over next_unused_address in BdkClientWallet — single-use CLI wallet has no address reuse concern; avoids &mut self requirement on callers
+- [Phase 03-client-cli]: check_psbt_denomination_outputs extracted as public fn — testable independently of async HTTP; CLI-04 anti-censorship check before signing
+- [Phase 03-client-cli]: wif_key: Option<String> stored on BdkClientWallet — avoids fragile descriptor-string parsing to recover signing key for BIP-322 in input.rs
 
 ### Pending Todos
 
@@ -99,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T13:45:11.017Z
-Stopped at: Completed 02-blame-hardening/02-03-PLAN.md
+Last session: 2026-04-09T14:20:01.708Z
+Stopped at: Completed 03-client-cli/03-01-PLAN.md
 Resume file: None
