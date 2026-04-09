@@ -96,9 +96,11 @@ pub async fn register_input(
                 message: format!("UTXO value below required threshold of {required} sats"),
                 round_id: Some(round_id_str.to_string()),
             },
-            UtxoError::InvalidProof { reason } => ApiError {
+            UtxoError::InvalidProof { reason: _ } => ApiError {
                 code: ErrorCode::InvalidOwnershipProof,
-                message: reason,
+                // Do not forward reason — it may contain the UTXO outpoint (PRIV-02).
+                // The coordinator logs nothing here; the client receives only this generic message.
+                message: "BIP-322 ownership proof verification failed".into(),
                 round_id: Some(round_id_str.to_string()),
             },
             UtxoError::RpcUnavailable(msg) => ApiError {
