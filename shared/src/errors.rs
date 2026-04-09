@@ -23,6 +23,7 @@ pub enum ErrorCode {
     BroadcastRejected,
     SessionInvalid,
     DustOutput,
+    UtxoBanned,
 }
 
 /// API error returned by all coordinator endpoints on failure.
