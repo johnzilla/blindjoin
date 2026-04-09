@@ -10,29 +10,37 @@ This is infrastructure, not a product. MIT licensed. No fees. No company. No ter
 
 Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
 
+## Current State
+
+Shipped v1.0 MVP with 7,353 lines of Rust across 5 phases (17 plans).
+Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio.
+Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
+PKARR DHT discovery live. Docker Compose stack operational. GitHub Actions CI for releases.
+
 ## Requirements
 
 ### Validated
 
-- [x] Client uses fresh Tor circuit for each phase (input reg vs. output reg) — Validated in Phase 5: Tor & Release
-- [x] Tor-native: coordinator runs as Tor hidden service via arti-client, no clearnet endpoint in production — Validated in Phase 5: Tor & Release
-- [x] Pre-built binaries via GitHub Releases, Docker images via ghcr.io — Validated in Phase 5: Tor & Release (CI workflows created, awaiting first tag push)
+- ✓ Coordinator runs CoinJoin rounds with RSA blind signatures (RFC 9474) ensuring unlinkability — v1.0
+- ✓ Fixed-denomination CoinJoin with configurable denomination (default: 0.01 BTC) — v1.0
+- ✓ Round state machine: IDLE → INPUT_REG → OUTPUT_REG → SIGNING → BROADCAST/BLAME → IDLE — v1.0
+- ✓ Blame protocol: non-signers detected, temporarily banned, round restarts with remaining participants — v1.0
+- ✓ Client CLI: discover coordinator, register input, blind token, register output, verify TX, sign — v1.0
+- ✓ Client uses fresh Tor circuit for each phase (input reg vs. output reg) — v1.0
+- ✓ UTXO ownership proof via BIP-322 generic message signing — v1.0
+- ✓ PKARR record publishing: coordinator announces .onion address, round parameters, status to DHT — v1.0
+- ✓ PKARR discovery: client finds coordinators via DHT lookup or direct .onion address — v1.0
+- ✓ Tor-native: coordinator runs as Tor hidden service via arti-client, no clearnet endpoint in production — v1.0
+- ✓ Docker Compose stack: bitcoind + coordinator + liquidity bot, zero to CoinJoin in 5 minutes — v1.0
+- ✓ Liquidity bot: auto-joins rounds on signet for testing and cold-start — v1.0
+- ✓ All round state zeroed from memory after transaction broadcast — v1.0
+- ✓ No logging of PII, IP addresses, or input-output mappings — v1.0
+- ✓ Integration tests: full round (3+ participants), blame protocol, adversarial scenarios on signet — v1.0
+- ✓ Pre-built binaries via GitHub Releases, Docker images via ghcr.io — v1.0
 
 ### Active
 
-- [ ] Coordinator runs CoinJoin rounds with RSA blind signatures (RFC 9474) ensuring unlinkability
-- [ ] Fixed-denomination CoinJoin with configurable denomination (default: 0.01 BTC)
-- [ ] Round state machine: IDLE → INPUT_REG → OUTPUT_REG → SIGNING → BROADCAST/BLAME → IDLE
-- [ ] Blame protocol: non-signers detected, temporarily banned, round restarts with remaining participants
-- [ ] Client CLI: discover coordinator, register input, blind token, register output, verify TX, sign
-- [ ] UTXO ownership proof via BIP-322 generic message signing
-- [ ] PKARR record publishing: coordinator announces .onion address, round parameters, status to DHT
-- [ ] PKARR discovery: client finds coordinators via DHT lookup or direct .onion address
-- [ ] Docker Compose stack: bitcoind + coordinator + liquidity bot, zero to CoinJoin in 5 minutes
-- [ ] Liquidity bot: auto-joins rounds on signet for testing and cold-start
-- [ ] All round state zeroed from memory after transaction broadcast
-- [ ] No logging of PII, IP addresses, or input-output mappings
-- [ ] Integration tests: full round (3+ participants), blame protocol, adversarial scenarios on signet
+(No active requirements — next milestone will define new ones)
 
 ### Out of Scope
 
@@ -43,6 +51,7 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 - Mainnet as default — signet-first, mainnet is a config flag
 - OAuth, accounts, user management — no identity layer, no accounts
 - Metrics dashboard (Prometheus/Grafana) — optional post-v1
+- Offline mode — real-time coordination is fundamental to the protocol
 
 ## Context
 
@@ -51,6 +60,7 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 - **PKARR as novel contribution:** The round protocol is battle-tested (Wasabi v1). The PKARR discovery layer making coordinators disposable and replaceable is the thesis.
 - **Dependency maturity:** Arti 2.0.0 (Feb 2026) stabilized Tor hidden services in Rust. blind-rsa-signatures by jedisct1 is RFC 9474 compliant.
 - **Builder background:** Owner has Rust + Bitcoin experience (arbstr-vault treasury service with Cashu ecash + Lightning).
+- **v1.0 shipped:** Full protocol working on signet with Tor, PKARR discovery, Docker deployment, and CI/CD.
 
 ## Constraints
 
@@ -64,13 +74,15 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| RSA blind signatures (RFC 9474) over WabiSabi | WabiSabi lacks production Rust implementation; RSA blind sigs are proven (Wasabi v1) | — Pending |
-| Approach B: Prove-Then-Layer build order | Get a txid on signet first, layer Tor/PKARR after; isolates protocol bugs from network bugs | — Pending |
-| arti-client for native Tor hidden services | Arti 2.0.0 stable; avoids separate Tor process dependency; Sprint 0 PoC to verify | Validated Phase 5 |
-| BIP-322 for UTXO ownership proofs | Forward compatible with all address types (P2WPKH, P2TR) | — Pending |
-| bitcoincore-rpc for coordinator, bdk for client | Coordinator doesn't need wallet ops; client needs key management and PSBT signing | — Pending |
-| PKARR for coordinator discovery | Decentralized; makes coordinators replaceable; no hardcoded addresses | — Pending |
-| Docker Tor container optional (arti handles HS) | Coordinator uses arti-client natively; Docker Tor only needed as SOCKS proxy fallback | — Pending |
+| RSA blind signatures (RFC 9474) over WabiSabi | WabiSabi lacks production Rust implementation; RSA blind sigs are proven (Wasabi v1) | ✓ Good — delivered full unlinkability |
+| Approach B: Prove-Then-Layer build order | Get a txid on signet first, layer Tor/PKARR after; isolates protocol bugs from network bugs | ✓ Good — clean 5-phase progression |
+| arti-client for native Tor hidden services | Arti 2.0.0 stable; avoids separate Tor process dependency | ✓ Good — working v3 .onion service |
+| BIP-322 for UTXO ownership proofs | Forward compatible with all address types (P2WPKH, P2TR) | ✓ Good — Simple verification working |
+| corepc-types over bitcoincore-rpc | bitcoincore-rpc archived Nov 2025; thin reqwest RPC client | ✓ Good — 5 RPC methods, no dep issues |
+| bdk_wallet for client key management | Descriptor-based wallet, PSBT signing, HD derivation | ✓ Good — clean integration |
+| PKARR for coordinator discovery | Decentralized; makes coordinators replaceable; no hardcoded addresses | ✓ Good — DHT publish + resolve working |
+| In-process SOCKS5 proxy for client Tor | arti-client 0.41 has no launch_socks5_listener(); minimal RFC 1928 bridge | ⚠ Revisit — works but adds ~80 LOC |
+| Docker Compose with cargo-chef builds | Multi-stage Dockerfiles, separate images per binary | ✓ Good — clean separation |
 
 ## Evolution
 
@@ -90,4 +102,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-09 after Phase 5 (Tor & Release) completion*
+*Last updated: 2026-04-09 after v1.0 milestone*
