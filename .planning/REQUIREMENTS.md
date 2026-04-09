@@ -47,7 +47,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Client CLI
 
-- [ ] **CLI-01**: Discover coordinator via direct .onion address or PKARR DHT lookup
+- [x] **CLI-01**: Discover coordinator via direct .onion address or PKARR DHT lookup
 - [x] **CLI-02**: Wallet management via bdk_wallet 1.0 (key management, UTXO selection, PSBT signing)
 - [x] **CLI-03**: Full round participation: input registration → blind token → output registration → verify TX → sign
 - [x] **CLI-04**: Transaction verification before signing: own output present, fee reasonable, output count matches participant count
@@ -62,9 +62,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Discovery
 
-- [ ] **DISC-01**: Coordinator publishes PKARR record to DHT (.onion address, round parameters, RSA public key hash, status, uptime)
-- [ ] **DISC-02**: Client discovers coordinators via PKARR DHT lookup or direct .onion address
-- [ ] **DISC-03**: Coordinator heartbeat: re-publish PKARR record every 5 minutes and on state transitions
+- [x] **DISC-01**: Coordinator publishes PKARR record to DHT (.onion address, round parameters, RSA public key hash, status, uptime)
+- [x] **DISC-02**: Client discovers coordinators via PKARR DHT lookup or direct .onion address
+- [x] **DISC-03**: Coordinator heartbeat: re-publish PKARR record every 5 minutes and on state transitions
 
 ### Deployment
 
@@ -153,7 +153,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | TX-06 | Phase 1 | Complete |
 | TX-07 | Phase 1 | Complete |
 | TX-08 | Phase 1 | Complete |
-| CLI-01 | Phase 4 | Pending |
+| CLI-01 | Phase 4 | Complete |
 | CLI-02 | Phase 3 | Complete |
 | CLI-03 | Phase 3 | Complete |
 | CLI-04 | Phase 3 | Complete |
@@ -162,9 +162,9 @@ Deferred to future release. Tracked but not in current roadmap.
 | PRIV-02 | Phase 1 | Complete |
 | PRIV-03 | Phase 5 | Pending |
 | PRIV-04 | Phase 1 | Complete |
-| DISC-01 | Phase 4 | Pending |
-| DISC-02 | Phase 4 | Pending |
-| DISC-03 | Phase 4 | Pending |
+| DISC-01 | Phase 4 | Complete |
+| DISC-02 | Phase 4 | Complete |
+| DISC-03 | Phase 4 | Complete |
 | DEPL-01 | Phase 4 | Pending |
 | DEPL-02 | Phase 4 | Pending |
 | DEPL-03 | Phase 5 | Pending |

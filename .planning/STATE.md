@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-client-cli/03-02-PLAN.md
-last_updated: "2026-04-09T18:22:17.734Z"
-last_activity: 2026-04-09 -- Phase 4 planning complete
+stopped_at: Completed 04-discovery-deployment/04-01-PLAN.md
+last_updated: "2026-04-09T18:32:47.967Z"
+last_activity: 2026-04-09
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 14
-  completed_plans: 11
-  percent: 79
+  completed_plans: 12
+  percent: 86
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 3 — Client CLI
+**Current focus:** Phase 4 — Discovery & Deployment
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 4 (Discovery & Deployment) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-04-09 -- Phase 4 planning complete
+Last activity: 2026-04-09
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -60,6 +60,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-blame-hardening P03 | 4 | 2 tasks | 3 files |
 | Phase 03-client-cli P01 | 35 | 2 tasks | 8 files |
 | Phase 03-client-cli P02 | 7 | 2 tasks | 2 files |
+| Phase 04-discovery-deployment P01 | 3 | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase 03-client-cli]: check_psbt_denomination_outputs extracted as public fn — testable independently of async HTTP; CLI-04 anti-censorship check before signing
 - [Phase 03-client-cli]: wif_key: Option<String> stored on BdkClientWallet — avoids fragile descriptor-string parsing to recover signing key for BIP-322 in input.rs
 - [Phase 03-client-cli]: fund_regtest() helper extracted: shared bitcoind setup reduces copy-paste; spawn_coordinator_with_blame_and_restart resets round state via Arc<RwLock> after RestartWithout; adversarial_tampered_psbt_rejected pure in-memory so CLI-04 always runs in CI without bitcoind
+- [Phase 04-discovery-deployment]: pkarr = '5' used (not '2' from STACK.md); version 5.0.4 stable on crates.io
+- [Phase 04-discovery-deployment]: Single JSON blob in _blindjoin TXT label (~130 bytes) — fits under 255-byte DNS limit
+- [Phase 04-discovery-deployment]: Heartbeat reads round_state.phase live under read-lock — satisfies DISC-03 without watch channel
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T14:30:09.963Z
-Stopped at: Completed 03-client-cli/03-02-PLAN.md
+Last session: 2026-04-09T18:32:47.964Z
+Stopped at: Completed 04-discovery-deployment/04-01-PLAN.md
 Resume file: None
