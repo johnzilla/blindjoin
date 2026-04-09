@@ -65,7 +65,11 @@ Plans:
   2. The integration test (3+ clients, signet) produces a confirmed transaction with a txid
   3. The integration test for blame (one non-signing client) completes with the non-signer banned and the remaining clients successfully completing a round
   4. Adversarial integration tests pass: replay token rejected, invalid UTXO rejected, wrong denomination rejected, tampered PSBT refused by client
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — bdk_wallet 2.3 wallet refactor + CLI-04 output count verification
+- [ ] 03-02-PLAN.md — Adversarial integration tests (TEST-11) + round restart test (TEST-12)
 
 ### Phase 4: Discovery & Deployment
 **Goal**: Coordinators are discoverable via PKARR DHT and the full stack (bitcoind + coordinator + liquidity bot) runs from a single docker compose up command
@@ -97,6 +101,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Core Protocol | 6/6 | Complete    | 2026-04-09 |
 | 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
-| 3. Client CLI | 0/TBD | Not started | - |
+| 3. Client CLI | 0/2 | In progress | - |
 | 4. Discovery & Deployment | 0/TBD | Not started | - |
 | 5. Tor & Release | 0/TBD | Not started | - |
