@@ -60,7 +60,12 @@ pub async fn serve_onion_service(
 
     // Send onion address to main.rs BEFORE entering the accept loop,
     // so PKARR publish can proceed immediately (T-05-03: clients have retry logic).
-    let _ = addr_tx.send(onion_addr);
+    // Propagate error: if the receiver was dropped before we could send, stop here
+    // rather than entering the accept loop in a zombie state (serving connections
+    // but with no PKARR record published for this session).
+    addr_tx.send(onion_addr).map_err(|_| {
+        anyhow::anyhow!("main task dropped the address receiver before onion address was delivered")
+    })?;
 
     // handle_rend_requests converts the RendRequest stream → StreamRequest stream,
     // accepting all rendezvous handshakes automatically.
