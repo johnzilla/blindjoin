@@ -12,7 +12,7 @@ serde_json = "1"
 bitcoin = { version = "0.32", features = ["serde"] }
 bdk_wallet = { version = "2.3", features = ["keys-bip39"] }
 blind-rsa-signatures = "0.17"
-reqwest = { version = "0.13", features = ["json"] }
+reqwest = { version = "0.13", features = ["json", "socks"] }
 corepc-types = "0.11"
 thiserror = "1"
 hex = "0.4"

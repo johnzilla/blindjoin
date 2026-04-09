@@ -47,4 +47,11 @@ pub struct ClientConfig {
     /// If set, overrides --coordinator-url with the resolved endpoint.
     #[arg(long, env = "BLINDJOIN_PKARR_PUBKEY")]
     pub pkarr_pubkey: Option<String>,
+
+    /// Use Tor hidden service routing with isolated circuits per phase (CLI-05).
+    /// When set, input registration flows through one Tor circuit (alice) and
+    /// output registration flows through a separate, unlinkable circuit (bob).
+    /// Requires the coordinator to be reachable as a Tor hidden service (.onion URL).
+    #[arg(long, env = "BLINDJOIN_USE_TOR", default_value_t = false)]
+    pub use_tor: bool,
 }

@@ -5,6 +5,7 @@ mod config;
 mod discover;
 mod http;
 mod round;
+mod tor;
 mod wallet;
 
 use config::ClientConfig;
@@ -61,7 +62,17 @@ async fn main() -> anyhow::Result<()> {
     } else {
         cfg.coordinator_url.clone()
     };
-    let client = CoordinatorClient::new(coordinator_url);
+    // CLI-05: when --tor is set, use two isolated Tor circuits (alice for input reg,
+    // bob for output reg). Otherwise fall back to plain clearnet reqwest.
+    let client = if cfg.use_tor {
+        let handle = tor::init_tor(coordinator_url.clone()).await
+            .map_err(|e| anyhow::anyhow!("Tor initialization failed: {e}"))?;
+        let alice_proxy = handle.alice_proxy_url().await?;
+        let bob_proxy = handle.bob_proxy_url().await?;
+        CoordinatorClient::new_tor(coordinator_url, alice_proxy, bob_proxy)?
+    } else {
+        CoordinatorClient::new(coordinator_url)
+    };
 
     info!("Polling for INPUT_REG phase");
     let info = client.poll_until_phase("input_reg", cfg.poll_interval_ms).await?;
