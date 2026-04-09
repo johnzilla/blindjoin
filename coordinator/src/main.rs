@@ -89,9 +89,10 @@ async fn main() -> anyhow::Result<()> {
     // blame_round_count tracks consecutive blame rounds for the cap (T-02-07).
     let blame_round_count: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 
-    // Spawn signing phase timer — fires after round_timeout_signing_secs.
-    // When it fires: detect non-signers, ban them, append to ban file, Blame→Idle.
-    // BLAME-04.
+    // Spawn a phase monitor that re-arms output_reg and signing timeout timers on
+    // every new round, not just the first. The original one-shot spawn approach only
+    // fired for round 1; this monitor polls every 500ms and arms a fresh timer task
+    // the first time it sees each (round_id, phase) pair. (WR-02)
     {
         let round_clone = Arc::clone(&round_state);
         let ban_list_clone = Arc::clone(&ban_list);
@@ -99,47 +100,71 @@ async fn main() -> anyhow::Result<()> {
         let ban_file = cfg.coordinator.ban_file_path.clone();
         let ban_duration = cfg.coordinator.blame_ban_duration_secs;
         let signing_timeout = Duration::from_secs(cfg.coordinator.round_timeout_signing_secs);
-
-        tokio::spawn(async move {
-            tokio::time::sleep(signing_timeout).await;
-
-            let mut round = round_clone.write().await;
-            if round.phase != Phase::Signing {
-                return; // already advanced — no-op
-            }
-
-            let mut bl = ban_list_clone.write().await;
-            let count = blame_count_clone.load(Ordering::Relaxed);
-            let outcome = round::blame::on_signing_timeout(
-                &mut round, &mut bl, &ban_file, ban_duration, count,
-            );
-            match outcome {
-                BlameOutcome::FullAbort => {
-                    blame_count_clone.store(0, Ordering::Relaxed);
-                }
-                BlameOutcome::RestartWithout { .. } => {
-                    blame_count_clone.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
-    }
-
-    // Spawn output registration phase timer — fires after round_timeout_output_reg_secs.
-    // When it fires: check if all outputs registered; if not, Blame→Idle.
-    // BLAME-04.
-    {
-        let round_clone = Arc::clone(&round_state);
         let output_reg_timeout = Duration::from_secs(cfg.coordinator.round_timeout_output_reg_secs);
 
         tokio::spawn(async move {
-            tokio::time::sleep(output_reg_timeout).await;
+            // Track the last (round_id, phase) for which we armed a timer so we never
+            // double-arm the same phase of the same round.
+            let mut last_output_reg_round: Option<uuid::Uuid> = None;
+            let mut last_signing_round: Option<uuid::Uuid> = None;
 
-            let mut round = round_clone.write().await;
-            if round.phase != Phase::OutputReg {
-                return; // already advanced — no-op
+            let mut ticker = tokio::time::interval(Duration::from_millis(500));
+            loop {
+                ticker.tick().await;
+
+                let (phase, round_id) = {
+                    let guard = round_clone.read().await;
+                    (guard.phase.clone(), guard.round_id)
+                };
+
+                match phase {
+                    Phase::OutputReg => {
+                        if last_output_reg_round != Some(round_id) {
+                            last_output_reg_round = Some(round_id);
+                            let round_c = Arc::clone(&round_clone);
+                            tracing::debug!(%round_id, "Arming output_reg timeout timer");
+                            tokio::spawn(async move {
+                                tokio::time::sleep(output_reg_timeout).await;
+                                let mut round = round_c.write().await;
+                                if round.round_id == round_id && round.phase == Phase::OutputReg {
+                                    round::output_reg::on_output_reg_timeout(&mut round);
+                                }
+                            });
+                        }
+                    }
+                    Phase::Signing => {
+                        if last_signing_round != Some(round_id) {
+                            last_signing_round = Some(round_id);
+                            let round_c = Arc::clone(&round_clone);
+                            let ban_list_c = Arc::clone(&ban_list_clone);
+                            let blame_count_c = Arc::clone(&blame_count_clone);
+                            let ban_file_c = ban_file.clone();
+                            tracing::debug!(%round_id, "Arming signing timeout timer");
+                            tokio::spawn(async move {
+                                tokio::time::sleep(signing_timeout).await;
+                                let mut round = round_c.write().await;
+                                if round.round_id != round_id || round.phase != Phase::Signing {
+                                    return; // already advanced — no-op
+                                }
+                                let mut bl = ban_list_c.write().await;
+                                let count = blame_count_c.load(Ordering::Relaxed);
+                                let outcome = round::blame::on_signing_timeout(
+                                    &mut round, &mut bl, &ban_file_c, ban_duration, count,
+                                );
+                                match outcome {
+                                    BlameOutcome::FullAbort => {
+                                        blame_count_c.store(0, Ordering::Relaxed);
+                                    }
+                                    BlameOutcome::RestartWithout { .. } => {
+                                        blame_count_c.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    _ => {}
+                }
             }
-
-            round::output_reg::on_output_reg_timeout(&mut round);
         });
     }
 
