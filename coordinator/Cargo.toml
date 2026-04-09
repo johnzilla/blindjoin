@@ -29,6 +29,7 @@ hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rand = "0.8"
+subtle = "2"
 config = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }

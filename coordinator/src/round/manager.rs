@@ -47,12 +47,13 @@ pub fn generate_session_token(round_secret: &[u8; 32], utxo: &OutPoint) -> [u8; 
 
 /// Verify a session token against the expected value.
 ///
-/// NOTE: For strict constant-time comparison use subtle::ConstantTimeEq.
-/// Current implementation uses standard array equality which is sufficient
-/// for HMAC verification (HMAC already provides PRF security).
+/// Uses constant-time comparison (subtle::ConstantTimeEq) to prevent timing
+/// oracle attacks that could allow byte-by-byte token recovery via response
+/// latency measurement.
 pub fn verify_session_token(round_secret: &[u8; 32], utxo: &OutPoint, token: &[u8; 32]) -> bool {
+    use subtle::ConstantTimeEq;
     let expected = generate_session_token(round_secret, utxo);
-    expected == *token
+    expected.ct_eq(token).into()
 }
 
 #[cfg(test)]
