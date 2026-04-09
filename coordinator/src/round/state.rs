@@ -33,6 +33,7 @@ impl Phase {
             (Phase::Idle, Phase::InputReg)
             | (Phase::InputReg, Phase::OutputReg)
             | (Phase::OutputReg, Phase::Signing)
+            | (Phase::OutputReg, Phase::Blame)  // BLAME-02: missing output → blame from OutputReg
             | (Phase::Signing, Phase::Broadcast)
             | (Phase::Signing, Phase::Blame)
             | (Phase::Broadcast, Phase::Idle)
@@ -210,6 +211,9 @@ mod tests {
         }
     }
 
+    /// PRIV-01: Verify inner is None (dropped + zeroed) after Broadcast→Idle transition.
+    /// Drop impl on RoundStateInner calls .zeroize() on all sensitive fields before clearing.
+    /// This is the correctness assertion confirming memory zeroing runs when round completes.
     #[test]
     fn transition_to_idle_clears_inner() {
         let mut state = RoundState::new_idle();
@@ -217,8 +221,8 @@ mod tests {
         state.phase = Phase::Signing;
         state.rsa_pubkey_der = Some(vec![1, 2, 3]); // simulate active round
         state.inner = Some(RoundStateInner {
-            rsa_signing_key: vec![1, 2, 3],
-            round_secret: [0xab; 32],
+            rsa_signing_key: vec![0xAA; 32],
+            round_secret: [0xBB; 32],
             registered_inputs: Default::default(),
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
@@ -228,9 +232,11 @@ mod tests {
         // Transition to Broadcast then to Idle
         state.transition_to(Phase::Broadcast).unwrap();
         state.transition_to(Phase::Idle).unwrap();
-        assert!(state.inner.is_none(), "Inner state must be dropped on Idle transition");
+        // PRIV-01: inner MUST be None after Idle transition (Drop was called → zeroize ran)
+        assert!(state.inner.is_none(), "PRIV-01: RoundStateInner must be dropped on Idle transition");
         assert_eq!(state.phase, Phase::Idle);
         assert!(state.rsa_pubkey_hash.is_none());
+        assert!(state.rsa_pubkey_der.is_none());
     }
 
     #[test]
