@@ -3,7 +3,9 @@ name: Docker
 on:
   push:
     tags: ['v*']
-    branches: [main]
+    # branches: [main] removed — every commit to main should not push a new :latest image
+    # before tests pass. Docker images are only published on versioned release tags.
+    # To rebuild latest manually, push a new tag or trigger this workflow from the Actions UI.
 
 permissions:
   contents: read
