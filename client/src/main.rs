@@ -67,8 +67,8 @@ async fn main() -> anyhow::Result<()> {
     let client = if cfg.use_tor {
         let handle = tor::init_tor(coordinator_url.clone()).await
             .map_err(|e| anyhow::anyhow!("Tor initialization failed: {e}"))?;
-        let alice_proxy = handle.alice_proxy_url().await?;
-        let bob_proxy = handle.bob_proxy_url().await?;
+        let alice_proxy = handle.alice_proxy_url().to_owned();
+        let bob_proxy = handle.bob_proxy_url().to_owned();
         CoordinatorClient::new_tor(coordinator_url, alice_proxy, bob_proxy)?
     } else {
         CoordinatorClient::new(coordinator_url)

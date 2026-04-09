@@ -27,19 +27,30 @@ use tokio::net::{TcpListener, TcpStream};
 /// - `bob`: used for output registration (links to fresh output — must be isolated)
 ///
 /// Both handles are obtained via `isolated_client()` so they provably share no circuits.
+///
+/// The SOCKS5 proxy tasks are started at construction time and their JoinHandles are
+/// stored here. When `TorHandle` is dropped, the tasks are aborted so no OS port
+/// allocations or TorClient handles are leaked.
 pub struct TorHandle {
-    /// Isolated client for input registration phase (Alice role)
-    alice: TorClient<PreferredRuntime>,
-    /// Isolated client for output registration phase (Bob role)
-    bob: TorClient<PreferredRuntime>,
     /// The coordinator's base URL (scheme + host, no trailing slash)
     coordinator_url: String,
+    /// Proxy URL for the Alice (input registration) circuit.
+    alice_proxy: String,
+    /// Proxy URL for the Bob (output registration) circuit.
+    bob_proxy: String,
+    /// Background task handle for the Alice SOCKS5 proxy listener; aborted on drop.
+    _alice_task: tokio::task::JoinHandle<()>,
+    /// Background task handle for the Bob SOCKS5 proxy listener; aborted on drop.
+    _bob_task: tokio::task::JoinHandle<()>,
 }
 
 impl TorHandle {
     /// Bootstrap Tor and create two isolated client handles.
     ///
     /// `coordinator_url` must be the full coordinator URL, e.g. `http://xyz.onion`.
+    ///
+    /// SOCKS5 proxies are started immediately so that the handles returned by
+    /// `alice_proxy_url` / `bob_proxy_url` are ready to use without an extra await.
     pub async fn new(coordinator_url: String) -> anyhow::Result<Self> {
         tracing::info!("Bootstrapping Tor — this may take 10-30 seconds");
         let base = TorClient::create_bootstrapped(TorClientConfig::default())
@@ -51,8 +62,20 @@ impl TorHandle {
         let alice = base.isolated_client();
         let bob = base.isolated_client();
 
+        // Start SOCKS5 proxies at construction time and store JoinHandles.
+        // This ensures each TorHandle owns exactly one proxy pair, which is
+        // cleaned up (aborted) when the TorHandle is dropped.
+        let (alice_port, alice_task) = launch_socks5_proxy(alice).await?;
+        let (bob_port, bob_task) = launch_socks5_proxy(bob).await?;
+
         tracing::info!("Tor ready — two isolated circuits allocated");
-        Ok(Self { alice, bob, coordinator_url })
+        Ok(Self {
+            coordinator_url,
+            alice_proxy: format!("socks5h://127.0.0.1:{alice_port}"),
+            bob_proxy: format!("socks5h://127.0.0.1:{bob_port}"),
+            _alice_task: alice_task,
+            _bob_task: bob_task,
+        })
     }
 
     /// Returns the coordinator URL for the Alice (input registration) circuit.
@@ -65,20 +88,24 @@ impl TorHandle {
         &self.coordinator_url
     }
 
-    /// Spawn an in-process SOCKS5 proxy for the Alice circuit.
-    /// Returns `socks5h://127.0.0.1:<port>` — the URL to pass to reqwest Proxy::all().
-    ///
-    /// T-05-08: binds 127.0.0.1:0 (ephemeral, loopback-only — not network-accessible).
-    pub async fn alice_proxy_url(&self) -> anyhow::Result<String> {
-        let port = launch_socks5_proxy(self.alice.clone()).await?;
-        Ok(format!("socks5h://127.0.0.1:{port}"))
+    /// Returns `socks5h://127.0.0.1:<port>` for the Alice SOCKS5 proxy.
+    /// The proxy was started during `TorHandle::new` — no additional await needed.
+    pub fn alice_proxy_url(&self) -> &str {
+        &self.alice_proxy
     }
 
-    /// Spawn an in-process SOCKS5 proxy for the Bob circuit.
-    /// Returns `socks5h://127.0.0.1:<port>` — the URL to pass to reqwest Proxy::all().
-    pub async fn bob_proxy_url(&self) -> anyhow::Result<String> {
-        let port = launch_socks5_proxy(self.bob.clone()).await?;
-        Ok(format!("socks5h://127.0.0.1:{port}"))
+    /// Returns `socks5h://127.0.0.1:<port>` for the Bob SOCKS5 proxy.
+    pub fn bob_proxy_url(&self) -> &str {
+        &self.bob_proxy
+    }
+}
+
+impl Drop for TorHandle {
+    fn drop(&mut self) {
+        // Abort the listener tasks so that OS port allocations and TorClient handles
+        // are released when this TorHandle goes out of scope.
+        self._alice_task.abort();
+        self._bob_task.abort();
     }
 }
 
@@ -88,21 +115,24 @@ pub async fn init_tor(coordinator_url: String) -> anyhow::Result<TorHandle> {
 }
 
 /// Bind a TCP listener on 127.0.0.1:0, spawn a SOCKS5 server task routing through
-/// the given TorClient, and return the assigned port.
+/// the given TorClient, and return the assigned port along with the task JoinHandle.
+///
+/// The caller must store the returned JoinHandle for the lifetime of the proxy.
+/// Dropping the handle aborts the listener task and releases the OS port allocation.
 ///
 /// The SOCKS5 implementation handles the subset required by reqwest:
 /// - RFC 1928 no-auth greeting
 /// - CONNECT command with hostname (0x03) and IPv4 (0x01) address types
 async fn launch_socks5_proxy(
     tor: TorClient<PreferredRuntime>,
-) -> anyhow::Result<u16> {
+) -> anyhow::Result<(u16, tokio::task::JoinHandle<()>)> {
     // T-05-08: loopback-only, OS-assigned ephemeral port
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .context("Failed to bind SOCKS5 listener")?;
     let port = listener.local_addr()?.port();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         loop {
             match listener.accept().await {
                 Ok((stream, _peer)) => {
@@ -121,7 +151,7 @@ async fn launch_socks5_proxy(
         }
     });
 
-    Ok(port)
+    Ok((port, handle))
 }
 
 /// Handle one SOCKS5 connection: perform handshake, parse CONNECT request,
