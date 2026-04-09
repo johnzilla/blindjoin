@@ -79,7 +79,12 @@ Plans:
   1. A coordinator publishes its .onion address, denomination, and status to the PKARR DHT and re-publishes on state transitions and every 5 minutes
   2. A client can discover that coordinator using only a PKARR public key (no hardcoded address) and complete a round
   3. docker compose up on a fresh machine reaches a completed CoinJoin round within 5 minutes using the liquidity bot to fill the anonymity set
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — pkarr = "5" workspace dep + coordinator PKARR publisher + client --pkarr-pubkey discovery (Wave 1)
+- [ ] 04-02-PLAN.md — liquidity-bot workspace member: JoinStrategy + polling main loop with signet safety guard (Wave 2)
+- [ ] 04-03-PLAN.md — Docker Compose stack: Dockerfiles (cargo-chef), docker-compose.yml, bitcoin.conf, .env.example (Wave 2)
 
 ### Phase 5: Tor & Release
 **Goal**: The coordinator runs as a Tor v3 hidden service with no clearnet endpoint; participants use fresh Tor circuits per phase; pre-built binaries and container images are publicly available
@@ -102,5 +107,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Core Protocol | 6/6 | Complete    | 2026-04-09 |
 | 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
 | 3. Client CLI | 2/2 | Complete    | 2026-04-09 |
-| 4. Discovery & Deployment | 0/TBD | Not started | - |
+| 4. Discovery & Deployment | 0/3 | Not started | - |
 | 5. Tor & Release | 0/TBD | Not started | - |
