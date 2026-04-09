@@ -98,7 +98,7 @@ mod tests {
         let sighash = cache
             .p2wpkh_signature_hash(0, &script_pubkey, Amount::ZERO, EcdsaSighashType::All)
             .unwrap();
-        let secp_msg = bitcoin::secp256k1::Message::from_digest(sighash.to_byte_array());
+        let secp_msg = bitcoin::secp256k1::Message::from_digest(*sighash.as_byte_array());
         let sig = secp.sign_ecdsa(&secp_msg, &secret_key);
         let mut sig_bytes = sig.serialize_der().to_vec();
         sig_bytes.push(0x01); // SIGHASH_ALL

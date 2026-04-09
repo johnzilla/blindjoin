@@ -127,7 +127,7 @@ async fn assemble_and_broadcast(
     }
 
     // Build PSBT
-    let psbt = build_coinjoin_psbt(
+    let mut psbt = build_coinjoin_psbt(
         &participant_inputs,
         &participant_outputs,
         config.coordinator.denomination_sats,
@@ -138,12 +138,41 @@ async fn assemble_and_broadcast(
         round_id: Some(round_id_str.to_string()),
     })?;
 
-    // Serialize PSBT to raw TX hex for broadcast
-    // For Phase 1: clients have submitted partial_signature bytes which we treat as
-    // raw witness data. A full PSBT finalization would merge these; for now we
-    // serialize the unsigned TX and broadcast (integration test uses regtest where
-    // signatures are pre-applied by the test harness).
-    let tx_hex = serialize_hex(&psbt.unsigned_tx);
+    // Apply partial signatures as witness data to each input.
+    // Each participant submitted their signature + pubkey as serialized witness bytes.
+    // We decode these and set them as the witness for the corresponding input.
+    for (i, input) in psbt.unsigned_tx.input.iter().enumerate() {
+        let outpoint_str = format!("{}:{}", input.previous_output.txid, input.previous_output.vout);
+        if let Some(sig_bytes) = inner.partial_sigs.get(&outpoint_str) {
+            // Deserialize the witness from the raw bytes the client sent
+            match bitcoin::consensus::deserialize::<bitcoin::Witness>(sig_bytes) {
+                Ok(witness) => {
+                    psbt.inputs[i].final_script_witness = Some(witness);
+                }
+                Err(_) => {
+                    return Err(ApiError {
+                        code: ErrorCode::BroadcastRejected,
+                        message: format!("Invalid witness data for input {}", i),
+                        round_id: Some(round_id_str.to_string()),
+                    });
+                }
+            }
+        } else {
+            return Err(ApiError {
+                code: ErrorCode::BroadcastRejected,
+                message: format!("Missing signature for input {}", i),
+                round_id: Some(round_id_str.to_string()),
+            });
+        }
+    }
+
+    // Extract the finalized transaction from the PSBT
+    let final_tx = psbt.extract_tx().map_err(|e| ApiError {
+        code: ErrorCode::BroadcastRejected,
+        message: format!("PSBT extraction failed: {e}"),
+        round_id: Some(round_id_str.to_string()),
+    })?;
+    let tx_hex = serialize_hex(&final_tx);
 
     // testmempoolaccept before broadcast (T-04 boundary requirement)
     let accept_result = rpc.testmempoolaccept(&[&tx_hex]).await.map_err(|e| ApiError {

@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use bitcoin::{OutPoint, Script, ScriptBuf};
+use bitcoin::{OutPoint, Script, ScriptBuf, hashes::Hash};
 use bitcoin::secp256k1::{Secp256k1, Message as SecpMessage, ecdsa::Signature};
 use shared::bip322::{bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign};
 use shared::protocol::OwnershipProof;

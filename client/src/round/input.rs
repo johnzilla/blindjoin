@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use bitcoin::hashes::Hash;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use blind_rsa_signatures::{
     BlindSignature, DefaultRng,
