@@ -57,7 +57,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **PRIV-01**: All round state zeroed from memory after transaction broadcast (zeroize crate, ZeroizeOnDrop on all round-state structs)
 - [x] **PRIV-02**: No logging of PII, IP addresses, or input-output mappings
-- [ ] **PRIV-03**: Coordinator runs as Tor hidden service via arti-client (no clearnet endpoint in production)
+- [x] **PRIV-03**: Coordinator runs as Tor hidden service via arti-client (no clearnet endpoint in production)
 - [x] **PRIV-04**: Polling GET /info at 5s intervals for phase notifications (Tor-safe, no persistent connections)
 
 ### Discovery
@@ -160,7 +160,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | CLI-05 | Phase 5 | Pending |
 | PRIV-01 | Phase 2 | Complete |
 | PRIV-02 | Phase 1 | Complete |
-| PRIV-03 | Phase 5 | Pending |
+| PRIV-03 | Phase 5 | Complete |
 | PRIV-04 | Phase 1 | Complete |
 | DISC-01 | Phase 4 | Complete |
 | DISC-02 | Phase 4 | Complete |

@@ -98,7 +98,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — arti-client 0.41 deps + coordinator/src/network/tor.rs glue + tor_mode config flag + main.rs TCP-vs-Tor gate (Wave 1)
+- [x] 05-01-PLAN.md — arti-client 0.41 deps + coordinator/src/network/tor.rs glue + tor_mode config flag + main.rs TCP-vs-Tor gate (Wave 1)
 - [ ] 05-02-PLAN.md — Client Tor circuit isolation: TorHandle with isolated_client(), CoordinatorClient::new_tor(), --tor CLI flag (Wave 1)
 - [ ] 05-03-PLAN.md — GitHub Actions: release.yml (4-target binary cross-compile) + docker.yml (multi-arch GHCR push) + Dockerfile.client (Wave 1)
 
@@ -113,4 +113,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
 | 3. Client CLI | 2/2 | Complete    | 2026-04-09 |
 | 4. Discovery & Deployment | 3/3 | Complete    | 2026-04-09 |
-| 5. Tor & Release | 0/3 | Not started | - |
+| 5. Tor & Release | 1/3 | In Progress|  |
