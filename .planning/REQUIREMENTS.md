@@ -69,7 +69,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Deployment
 
 - [ ] **DEPL-01**: Docker Compose stack: bitcoind (signet) + coordinator + liquidity bot, zero to CoinJoin in 5 minutes
-- [ ] **DEPL-02**: Liquidity bot: auto-joins rounds on signet for testing and cold-start
+- [x] **DEPL-02**: Liquidity bot: auto-joins rounds on signet for testing and cold-start
 - [ ] **DEPL-03**: Pre-built Linux/macOS binaries via GitHub Releases (GitHub Actions CI)
 - [ ] **DEPL-04**: Docker images published to GitHub Container Registry (ghcr.io)
 - [x] **DEPL-05**: Configurable: network (signet/testnet4/mainnet), denomination, min/max participants, timeouts, fee rate
@@ -166,7 +166,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | DISC-02 | Phase 4 | Complete |
 | DISC-03 | Phase 4 | Complete |
 | DEPL-01 | Phase 4 | Pending |
-| DEPL-02 | Phase 4 | Pending |
+| DEPL-02 | Phase 4 | Complete |
 | DEPL-03 | Phase 5 | Pending |
 | DEPL-04 | Phase 5 | Pending |
 | DEPL-05 | Phase 1 | Complete |

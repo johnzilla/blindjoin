@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-discovery-deployment/04-01-PLAN.md
-last_updated: "2026-04-09T18:32:47.967Z"
+stopped_at: Completed 04-discovery-deployment/04-02-PLAN.md
+last_updated: "2026-04-09T18:36:42.846Z"
 last_activity: 2026-04-09
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 14
-  completed_plans: 12
-  percent: 86
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-07)
 ## Current Position
 
 Phase: 4 (Discovery & Deployment) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-04-09
 
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03-client-cli P01 | 35 | 2 tasks | 8 files |
 | Phase 03-client-cli P02 | 7 | 2 tasks | 2 files |
 | Phase 04-discovery-deployment P01 | 3 | 2 tasks | 11 files |
+| Phase 04-discovery-deployment P02 | 150 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,8 @@ Recent decisions affecting current work:
 - [Phase 04-discovery-deployment]: pkarr = '5' used (not '2' from STACK.md); version 5.0.4 stable on crates.io
 - [Phase 04-discovery-deployment]: Single JSON blob in _blindjoin TXT label (~130 bytes) — fits under 255-byte DNS limit
 - [Phase 04-discovery-deployment]: Heartbeat reads round_state.phase live under read-lock — satisfies DISC-03 without watch channel
+- [Phase 04-discovery-deployment]: Liquidity bot exits after one successful round (UTXO spent); Docker restart policy handles re-run — simpler than in-process UTXO rotation
+- [Phase 04-discovery-deployment]: No clap dependency in liquidity-bot — all config from env vars for Docker-native ergonomics
 
 ### Pending Todos
 
@@ -110,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T18:32:47.964Z
-Stopped at: Completed 04-discovery-deployment/04-01-PLAN.md
+Last session: 2026-04-09T18:36:42.844Z
+Stopped at: Completed 04-discovery-deployment/04-02-PLAN.md
 Resume file: None
