@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            use_cross: false
+          - name: linux-arm64
+            runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            use_cross: true
+          - name: macos-amd64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            use_cross: false
+          - name: macos-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            use_cross: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build coordinator and client
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} --bin coordinator
+            cross build --release --target ${{ matrix.target }} --bin client
+          else
+            cargo build --release --target ${{ matrix.target }} --bin coordinator
+            cargo build --release --target ${{ matrix.target }} --bin client
+          fi
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/coordinator \
+             dist/coordinator-${{ matrix.name }}
+          cp target/${{ matrix.target }}/release/client \
+             dist/client-${{ matrix.name }}
+          tar czf blindjoin-${{ matrix.name }}.tar.gz -C dist .
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          files: blindjoin-${{ matrix.name }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
