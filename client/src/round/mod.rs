@@ -14,6 +14,12 @@ pub struct InputRegState {
     /// SHA-256 of the coordinator RSA public key DER bytes at input registration time.
     /// Used during output registration to detect coordinator key rotation (T-05-01).
     pub pk_hash_at_registration: [u8; 32],
+    /// Number of participants registered when we submitted our input.
+    /// Used in signing phase to verify PSBT contains the expected number of outputs (CLI-04).
+    pub participants_registered: u32,
+    /// Denomination in satoshis at the time of input registration.
+    /// Used in signing phase to count denomination outputs in the PSBT (CLI-04).
+    pub denomination_sats: u64,
 }
 
 impl InputRegState {
