@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 05-tor-release/05-02-PLAN.md
-last_updated: "2026-04-09T20:46:33.371Z"
+status: verifying
+stopped_at: Completed 05-tor-release/05-03-PLAN.md
+last_updated: "2026-04-09T20:49:19.142Z"
 last_activity: 2026-04-09
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 17
-  completed_plans: 16
-  percent: 94
+  completed_plans: 17
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-07)
 
 Phase: 05 (tor-release) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-09
 
 Progress: [░░░░░░░░░░] 0%
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-discovery-deployment P02 | 150 | 2 tasks | 4 files |
 | Phase 05-tor-release P01 | 61 | 2 tasks | 7 files |
 | Phase 05-tor-release P02 | 298 | 2 tasks | 6 files |
+| Phase 05-tor-release P03 | 1 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,9 @@ Recent decisions affecting current work:
 - [Phase 05-tor-release]: In-process SOCKS5 proxy (tokio TcpListener + TorClient::connect) used — arti-client 0.41 has no launch_socks5_listener(); bridges arti isolation to reqwest Proxy::all()
 - [Phase 05-tor-release]: tor-rtcompat added as direct dep to client — PreferredRuntime not re-exported by arti-client 0.41
 - [Phase 05-tor-release]: reqwest socks feature added to workspace dep — required for Proxy::all(socks5h://...) in client Tor path
+- [Phase 05-tor-release]: cross-rs for aarch64 Linux cross-compilation via cargo install --git (no Cross.toml needed with arti-client rustls feature)
+- [Phase 05-tor-release]: liquidity-bot excluded from release.yml binary tarballs — Docker-only release for the bot
+- [Phase 05-tor-release]: docker/metadata-action@v5 for semver image tagging (vX.Y.Z, vX.Y, latest) from git tags
 
 ### Pending Todos
 
@@ -124,6 +128,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T20:46:33.368Z
-Stopped at: Completed 05-tor-release/05-02-PLAN.md
+Last session: 2026-04-09T20:49:19.139Z
+Stopped at: Completed 05-tor-release/05-03-PLAN.md
 Resume file: None

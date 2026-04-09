@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Blame & Hardening** - Non-signers detected, banned, round restarts; memory zeroed; adversarial tests pass (completed 2026-04-09)
 - [x] **Phase 3: Client CLI** - End-to-end round participation from a standalone CLI tool on signet (completed 2026-04-09)
 - [x] **Phase 4: Discovery & Deployment** - PKARR DHT discovery live; Docker Compose stack goes from zero to round in 5 minutes (completed 2026-04-09)
-- [ ] **Phase 5: Tor & Release** - Coordinator runs as Tor hidden service; pre-built binaries and Docker images published
+- [x] **Phase 5: Tor & Release** - Coordinator runs as Tor hidden service; pre-built binaries and Docker images published (completed 2026-04-09)
 
 ## Phase Details
 
@@ -100,7 +100,7 @@ Plans:
 Plans:
 - [x] 05-01-PLAN.md — arti-client 0.41 deps + coordinator/src/network/tor.rs glue + tor_mode config flag + main.rs TCP-vs-Tor gate (Wave 1)
 - [x] 05-02-PLAN.md — Client Tor circuit isolation: TorHandle with isolated_client(), CoordinatorClient::new_tor(), --tor CLI flag (Wave 1)
-- [ ] 05-03-PLAN.md — GitHub Actions: release.yml (4-target binary cross-compile) + docker.yml (multi-arch GHCR push) + Dockerfile.client (Wave 1)
+- [x] 05-03-PLAN.md — GitHub Actions: release.yml (4-target binary cross-compile) + docker.yml (multi-arch GHCR push) + Dockerfile.client (Wave 1)
 
 ## Progress
 
@@ -113,4 +113,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
 | 3. Client CLI | 2/2 | Complete    | 2026-04-09 |
 | 4. Discovery & Deployment | 3/3 | Complete    | 2026-04-09 |
-| 5. Tor & Release | 2/3 | In Progress|  |
+| 5. Tor & Release | 3/3 | Complete   | 2026-04-09 |
