@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-04-08T15:51:02.960Z"
+stopped_at: Completed 01-core-protocol/01-06-PLAN.md — Phase 1 complete
+last_updated: "2026-04-09T12:00:35.246Z"
 last_activity: 2026-04-08 -- Phase 1 planning complete
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 0
-  percent: 0
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01-core-protocol P06 | 32172 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Recent decisions affecting current work:
 - Roadmap: HMAC-based session tokens for signing phase reconnection
 - Roadmap: Polling at 5s intervals (Tor-safe, no persistent connections)
 - Roadmap: Domain separator SHA-256("blindjoin-v1" || scriptPubKey || amount_le64)
+- [Phase 01-core-protocol]: Integration test placed under coordinator crate: virtual workspaces cannot have [[test]] targets
+- [Phase 01-core-protocol]: parse_address_to_script extended to include Regtest network in handlers.rs and signing.rs
+- [Phase 01-core-protocol]: Coordinator pre-initialized in InputReg state for integration tests — no admin HTTP endpoint needed
 
 ### Pending Todos
 
@@ -83,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-08T14:20:35.766Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-core-protocol/01-CONTEXT.md
+Last session: 2026-04-09T12:00:35.243Z
+Stopped at: Completed 01-core-protocol/01-06-PLAN.md — Phase 1 complete
+Resume file: None

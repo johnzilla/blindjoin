@@ -12,7 +12,7 @@ blindjoin builds in five coarse phases following Approach B (Prove-Then-Layer): 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Core Protocol** - Coordinator completes a real CoinJoin round on signet (clearnet transport)
+- [x] **Phase 1: Core Protocol** - Coordinator completes a real CoinJoin round on signet (clearnet transport) (completed 2026-04-09)
 - [ ] **Phase 2: Blame & Hardening** - Non-signers detected, banned, round restarts; memory zeroed; adversarial tests pass
 - [ ] **Phase 3: Client CLI** - End-to-end round participation from a standalone CLI tool on signet
 - [ ] **Phase 4: Discovery & Deployment** - PKARR DHT discovery live; Docker Compose stack goes from zero to round in 5 minutes
@@ -36,9 +36,9 @@ Plans:
 - [x] 01-01-PLAN.md — Cargo workspace + shared crate (protocol types, blind token hasher, error shapes)
 - [x] 01-02-PLAN.md — RSA blind signer + round FSM + HMAC session tokens + unit tests
 - [x] 01-03-PLAN.md — Bitcoin RPC client + UTXO validation + BIP-322 + CoinJoin PSBT construction
-- [ ] 01-04-PLAN.md — HTTP handlers (5 endpoints) + coordinator config + startup health checks
-- [ ] 01-05-PLAN.md — Client binary (bdk_wallet, blind blinding, round participation flow)
-- [ ] 01-06-PLAN.md — Integration test scaffold + full unit test suite run + phase verification
+- [x] 01-04-PLAN.md — HTTP handlers (5 endpoints) + coordinator config + startup health checks
+- [x] 01-05-PLAN.md — Client binary (bdk_wallet, blind blinding, round participation flow)
+- [x] 01-06-PLAN.md — Integration test scaffold + full unit test suite run + phase verification
 
 ### Phase 2: Blame & Hardening
 **Goal**: The coordinator detects non-signers, bans their UTXOs with persistence across restarts, restarts the round with remaining participants, and wipes all round state from memory after broadcast
@@ -90,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Protocol | 0/6 | Not started | - |
+| 1. Core Protocol | 6/6 | Complete   | 2026-04-09 |
 | 2. Blame & Hardening | 0/TBD | Not started | - |
 | 3. Client CLI | 0/TBD | Not started | - |
 | 4. Discovery & Deployment | 0/TBD | Not started | - |
