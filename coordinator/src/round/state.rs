@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
@@ -78,7 +78,8 @@ pub struct RoundStateInner {
     /// Key = "txid:vout" string.
     pub registered_inputs: HashMap<String, RegisteredInput>,
     /// Set of redeemed token hashes (prevent token replay, D-04).
-    pub redeemed_tokens: Vec<[u8; 32]>,
+    /// HashSet provides O(1) lookup instead of O(n) linear scan.
+    pub redeemed_tokens: HashSet<[u8; 32]>,
     /// Registered outputs (appended during OUTPUT_REG phase).
     pub registered_outputs: Vec<RegisteredOutput>,
     /// Partial signatures keyed by UTXO outpoint string.
@@ -97,11 +98,12 @@ impl Drop for RoundStateInner {
             v.zeroize();
         }
         self.registered_inputs.clear();
-        // Zeroize redeemed token hashes
-        for token in self.redeemed_tokens.iter_mut() {
+        // Zeroize redeemed token hashes (HashSet has no iter_mut; collect and zeroize)
+        let mut tokens: Vec<[u8; 32]> = self.redeemed_tokens.drain().collect();
+        for token in tokens.iter_mut() {
             token.zeroize();
         }
-        self.redeemed_tokens.clear();
+        drop(tokens);
         // Zeroize registered outputs
         for out in self.registered_outputs.iter_mut() {
             out.zeroize();
@@ -218,7 +220,7 @@ mod tests {
             rsa_signing_key: vec![1, 2, 3],
             round_secret: [0xab; 32],
             registered_inputs: Default::default(),
-            redeemed_tokens: vec![],
+            redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: Default::default(),
             change_addresses: Default::default(),

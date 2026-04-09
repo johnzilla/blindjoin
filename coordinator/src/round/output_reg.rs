@@ -14,7 +14,7 @@ use blind_rsa_signatures::{MessageRandomizer, Signature};
 ///   amount_sats    — amount_sats from the request
 pub fn register_output_logic(
     pk: &BjPublicKey,
-    redeemed: &mut Vec<[u8; 32]>,
+    redeemed: &mut std::collections::HashSet<[u8; 32]>,
     token_msg: &[u8; 32],
     sig_bytes: &[u8],
     msg_randomizer: Option<MessageRandomizer>,
@@ -51,7 +51,7 @@ pub fn register_output_logic(
         })?;
 
     // 4. Mark token as redeemed
-    redeemed.push(*token_msg);
+    redeemed.insert(*token_msg);
     Ok(())
 }
 
@@ -94,7 +94,7 @@ mod tests {
         let denom = 1_000_000u64;
         let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
         let result = register_output_logic(
-            &signer.public_key, &mut vec![], &msg, &sig, randomizer, denom, denom,
+            &signer.public_key, &mut std::collections::HashSet::new(), &msg, &sig, randomizer, denom, denom,
         );
         assert!(result.is_ok(), "Valid token must be accepted: {:?}", result);
     }
@@ -104,7 +104,7 @@ mod tests {
         let signer = RsaBlindSigner::generate().unwrap();
         let denom = 1_000_000u64;
         let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
-        let mut redeemed = vec![msg];
+        let mut redeemed = std::collections::HashSet::from([msg]);
         let result = register_output_logic(
             &signer.public_key, &mut redeemed, &msg, &sig, randomizer, denom, denom,
         );
@@ -121,7 +121,7 @@ mod tests {
         let denom = 1_000_000u64;
         let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
         let result = register_output_logic(
-            &signer.public_key, &mut vec![], &msg, &sig, randomizer, denom, 500_000,
+            &signer.public_key, &mut std::collections::HashSet::new(), &msg, &sig, randomizer, denom, 500_000,
         );
         assert!(result.is_err());
         assert!(
@@ -137,7 +137,7 @@ mod tests {
         let (msg, _, randomizer) = make_valid_token_sig(&signer, denom);
         let bad_sig = vec![0xde, 0xad, 0xbe, 0xef];
         let result = register_output_logic(
-            &signer.public_key, &mut vec![], &msg, &bad_sig, randomizer, denom, denom,
+            &signer.public_key, &mut std::collections::HashSet::new(), &msg, &bad_sig, randomizer, denom, denom,
         );
         assert!(result.is_err());
         assert!(

@@ -40,7 +40,7 @@ fn build_input_reg_round_state() -> coordinator::round::state::RoundState {
         rsa_signing_key: sk_der,
         round_secret,
         registered_inputs: HashMap::new(),
-        redeemed_tokens: Vec::new(),
+        redeemed_tokens: std::collections::HashSet::new(),
         registered_outputs: Vec::new(),
         partial_sigs: HashMap::new(),
         change_addresses: HashMap::new(),
