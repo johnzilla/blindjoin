@@ -1,0 +1,30 @@
+# docker/Dockerfile.coordinator
+# Multi-stage build using cargo-chef for dependency layer caching.
+# Stage 1 (planner) generates recipe.json from Cargo manifests.
+# Stage 2 (builder) compiles dependencies (cached) then the coordinator binary.
+# Stage 3 (runtime) is a minimal debian image with only the binary.
+
+FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+# This layer is cached as long as Cargo.lock does not change.
+RUN cargo chef cook --release --recipe-path recipe.json
+COPY . .
+RUN cargo build --release --bin coordinator
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+# Directory for PKARR keypair volume mount (persisted via named volume)
+RUN mkdir -p /app/keys
+COPY --from=builder /app/target/release/coordinator /usr/local/bin/coordinator
+ENTRYPOINT ["/usr/local/bin/coordinator"]

@@ -14,3 +14,20 @@ round_timeout_signing_secs = 30
 blame_ban_duration_secs = 3600      # 1 hour
 fee_rate_sat_per_vbyte = 2
 listen_addr = "0.0.0.0:8080"
+
+[discovery]
+# Path to the coordinator's Ed25519 PKARR keypair.
+# This key is the coordinator's stable Mainline DHT identity.
+# Clients discover the coordinator using this public key — do not lose or rotate it.
+# In Docker: this file lives inside the coordinator-keys named volume.
+# chmod 600 this file when running outside Docker.
+pkarr_key_file = "coordinator_pkarr.key"
+
+# Re-publish the PKARR record to Mainline DHT every N seconds (default: 300 = 5 min).
+# Matches the DHT TTL. Do not reduce below 60 to avoid relay rate limits.
+heartbeat_interval_secs = 300
+
+# Publicly reachable coordinator address, published in the PKARR record.
+# Phase 4 (clearnet): your server's IP:port or hostname:port.
+# Phase 5 (Tor): your .onion address (e.g. "abc123xyz.onion").
+coordinator_public_addr = "127.0.0.1:8080"
