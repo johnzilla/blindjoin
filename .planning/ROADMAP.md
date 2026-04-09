@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Core Protocol** - Coordinator completes a real CoinJoin round on signet (clearnet transport) (completed 2026-04-09)
 - [x] **Phase 2: Blame & Hardening** - Non-signers detected, banned, round restarts; memory zeroed; adversarial tests pass (completed 2026-04-09)
 - [x] **Phase 3: Client CLI** - End-to-end round participation from a standalone CLI tool on signet (completed 2026-04-09)
-- [ ] **Phase 4: Discovery & Deployment** - PKARR DHT discovery live; Docker Compose stack goes from zero to round in 5 minutes
+- [x] **Phase 4: Discovery & Deployment** - PKARR DHT discovery live; Docker Compose stack goes from zero to round in 5 minutes (completed 2026-04-09)
 - [ ] **Phase 5: Tor & Release** - Coordinator runs as Tor hidden service; pre-built binaries and Docker images published
 
 ## Phase Details
@@ -84,7 +84,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — pkarr = "5" workspace dep + coordinator PKARR publisher + client --pkarr-pubkey discovery (Wave 1)
 - [x] 04-02-PLAN.md — liquidity-bot workspace member: JoinStrategy + polling main loop with signet safety guard (Wave 2)
-- [ ] 04-03-PLAN.md — Docker Compose stack: Dockerfiles (cargo-chef), docker-compose.yml, bitcoin.conf, .env.example (Wave 2)
+- [x] 04-03-PLAN.md — Docker Compose stack: Dockerfiles (cargo-chef), docker-compose.yml, bitcoin.conf, .env.example (Wave 2)
 
 ### Phase 5: Tor & Release
 **Goal**: The coordinator runs as a Tor v3 hidden service with no clearnet endpoint; participants use fresh Tor circuits per phase; pre-built binaries and container images are publicly available
@@ -107,5 +107,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Core Protocol | 6/6 | Complete    | 2026-04-09 |
 | 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
 | 3. Client CLI | 2/2 | Complete    | 2026-04-09 |
-| 4. Discovery & Deployment | 2/3 | In Progress|  |
+| 4. Discovery & Deployment | 3/3 | Complete    | 2026-04-09 |
 | 5. Tor & Release | 0/TBD | Not started | - |
