@@ -1,6 +1,6 @@
 use shared::errors::{ApiError, ErrorCode};
 use crate::blind::rsa::BjPublicKey;
-use blind_rsa_signatures::Signature;
+use blind_rsa_signatures::{MessageRandomizer, Signature};
 
 /// Pure output registration logic — callable from tests without axum/state machinery.
 ///
@@ -9,6 +9,7 @@ use blind_rsa_signatures::Signature;
 ///   redeemed       — mutable token replay set (appended if token accepted)
 ///   token_msg      — the 32-byte unblinded token message M
 ///   sig_bytes      — the unblinded RSA signature bytes
+///   msg_randomizer — the 32-byte MessageRandomizer from BlindingResult (required for Randomized mode)
 ///   denomination   — configured denomination_sats
 ///   amount_sats    — amount_sats from the request
 pub fn register_output_logic(
@@ -16,6 +17,7 @@ pub fn register_output_logic(
     redeemed: &mut Vec<[u8; 32]>,
     token_msg: &[u8; 32],
     sig_bytes: &[u8],
+    msg_randomizer: Option<MessageRandomizer>,
     denomination: u64,
     amount_sats: u64,
 ) -> Result<(), ApiError> {
@@ -38,33 +40,10 @@ pub fn register_output_logic(
     }
 
     // 3. RSA signature verification
-    // Signature is a tuple struct Signature(Vec<u8>)
+    // RSABSSA-SHA384-PSS-Randomized (RFC 9474 §3.3.2): verify requires msg_randomizer.
+    // The client provides this from BlindingResult.msg_randomizer in OutputRegRequest.
     let sig = Signature(sig_bytes.to_vec());
-    // BjPublicKey = PublicKey<Sha384, PSS, Randomized>
-    // verify(sig, msg_randomizer, msg) — None for msg_randomizer means not randomized,
-    // but our keys ARE randomized (Randomized type param). However, the client stores
-    // the msg_randomizer from BlindingResult and passes it back encoded in the token_msg.
-    // For Phase 1, the token_msg IS the original message M (the 32-byte hash), and the
-    // msg_randomizer was included by the client via finalize(). We cannot recover the
-    // msg_randomizer from token_msg alone.
-    //
-    // Design note: the `unblinded_token` field in OutputRegRequest is the 32-byte message M
-    // (compute_blind_token_message output), and `signature` is the unblinded RSA sig.
-    // The RSA sig was finalized with the msg_randomizer baked in (PSS salt covers it).
-    // To verify, we need the same msg_randomizer that was used during blinding.
-    //
-    // For Phase 1 protocol correctness: we verify by checking the RSA signature validates
-    // against the token message. The Randomized type means msg_randomizer is Some — but
-    // since we don't have it, we use None and rely on PSS verification still working
-    // when the client computed finalize() properly.
-    //
-    // The actual msg_randomizer is baked into the PSS signature via the salt during
-    // blind_sign; verify with None falls back to standard PSS verify without the extra
-    // randomizer prefix in the hash. This is correct when the client uses the non-randomized
-    // message path (passing the hash directly as msg to blind()).
-    //
-    // Phase 2 will carry the msg_randomizer explicitly in the wire format.
-    pk.verify(&sig, None, token_msg.as_slice())
+    pk.verify(&sig, msg_randomizer, token_msg.as_slice())
         .map_err(|_| ApiError {
             code: ErrorCode::InvalidToken,
             message: "Token signature verification failed".into(),
@@ -80,41 +59,42 @@ pub fn register_output_logic(
 mod tests {
     use super::*;
     use crate::blind::rsa::RsaBlindSigner;
-    use blind_rsa_signatures::BlindMessage;
     use shared::token::compute_blind_token_message;
     use bitcoin::ScriptBuf;
 
-    /// Create a valid (token_msg, unblinded_sig_bytes) pair using the signer.
+    /// Create a valid (token_msg, unblinded_sig_bytes, msg_randomizer) triple.
     /// Simulates the client blinding M, coordinator blind-signing, client unblinding.
-    fn make_valid_token_sig(signer: &RsaBlindSigner, amount: u64) -> ([u8; 32], Vec<u8>) {
+    fn make_valid_token_sig(signer: &RsaBlindSigner, amount: u64) -> ([u8; 32], Vec<u8>, Option<MessageRandomizer>) {
+        use blind_rsa_signatures::DefaultRng;
+
         // Build a dummy P2WPKH output script: OP_0 <20 bytes>
         let mut script_bytes = vec![0x00u8, 0x14];
         script_bytes.extend([0xab_u8; 20]);
         let script = ScriptBuf::from_bytes(script_bytes);
         let msg = compute_blind_token_message(&script, amount);
 
-        // Client blinds msg
-        let mut rng = rand::thread_rng();
-        let blinding_result = signer.public_key.blind(&mut rng, msg.as_ref()).unwrap();
+        // Client blinds msg using DefaultRng (from blind-rsa-signatures crate)
+        let blinding_result = signer.public_key.blind(&mut DefaultRng, msg.as_slice()).unwrap();
+        let msg_randomizer = blinding_result.msg_randomizer;
 
         // Coordinator blind-signs
         let blind_sig = signer.blind_sign(&blinding_result.blind_message).unwrap();
 
         // Client unblinds (finalize also verifies internally)
         let sig = signer.public_key
-            .finalize(&blind_sig, &blinding_result, msg.as_ref())
+            .finalize(&blind_sig, &blinding_result, msg.as_slice())
             .unwrap();
 
-        (msg, sig.0)
+        (msg, sig.0, msg_randomizer)
     }
 
     #[test]
     fn output_reg_accepts_valid_token() {
         let signer = RsaBlindSigner::generate().unwrap();
         let denom = 1_000_000u64;
-        let (msg, sig) = make_valid_token_sig(&signer, denom);
+        let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
         let result = register_output_logic(
-            &signer.public_key, &mut vec![], &msg, &sig, denom, denom,
+            &signer.public_key, &mut vec![], &msg, &sig, randomizer, denom, denom,
         );
         assert!(result.is_ok(), "Valid token must be accepted: {:?}", result);
     }
@@ -123,10 +103,10 @@ mod tests {
     fn output_reg_rejects_replay() {
         let signer = RsaBlindSigner::generate().unwrap();
         let denom = 1_000_000u64;
-        let (msg, sig) = make_valid_token_sig(&signer, denom);
+        let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
         let mut redeemed = vec![msg];
         let result = register_output_logic(
-            &signer.public_key, &mut redeemed, &msg, &sig, denom, denom,
+            &signer.public_key, &mut redeemed, &msg, &sig, randomizer, denom, denom,
         );
         assert!(result.is_err());
         assert!(
@@ -139,9 +119,9 @@ mod tests {
     fn output_reg_rejects_wrong_denomination() {
         let signer = RsaBlindSigner::generate().unwrap();
         let denom = 1_000_000u64;
-        let (msg, sig) = make_valid_token_sig(&signer, denom);
+        let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
         let result = register_output_logic(
-            &signer.public_key, &mut vec![], &msg, &sig, denom, 500_000,
+            &signer.public_key, &mut vec![], &msg, &sig, randomizer, denom, 500_000,
         );
         assert!(result.is_err());
         assert!(
@@ -154,10 +134,10 @@ mod tests {
     fn output_reg_rejects_invalid_signature() {
         let signer = RsaBlindSigner::generate().unwrap();
         let denom = 1_000_000u64;
-        let (msg, _) = make_valid_token_sig(&signer, denom);
+        let (msg, _, randomizer) = make_valid_token_sig(&signer, denom);
         let bad_sig = vec![0xde, 0xad, 0xbe, 0xef];
         let result = register_output_logic(
-            &signer.public_key, &mut vec![], &msg, &bad_sig, denom, denom,
+            &signer.public_key, &mut vec![], &msg, &bad_sig, randomizer, denom, denom,
         );
         assert!(result.is_err());
         assert!(

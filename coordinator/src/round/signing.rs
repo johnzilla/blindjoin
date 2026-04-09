@@ -1,4 +1,4 @@
-use bitcoin::{OutPoint, Psbt};
+use bitcoin::OutPoint;
 use shared::errors::{ApiError, ErrorCode};
 use crate::round::state::RoundState;
 use crate::round::manager::verify_session_token;

@@ -21,6 +21,7 @@ use crate::round::output_reg::register_output_logic;
 use crate::round::signing::{process_sign, SignResult};
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
 use crate::blind::rsa::RsaBlindSigner;
+use blind_rsa_signatures::MessageRandomizer;
 use bitcoin::ScriptBuf;
 
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
@@ -222,6 +223,24 @@ pub async fn post_output(
             "signature is not valid base64", None)
     })?;
 
+    // Decode msg_randomizer (required for RSABSSA-SHA384-PSS-Randomized verification)
+    let msg_randomizer = match &req.msg_randomizer {
+        Some(b64_str) => {
+            let bytes = B64.decode(b64_str).map_err(|_| {
+                api_error(StatusCode::BAD_REQUEST, "INVALID_TOKEN",
+                    "msg_randomizer is not valid base64", None)
+            })?;
+            if bytes.len() != 32 {
+                return Err(api_error(StatusCode::BAD_REQUEST, "INVALID_TOKEN",
+                    "msg_randomizer must be 32 bytes", None));
+            }
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            Some(MessageRandomizer(arr))
+        }
+        None => None,
+    };
+
     // Write lock
     let mut guard = state.round.write().await;
 
@@ -264,6 +283,7 @@ pub async fn post_output(
             &mut inner.redeemed_tokens,
             &token_msg,
             &sig_bytes,
+            msg_randomizer,
             denomination_sats,
             req.amount_sats,
         ).map_err(|e| {

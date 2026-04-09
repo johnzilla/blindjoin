@@ -64,6 +64,11 @@ pub struct OutputRegRequest {
     /// bech32 address for CoinJoin output
     pub output_address: String,
     pub amount_sats: u64,
+    /// base64-encoded 32-byte MessageRandomizer from BlindingResult (required for Randomized mode).
+    /// The client obtains this from BlindingResult.msg_randomizer during the blinding step.
+    /// RSABSSA-SHA384-PSS-Randomized (RFC 9474 §3.3.2) requires this for signature verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub msg_randomizer: Option<String>,
 }
 
 /// POST /round/output response.
