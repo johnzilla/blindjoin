@@ -87,31 +87,44 @@ async fn assemble_and_broadcast(
         round_id: Some(round_id_str.to_string()),
     })?;
 
+    let bitcoin_network = parse_bitcoin_network(&config.network.bitcoin_network);
+
     // Build participant inputs for PSBT construction
-    let participant_inputs: Vec<ParticipantInput> = inner.registered_inputs.values()
-        .filter_map(|reg| {
-            let outpoint = parse_outpoint(&reg.utxo_str)?;
-            // Use a placeholder script_pubkey — actual signing is done client-side via PSBT
-            // The PSBT includes witness_utxo for proper signing; we use P2WPKH placeholder
-            let change_script = parse_address_to_script(&reg.change_address);
-            Some(ParticipantInput {
-                outpoint,
-                value_sats: config.coordinator.denomination_sats + estimate_fee_share_per_participant(
-                    inner.registered_inputs.len() as u32,
-                    config.coordinator.fee_rate_sat_per_vbyte,
-                ),
-                script_pubkey: change_script.clone(),
-                change_address: change_script,
-            })
-        })
-        .collect();
+    let mut participant_inputs: Vec<ParticipantInput> = Vec::new();
+    for reg in inner.registered_inputs.values() {
+        let outpoint = parse_outpoint(&reg.utxo_str).ok_or_else(|| ApiError {
+            code: ErrorCode::BroadcastRejected,
+            message: format!("Invalid outpoint string: {}", reg.utxo_str),
+            round_id: Some(round_id_str.to_string()),
+        })?;
+        let change_script = parse_address_to_script(&reg.change_address, bitcoin_network)
+            .map_err(|e| ApiError {
+                code: ErrorCode::BroadcastRejected,
+                message: format!("Invalid change address: {e}"),
+                round_id: Some(round_id_str.to_string()),
+            })?;
+        participant_inputs.push(ParticipantInput {
+            outpoint,
+            value_sats: config.coordinator.denomination_sats + estimate_fee_share_per_participant(
+                inner.registered_inputs.len() as u32,
+                config.coordinator.fee_rate_sat_per_vbyte,
+            ),
+            script_pubkey: change_script.clone(),
+            change_address: change_script,
+        });
+    }
 
     // Build participant outputs
-    let participant_outputs: Vec<ParticipantOutput> = inner.registered_outputs.iter()
-        .map(|out| ParticipantOutput {
-            script_pubkey: parse_address_to_script(&out.address),
-        })
-        .collect();
+    let mut participant_outputs: Vec<ParticipantOutput> = Vec::new();
+    for out in inner.registered_outputs.iter() {
+        let script = parse_address_to_script(&out.address, bitcoin_network)
+            .map_err(|e| ApiError {
+                code: ErrorCode::BroadcastRejected,
+                message: format!("Invalid output address: {e}"),
+                round_id: Some(round_id_str.to_string()),
+            })?;
+        participant_outputs.push(ParticipantOutput { script_pubkey: script });
+    }
 
     // Build PSBT
     let psbt = build_coinjoin_psbt(
@@ -179,24 +192,28 @@ async fn assemble_and_broadcast(
     Ok(txid.to_string())
 }
 
-/// Parse an address string to ScriptBuf (best-effort; falls back to empty script).
-/// Tries all supported networks including Regtest (required for integration tests).
-fn parse_address_to_script(addr_str: &str) -> ScriptBuf {
+/// Parse an address string to ScriptBuf, validating against the expected network.
+///
+/// Returns an error if the address is invalid or belongs to a different network.
+/// This prevents cross-network confusion attacks (e.g., a signet address accepted
+/// by a mainnet coordinator) and surfaces bad addresses before PSBT construction.
+fn parse_address_to_script(addr_str: &str, expected_network: bitcoin::Network) -> Result<ScriptBuf, String> {
     use std::str::FromStr;
-    for network in [
-        bitcoin::Network::Signet,
-        bitcoin::Network::Bitcoin,
-        bitcoin::Network::Testnet,
-        bitcoin::Network::Regtest,
-    ] {
-        if let Ok(addr) = bitcoin::Address::from_str(addr_str)
-            .and_then(|a| a.require_network(network).map_err(bitcoin::address::ParseError::from))
-        {
-            return addr.script_pubkey();
-        }
+    bitcoin::Address::from_str(addr_str)
+        .and_then(|a| a.require_network(expected_network).map_err(bitcoin::address::ParseError::from))
+        .map(|a| a.script_pubkey())
+        .map_err(|e| format!("Invalid address '{}': {}", addr_str, e))
+}
+
+/// Parse a bitcoin network name string into bitcoin::Network.
+fn parse_bitcoin_network(network_str: &str) -> bitcoin::Network {
+    match network_str {
+        "mainnet" | "bitcoin" => bitcoin::Network::Bitcoin,
+        "testnet" | "testnet4" => bitcoin::Network::Testnet,
+        "signet" => bitcoin::Network::Signet,
+        "regtest" => bitcoin::Network::Regtest,
+        _ => bitcoin::Network::Signet, // safe default
     }
-    // Fallback: empty script (will fail validation downstream)
-    ScriptBuf::new()
 }
 
 fn estimate_fee_share_per_participant(n: u32, fee_rate: u64) -> u64 {
