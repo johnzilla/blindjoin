@@ -4,18 +4,21 @@ pub mod config;
 mod api;
 mod blind;
 mod discovery;
+mod network;
 mod round;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio::sync::oneshot;
 use tracing::{error, info};
 
 use config::CoordinatorConfig;
 use bitcoin::rpc::BitcoinRpc;
 use round::state::{Phase, RoundState};
 use round::blame::{BanList, BlameOutcome};
+use network::tor::serve_onion_service;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -37,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
         network = %cfg.network.bitcoin_network,
         denomination_sats = cfg.coordinator.denomination_sats,
         min_participants = cfg.coordinator.min_participants,
+        tor_mode = cfg.coordinator.tor_mode,
         "Coordinator starting"
     );
 
@@ -59,23 +63,6 @@ async fn main() -> anyhow::Result<()> {
     let publisher = Arc::new(
         discovery::pkarr_pub::PkarrPublisher::new(pkarr_keypair.clone())?,
     );
-
-    // Publish initial record immediately (best-effort; coordinator is "idle" at startup)
-    {
-        let p = Arc::clone(&publisher);
-        let addr = cfg.discovery.coordinator_public_addr.clone();
-        let denom = cfg.coordinator.denomination_sats;
-        let min_p = cfg.coordinator.min_participants;
-        if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
-            &pkarr_keypair, &addr, denom, min_p, "idle",
-        ) {
-            tokio::spawn(async move {
-                if let Err(e) = p.publish_record(packet).await {
-                    tracing::warn!("Initial PKARR publish failed: {e}");
-                }
-            });
-        }
-    }
 
     // Initialize shared round state
     let round_state: Arc<RwLock<RoundState>> = Arc::new(RwLock::new(RoundState::new_idle()));
@@ -156,13 +143,77 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Determine public address and start transport.
+    // Tor mode: bootstrap Tor, launch onion service, receive .onion addr via channel.
+    // Clearnet mode: bind TCP listener — identical to Phase 4 behaviour for tests/dev.
+    // T-05-05: code paths are mutually exclusive — no TCP listener in tor_mode.
+    let public_addr: String = if cfg.coordinator.tor_mode {
+        let (addr_tx, addr_rx) = oneshot::channel::<String>();
+
+        let app = api::build_router_with_ban_list(
+            round_state.clone(),
+            Arc::new(rpc),
+            Arc::new(cfg.clone()),
+            ban_list,
+        );
+
+        // Spawn the hidden service — it bootstraps Tor, sends the onion address, then
+        // serves forever. T-05-04: on fatal error the process exits 1.
+        tokio::spawn(async move {
+            if let Err(e) = serve_onion_service(app, addr_tx).await {
+                error!(error = %e, "Onion service fatal error");
+                std::process::exit(1);
+            }
+        });
+
+        // Wait for the .onion address (arrives within ~1s of Tor bootstrap completing).
+        addr_rx.await.map_err(|_| anyhow::anyhow!(
+            "Onion service task exited before sending address"
+        ))?
+    } else {
+        // Clearnet path — Phase 4 compatible (default for tests/dev).
+        let app = api::build_router_with_ban_list(
+            round_state.clone(),
+            Arc::new(rpc),
+            Arc::new(cfg.clone()),
+            ban_list,
+        );
+        let addr = cfg.coordinator.listen_addr.clone();
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        info!(addr = %addr, "Listening (clearnet)");
+        // Spawn clearnet server so execution falls through to PKARR publish.
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+        cfg.discovery.coordinator_public_addr.clone()
+    };
+
+    // Publish initial PKARR record using the resolved public address.
+    // In tor_mode this is the .onion address; in clearnet mode it is coordinator_public_addr.
+    {
+        let p = Arc::clone(&publisher);
+        let addr = public_addr.clone();
+        let keypair = pkarr_keypair.clone();
+        let denom = cfg.coordinator.denomination_sats;
+        let min_p = cfg.coordinator.min_participants;
+        if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
+            &keypair, &addr, denom, min_p, "idle",
+        ) {
+            tokio::spawn(async move {
+                if let Err(e) = p.publish_record(packet).await {
+                    tracing::warn!("Initial PKARR publish failed: {e}");
+                }
+            });
+        }
+    }
+
     // Spawn PKARR heartbeat task — re-publishes every heartbeat_interval_secs (DISC-03).
     // Reads current round phase so the published status stays current.
     {
         let p = Arc::clone(&publisher);
         let round_clone = Arc::clone(&round_state);
         let keypair = pkarr_keypair.clone();
-        let addr = cfg.discovery.coordinator_public_addr.clone();
+        let addr = public_addr.clone();   // resolved address (onion or clearnet)
         let denom = cfg.coordinator.denomination_sats;
         let min_p = cfg.coordinator.min_participants;
         let interval_secs = cfg.discovery.heartbeat_interval_secs;
@@ -190,16 +241,10 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    // Build and run the axum server (passes pre-loaded ban list)
-    let app = api::build_router_with_ban_list(
-        round_state.clone(),
-        Arc::new(rpc),
-        Arc::new(cfg.clone()),
-        ban_list,
-    );
-    let listener = tokio::net::TcpListener::bind(&cfg.coordinator.listen_addr).await?;
-    info!(addr = %cfg.coordinator.listen_addr, "Listening");
-    axum::serve(listener, app).await?;
+    // In tor_mode the hidden service runs indefinitely in its own task.
+    // In clearnet mode the TCP server runs in its own task.
+    // Both cases: park the main task here rather than exit.
+    std::future::pending::<()>().await;
 
     Ok(())
 }

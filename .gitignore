@@ -2,3 +2,6 @@
 
 # Local environment overrides — contains bot signing keys (BOT_WIF); never commit
 .env
+
+# Temporary sqlite3 symlink dir for builds on systems without sqlite-devel
+.sqlite-lib/
