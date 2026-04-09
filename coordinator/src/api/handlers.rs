@@ -157,6 +157,7 @@ pub async fn post_input(
         &req.change_address,
         denomination_sats,
         fee_rate,
+        max_participants,
         &round_id_str,
     ).await.map_err(|e| {
         let status = match e.code {

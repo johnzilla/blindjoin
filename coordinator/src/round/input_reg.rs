@@ -32,6 +32,7 @@ pub struct InputRegResult {
 /// - `change_address` — bech32 change address string
 /// - `denomination_sats`    — configured denomination
 /// - `fee_rate_sat_per_vbyte` — configured fee rate
+/// - `max_participants`     — configured max participants (used for conservative fee estimate)
 /// - `round_id_str`   — current round_id as string (for BIP-322 message)
 pub async fn register_input(
     state: &mut RoundState,
@@ -43,6 +44,7 @@ pub async fn register_input(
     change_address: &str,
     denomination_sats: u64,
     fee_rate_sat_per_vbyte: u64,
+    max_participants: u32,
     round_id_str: &str,
 ) -> Result<InputRegResult, ApiError> {
     use base64::Engine;
@@ -68,8 +70,11 @@ pub async fn register_input(
         })?;
 
     // Validate UTXO (existence, value, double-reg, BIP-322)
-    let estimated_participants = std::cmp::max(inner.registered_inputs.len() as u32 + 1, 3);
-    let fee_share = estimate_fee_share(estimated_participants, fee_rate_sat_per_vbyte);
+    // Use max_participants for a conservative (worst-case) fee estimate so that
+    // UTXOs accepted at registration time always cover the fee at signing time,
+    // even if additional participants join later (WR-06).
+    // Integer division remainder is absorbed as extra miner fee — documented behaviour.
+    let fee_share = estimate_fee_share(max_participants, fee_rate_sat_per_vbyte);
     let _utxo_details = validate_utxo(
         rpc,
         utxo,
