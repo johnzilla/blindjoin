@@ -84,10 +84,10 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **TEST-06**: Unit tests for signing (valid sig, invalid sig, wrong outpoint)
 - [x] **TEST-07**: Unit tests for blame (non-signer, missing output, ban expiry, restart)
 - [x] **TEST-08**: Unit tests for protocol message serialization round-trip and forward compat
-- [ ] **TEST-09**: Integration test: 3+ clients complete CoinJoin on signet, TX confirms
-- [ ] **TEST-10**: Integration test: blame protocol (non-signer detected, banned, round restarts)
-- [ ] **TEST-11**: Integration test: adversarial scenarios (replay token, invalid UTXO, wrong denomination, tampered PSBT)
-- [ ] **TEST-12**: Integration test: round restart after blame + successful completion
+- [x] **TEST-09**: Integration test: 3+ clients complete CoinJoin on signet, TX confirms
+- [x] **TEST-10**: Integration test: blame protocol (non-signer detected, banned, round restarts)
+- [x] **TEST-11**: Integration test: adversarial scenarios (replay token, invalid UTXO, wrong denomination, tampered PSBT)
+- [x] **TEST-12**: Integration test: round restart after blame + successful completion
 
 ## v2 Requirements
 
@@ -178,10 +178,10 @@ Deferred to future release. Tracked but not in current roadmap.
 | TEST-06 | Phase 1 | Complete |
 | TEST-07 | Phase 2 | Complete |
 | TEST-08 | Phase 1 | Complete |
-| TEST-09 | Phase 3 | Pending |
-| TEST-10 | Phase 3 | Pending |
-| TEST-11 | Phase 3 | Pending |
-| TEST-12 | Phase 3 | Pending |
+| TEST-09 | Phase 3 | Complete |
+| TEST-10 | Phase 3 | Complete |
+| TEST-11 | Phase 3 | Complete |
+| TEST-12 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 52 total

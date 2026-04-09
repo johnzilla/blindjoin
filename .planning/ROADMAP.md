@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Protocol** - Coordinator completes a real CoinJoin round on signet (clearnet transport) (completed 2026-04-09)
 - [x] **Phase 2: Blame & Hardening** - Non-signers detected, banned, round restarts; memory zeroed; adversarial tests pass (completed 2026-04-09)
-- [ ] **Phase 3: Client CLI** - End-to-end round participation from a standalone CLI tool on signet
+- [x] **Phase 3: Client CLI** - End-to-end round participation from a standalone CLI tool on signet (completed 2026-04-09)
 - [ ] **Phase 4: Discovery & Deployment** - PKARR DHT discovery live; Docker Compose stack goes from zero to round in 5 minutes
 - [ ] **Phase 5: Tor & Release** - Coordinator runs as Tor hidden service; pre-built binaries and Docker images published
 
@@ -69,7 +69,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — bdk_wallet 2.3 wallet refactor + CLI-04 output count verification
-- [ ] 03-02-PLAN.md — Adversarial integration tests (TEST-11) + round restart test (TEST-12)
+- [x] 03-02-PLAN.md — Adversarial integration tests (TEST-11) + round restart test (TEST-12)
 
 ### Phase 4: Discovery & Deployment
 **Goal**: Coordinators are discoverable via PKARR DHT and the full stack (bitcoind + coordinator + liquidity bot) runs from a single docker compose up command
@@ -101,6 +101,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Core Protocol | 6/6 | Complete    | 2026-04-09 |
 | 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
-| 3. Client CLI | 1/2 | In Progress|  |
+| 3. Client CLI | 2/2 | Complete   | 2026-04-09 |
 | 4. Discovery & Deployment | 0/TBD | Not started | - |
 | 5. Tor & Release | 0/TBD | Not started | - |
