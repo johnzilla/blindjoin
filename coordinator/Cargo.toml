@@ -37,6 +37,13 @@ tower-http = { version = "0.6", features = ["limit"] }
 base64 = "0.22"
 anyhow = { workspace = true }
 pkarr = { workspace = true }
+arti-client = { version = "0.41", features = ["onion-service-service", "tokio", "rustls"] }
+tor-hsservice = "0.41"
+tor-cell = { version = "0.41", features = ["hs"] }
+safelog = "0.8"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+futures-util = "0.3"
 
 [dev-dependencies]
 corepc-node = "0.10"

@@ -24,6 +24,11 @@ pub struct CoordinatorSection {
     /// BLAME-05: persists ban records across coordinator restarts.
     #[serde(default = "default_ban_file_path")]
     pub ban_file_path: String,
+    /// When true, bind exclusively to a Tor v3 .onion hidden service — no TCP listener.
+    /// When false (default), use TCP listener (Phase 4 compatible, safe for dev/test).
+    /// PRIV-03: production deployments must set tor_mode = true.
+    #[serde(default)]
+    pub tor_mode: bool,
 }
 
 fn default_ban_file_path() -> String {
@@ -112,6 +117,7 @@ impl CoordinatorConfig {
                 fee_rate_sat_per_vbyte: 2,
                 listen_addr: "127.0.0.1:8080".into(),
                 ban_file_path: "ban_list.jsonl".into(),
+                tor_mode: false,
             },
             discovery: DiscoveryConfig::default(),
         }
