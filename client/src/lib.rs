@@ -6,4 +6,5 @@ pub mod config;
 pub mod discover;
 pub mod http;
 pub mod round;
+pub mod tor;
 pub mod wallet;
