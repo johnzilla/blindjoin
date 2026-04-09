@@ -62,10 +62,11 @@ async fn spawn_coordinator(
     use coordinator::bitcoin::rpc::BitcoinRpc;
     use coordinator::config::{CoordinatorConfig, CoordinatorSection, NetworkConfig};
 
-    // Find a free port (bind-then-drop; OS assigns ephemeral port)
+    // Bind to port 0 (OS assigns an ephemeral port). Keep the listener open —
+    // pass it directly into axum::serve to avoid the TOCTOU race where the port
+    // could be claimed by another process between drop() and re-bind.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    drop(listener);
     let listen_addr = addr.to_string();
 
     let cfg = Arc::new(CoordinatorConfig {
@@ -93,8 +94,8 @@ async fn spawn_coordinator(
     let round_state = Arc::new(RwLock::new(build_input_reg_round_state()));
     let app = coordinator::api::build_router(round_state, rpc, cfg);
 
+    // Use the already-bound listener directly — no drop/re-bind race.
     tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(&listen_addr).await.unwrap();
         axum::serve(listener, app).await.unwrap();
     });
 
