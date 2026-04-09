@@ -74,20 +74,23 @@ async fn main() -> anyhow::Result<()> {
         CoordinatorClient::new(coordinator_url)
     };
 
+    // 10-minute ceiling per phase — prevents infinite hangs if coordinator crashes.
+    let phase_timeout = tokio::time::Duration::from_secs(600);
+
     info!("Polling for INPUT_REG phase");
-    let info = client.poll_until_phase("input_reg", cfg.poll_interval_ms).await?;
+    let info = client.poll_until_phase("input_reg", cfg.poll_interval_ms, phase_timeout).await?;
     info!(round_id = ?info.round_id, "INPUT_REG phase detected");
 
     let reg_result = round::input::register_input(&client, &wallet, &info).await?;
     info!("Input registered successfully");
 
-    client.poll_until_phase("output_reg", cfg.poll_interval_ms).await?;
+    client.poll_until_phase("output_reg", cfg.poll_interval_ms, phase_timeout).await?;
     info!("OUTPUT_REG phase detected");
 
     round::output::register_output(&client, &wallet, &reg_result, &info).await?;
     info!("Output registered successfully");
 
-    client.poll_until_phase("signing", cfg.poll_interval_ms).await?;
+    client.poll_until_phase("signing", cfg.poll_interval_ms, phase_timeout).await?;
     info!("SIGNING phase detected");
 
     round::sign::verify_and_sign(&client, &wallet, &reg_result, cfg.poll_interval_ms).await?;

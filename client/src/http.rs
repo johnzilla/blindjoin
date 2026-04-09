@@ -101,14 +101,28 @@ impl CoordinatorClient {
         Ok(())
     }
 
-    /// Poll GET /info until round_state matches expected, with interval
-    pub async fn poll_until_phase(&self, expected_phase: &str, interval_ms: u64) -> Result<InfoResponse> {
-        loop {
-            let info = self.get_info().await?;
-            if info.round_state == expected_phase {
-                return Ok(info);
+    /// Poll GET /info until round_state matches expected, with interval.
+    ///
+    /// Returns an error if the phase is not reached within `max_wait`.
+    /// The default callers pass `Duration::from_secs(600)` (10 minutes) which is
+    /// enough headroom for a slow coordinator while still preventing infinite hangs
+    /// when the coordinator crashes or the wrong phase name is supplied.
+    pub async fn poll_until_phase(
+        &self,
+        expected_phase: &str,
+        interval_ms: u64,
+        max_wait: tokio::time::Duration,
+    ) -> Result<InfoResponse> {
+        tokio::time::timeout(max_wait, async {
+            loop {
+                let info = self.get_info().await?;
+                if info.round_state == expected_phase {
+                    return Ok(info);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
-        }
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Timed out waiting for phase: {expected_phase}"))?
     }
 }
