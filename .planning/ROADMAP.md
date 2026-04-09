@@ -33,9 +33,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 6 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Cargo workspace + shared crate (protocol types, blind token hasher, error shapes)
-- [ ] 01-02-PLAN.md — RSA blind signer + round FSM + HMAC session tokens + unit tests
-- [ ] 01-03-PLAN.md — Bitcoin RPC client + UTXO validation + BIP-322 + CoinJoin PSBT construction
+- [x] 01-01-PLAN.md — Cargo workspace + shared crate (protocol types, blind token hasher, error shapes)
+- [x] 01-02-PLAN.md — RSA blind signer + round FSM + HMAC session tokens + unit tests
+- [x] 01-03-PLAN.md — Bitcoin RPC client + UTXO validation + BIP-322 + CoinJoin PSBT construction
 - [ ] 01-04-PLAN.md — HTTP handlers (5 endpoints) + coordinator config + startup health checks
 - [ ] 01-05-PLAN.md — Client binary (bdk_wallet, blind blinding, round participation flow)
 - [ ] 01-06-PLAN.md — Integration test scaffold + full unit test suite run + phase verification

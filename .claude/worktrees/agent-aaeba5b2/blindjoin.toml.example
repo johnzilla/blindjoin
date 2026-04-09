@@ -1,0 +1,16 @@
+[network]
+bitcoin_network = "signet"
+bitcoin_rpc_url = "http://127.0.0.1:38332"
+bitcoin_rpc_user = "blindjoin"
+bitcoin_rpc_pass = "blindjoin"
+
+[coordinator]
+denomination_sats = 1000000       # 0.01 BTC
+min_participants = 3
+max_participants = 20
+round_timeout_input_reg_secs = 60
+round_timeout_output_reg_secs = 60
+round_timeout_signing_secs = 30
+blame_ban_duration_secs = 3600      # 1 hour
+fee_rate_sat_per_vbyte = 2
+listen_addr = "0.0.0.0:8080"
