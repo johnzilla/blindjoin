@@ -8,7 +8,7 @@ axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bitcoin = { version = "0.32", features = ["serde"] }
-bdk_wallet = "2.3"
+bdk_wallet = { version = "2.3", features = ["keys-bip39"] }
 blind-rsa-signatures = "0.17"
 reqwest = { version = "0.13", features = ["json"] }
 corepc-types = "0.11"
