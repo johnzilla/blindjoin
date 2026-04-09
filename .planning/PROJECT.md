@@ -14,7 +14,9 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] Client uses fresh Tor circuit for each phase (input reg vs. output reg) — Validated in Phase 5: Tor & Release
+- [x] Tor-native: coordinator runs as Tor hidden service via arti-client, no clearnet endpoint in production — Validated in Phase 5: Tor & Release
+- [x] Pre-built binaries via GitHub Releases, Docker images via ghcr.io — Validated in Phase 5: Tor & Release (CI workflows created, awaiting first tag push)
 
 ### Active
 
@@ -23,17 +25,14 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 - [ ] Round state machine: IDLE → INPUT_REG → OUTPUT_REG → SIGNING → BROADCAST/BLAME → IDLE
 - [ ] Blame protocol: non-signers detected, temporarily banned, round restarts with remaining participants
 - [ ] Client CLI: discover coordinator, register input, blind token, register output, verify TX, sign
-- [ ] Client uses fresh Tor circuit for each phase (input reg vs. output reg)
 - [ ] UTXO ownership proof via BIP-322 generic message signing
 - [ ] PKARR record publishing: coordinator announces .onion address, round parameters, status to DHT
 - [ ] PKARR discovery: client finds coordinators via DHT lookup or direct .onion address
-- [ ] Tor-native: coordinator runs as Tor hidden service via arti-client, no clearnet endpoint in production
 - [ ] Docker Compose stack: bitcoind + coordinator + liquidity bot, zero to CoinJoin in 5 minutes
 - [ ] Liquidity bot: auto-joins rounds on signet for testing and cold-start
 - [ ] All round state zeroed from memory after transaction broadcast
 - [ ] No logging of PII, IP addresses, or input-output mappings
 - [ ] Integration tests: full round (3+ participants), blame protocol, adversarial scenarios on signet
-- [ ] Pre-built binaries via GitHub Releases, Docker images via ghcr.io
 
 ### Out of Scope
 
@@ -67,7 +66,7 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 |----------|-----------|---------|
 | RSA blind signatures (RFC 9474) over WabiSabi | WabiSabi lacks production Rust implementation; RSA blind sigs are proven (Wasabi v1) | — Pending |
 | Approach B: Prove-Then-Layer build order | Get a txid on signet first, layer Tor/PKARR after; isolates protocol bugs from network bugs | — Pending |
-| arti-client for native Tor hidden services | Arti 2.0.0 stable; avoids separate Tor process dependency; Sprint 0 PoC to verify | — Pending |
+| arti-client for native Tor hidden services | Arti 2.0.0 stable; avoids separate Tor process dependency; Sprint 0 PoC to verify | Validated Phase 5 |
 | BIP-322 for UTXO ownership proofs | Forward compatible with all address types (P2WPKH, P2TR) | — Pending |
 | bitcoincore-rpc for coordinator, bdk for client | Coordinator doesn't need wallet ops; client needs key management and PSBT signing | — Pending |
 | PKARR for coordinator discovery | Decentralized; makes coordinators replaceable; no hardcoded addresses | — Pending |
@@ -91,4 +90,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-07 after initialization*
+*Last updated: 2026-04-09 after Phase 5 (Tor & Release) completion*
