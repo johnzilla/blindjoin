@@ -91,9 +91,9 @@ pub async fn register_input(
                 message: "UTXO already registered in this round".into(),
                 round_id: Some(round_id_str.to_string()),
             },
-            UtxoError::InsufficientValue { value, required } => ApiError {
+            UtxoError::InsufficientValue { value: _, required } => ApiError {
                 code: ErrorCode::UtxoInsufficientValue,
-                message: format!("UTXO value {value} sats < required {required} sats"),
+                message: format!("UTXO value below required threshold of {required} sats"),
                 round_id: Some(round_id_str.to_string()),
             },
             UtxoError::InvalidProof { reason } => ApiError {
