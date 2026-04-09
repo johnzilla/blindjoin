@@ -11,6 +11,9 @@ pub struct InputRegState {
     pub message_bytes: [u8; 32],
     pub output_script: bitcoin::ScriptBuf,
     pub unblinded_sig: blind_rsa_signatures::Signature,
+    /// SHA-256 of the coordinator RSA public key DER bytes at input registration time.
+    /// Used during output registration to detect coordinator key rotation (T-05-01).
+    pub pk_hash_at_registration: [u8; 32],
 }
 
 impl InputRegState {

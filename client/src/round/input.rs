@@ -90,6 +90,7 @@ pub async fn register_input(
         message_bytes,
         output_script,
         unblinded_sig: sig,
+        pk_hash_at_registration: pk_hash_actual,
     })
 }
 
