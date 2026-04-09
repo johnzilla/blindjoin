@@ -13,7 +13,7 @@ blindjoin builds in five coarse phases following Approach B (Prove-Then-Layer): 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Protocol** - Coordinator completes a real CoinJoin round on signet (clearnet transport) (completed 2026-04-09)
-- [ ] **Phase 2: Blame & Hardening** - Non-signers detected, banned, round restarts; memory zeroed; adversarial tests pass
+- [x] **Phase 2: Blame & Hardening** - Non-signers detected, banned, round restarts; memory zeroed; adversarial tests pass (completed 2026-04-09)
 - [ ] **Phase 3: Client CLI** - End-to-end round participation from a standalone CLI tool on signet
 - [ ] **Phase 4: Discovery & Deployment** - PKARR DHT discovery live; Docker Compose stack goes from zero to round in 5 minutes
 - [ ] **Phase 5: Tor & Release** - Coordinator runs as Tor hidden service; pre-built binaries and Docker images published
@@ -54,7 +54,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md — BanList module, non-signer and missing-output detection, ban check in input registration
 - [x] 02-02-PLAN.md — Ban file persistence (append-only JSONL), signing/output-reg timeout wired to blame + round restart
-- [ ] 02-03-PLAN.md — Signing unit tests (TEST-06), zeroize confirmation (PRIV-01), blame unit tests (TEST-07), blame integration test
+- [x] 02-03-PLAN.md — Signing unit tests (TEST-06), zeroize confirmation (PRIV-01), blame unit tests (TEST-07), blame integration test
 
 ### Phase 3: Client CLI
 **Goal**: A user can run a single CLI binary to discover a coordinator by direct address, participate in a complete CoinJoin round using bdk_wallet, and verify the transaction before signing
@@ -96,7 +96,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Protocol | 6/6 | Complete    | 2026-04-09 |
-| 2. Blame & Hardening | 2/3 | In Progress|  |
+| 2. Blame & Hardening | 3/3 | Complete   | 2026-04-09 |
 | 3. Client CLI | 0/TBD | Not started | - |
 | 4. Discovery & Deployment | 0/TBD | Not started | - |
 | 5. Tor & Release | 0/TBD | Not started | - |

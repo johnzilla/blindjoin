@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-blame-hardening/02-02-PLAN.md
-last_updated: "2026-04-09T13:37:34.054Z"
+status: verifying
+stopped_at: Completed 02-blame-hardening/02-03-PLAN.md
+last_updated: "2026-04-09T13:45:11.020Z"
 last_activity: 2026-04-09
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
-  percent: 89
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-07)
 
 Phase: 2 (Blame & Hardening) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-09
 
 Progress: [░░░░░░░░░░] 0%
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-core-protocol P06 | 32172 | 2 tasks | 7 files |
 | Phase 02-blame-hardening P01 | 123 | 2 tasks | 5 files |
 | Phase 02-blame-hardening P02 | 4 | 2 tasks | 7 files |
+| Phase 02-blame-hardening P03 | 4 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase 02-blame-hardening]: on_signing_timeout and BlameOutcome placed in blame.rs not signing.rs — avoids import cycle, keeps blame logic co-located
 - [Phase 02-blame-hardening]: build_router_with_ban_list() added alongside build_router() — integration tests unchanged, startup uses pre-loaded ban list
 - [Phase 02-blame-hardening]: blame_round_count stored as Arc<AtomicU32> in AppState — shared between timer tasks without additional lock contention
+- [Phase 02-blame-hardening]: Blame unit tests (TEST-07) placed in signing.rs test block using crate::round::blame imports — avoids import cycle, keeps blame logic co-located
+- [Phase 02-blame-hardening]: OutputReg→Blame FSM transition added to can_transition_to — on_output_reg_timeout was silently failing without this edge
+- [Phase 02-blame-hardening]: Integration blame test uses shared Arc<RwLock<BanList>> for direct assertion — faster than HTTP retry, tests same production ban path
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T13:37:34.051Z
-Stopped at: Completed 02-blame-hardening/02-02-PLAN.md
+Last session: 2026-04-09T13:45:11.017Z
+Stopped at: Completed 02-blame-hardening/02-03-PLAN.md
 Resume file: None

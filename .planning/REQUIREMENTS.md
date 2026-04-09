@@ -55,7 +55,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Privacy & Security
 
-- [ ] **PRIV-01**: All round state zeroed from memory after transaction broadcast (zeroize crate, ZeroizeOnDrop on all round-state structs)
+- [x] **PRIV-01**: All round state zeroed from memory after transaction broadcast (zeroize crate, ZeroizeOnDrop on all round-state structs)
 - [x] **PRIV-02**: No logging of PII, IP addresses, or input-output mappings
 - [ ] **PRIV-03**: Coordinator runs as Tor hidden service via arti-client (no clearnet endpoint in production)
 - [x] **PRIV-04**: Polling GET /info at 5s intervals for phase notifications (Tor-safe, no persistent connections)
@@ -82,7 +82,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **TEST-04**: Unit tests for output registration (replay token, wrong denomination, invalid sig, late)
 - [x] **TEST-05**: Unit tests for TX construction (valid, equal outputs, fee calc, change, dust)
 - [x] **TEST-06**: Unit tests for signing (valid sig, invalid sig, wrong outpoint)
-- [ ] **TEST-07**: Unit tests for blame (non-signer, missing output, ban expiry, restart)
+- [x] **TEST-07**: Unit tests for blame (non-signer, missing output, ban expiry, restart)
 - [x] **TEST-08**: Unit tests for protocol message serialization round-trip and forward compat
 - [ ] **TEST-09**: Integration test: 3+ clients complete CoinJoin on signet, TX confirms
 - [ ] **TEST-10**: Integration test: blame protocol (non-signer detected, banned, round restarts)
@@ -158,7 +158,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | CLI-03 | Phase 3 | Pending |
 | CLI-04 | Phase 3 | Pending |
 | CLI-05 | Phase 5 | Pending |
-| PRIV-01 | Phase 2 | Pending |
+| PRIV-01 | Phase 2 | Complete |
 | PRIV-02 | Phase 1 | Complete |
 | PRIV-03 | Phase 5 | Pending |
 | PRIV-04 | Phase 1 | Complete |
@@ -176,7 +176,7 @@ Deferred to future release. Tracked but not in current roadmap.
 | TEST-04 | Phase 1 | Complete |
 | TEST-05 | Phase 1 | Complete |
 | TEST-06 | Phase 1 | Complete |
-| TEST-07 | Phase 2 | Pending |
+| TEST-07 | Phase 2 | Complete |
 | TEST-08 | Phase 1 | Complete |
 | TEST-09 | Phase 3 | Pending |
 | TEST-10 | Phase 3 | Pending |
