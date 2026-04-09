@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-blame-hardening/02-01-PLAN.md
-last_updated: "2026-04-09T13:31:49.384Z"
+stopped_at: Completed 02-blame-hardening/02-02-PLAN.md
+last_updated: "2026-04-09T13:37:34.054Z"
 last_activity: 2026-04-09
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
-  percent: 78
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-07)
 ## Current Position
 
 Phase: 2 (Blame & Hardening) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-04-09
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 01-core-protocol P06 | 32172 | 2 tasks | 7 files |
 | Phase 02-blame-hardening P01 | 123 | 2 tasks | 5 files |
+| Phase 02-blame-hardening P02 | 4 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Recent decisions affecting current work:
 - [Phase 01-core-protocol]: Coordinator pre-initialized in InputReg state for integration tests — no admin HTTP endpoint needed
 - [Phase 02-blame-hardening]: Ban check placed at handler layer (not input_reg.rs logic layer) — consistent with how phase checks work in post_input
 - [Phase 02-blame-hardening]: BanList stored in AppState not RoundStateInner — must survive round transitions and state zeroing
+- [Phase 02-blame-hardening]: on_signing_timeout and BlameOutcome placed in blame.rs not signing.rs — avoids import cycle, keeps blame logic co-located
+- [Phase 02-blame-hardening]: build_router_with_ban_list() added alongside build_router() — integration tests unchanged, startup uses pre-loaded ban list
+- [Phase 02-blame-hardening]: blame_round_count stored as Arc<AtomicU32> in AppState — shared between timer tasks without additional lock contention
 
 ### Pending Todos
 
@@ -90,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T13:31:49.381Z
-Stopped at: Completed 02-blame-hardening/02-01-PLAN.md
+Last session: 2026-04-09T13:37:34.051Z
+Stopped at: Completed 02-blame-hardening/02-02-PLAN.md
 Resume file: None

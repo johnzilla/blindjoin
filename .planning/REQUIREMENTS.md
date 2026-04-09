@@ -30,9 +30,9 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **BLAME-01**: Non-signer detection: identify which UTXOs did not provide signatures after signing timeout
 - [x] **BLAME-02**: Missing output detection: identify participants who registered input but never registered output
 - [x] **BLAME-03**: Temporary UTXO ban after misbehavior (configurable duration, default 1 hour)
-- [ ] **BLAME-04**: Round restart with remaining participants after blame
-- [ ] **BLAME-05**: Append-only ban file persistence (UTXO hashes + timestamps, survives coordinator restarts)
-- [ ] **BLAME-06**: Ban expiry: banned UTXOs can rejoin after ban duration
+- [x] **BLAME-04**: Round restart with remaining participants after blame
+- [x] **BLAME-05**: Append-only ban file persistence (UTXO hashes + timestamps, survives coordinator restarts)
+- [x] **BLAME-06**: Ban expiry: banned UTXOs can rejoin after ban duration
 
 ### Transaction Construction
 
@@ -142,9 +142,9 @@ Deferred to future release. Tracked but not in current roadmap.
 | BLAME-01 | Phase 2 | Complete |
 | BLAME-02 | Phase 2 | Complete |
 | BLAME-03 | Phase 2 | Complete |
-| BLAME-04 | Phase 2 | Pending |
-| BLAME-05 | Phase 2 | Pending |
-| BLAME-06 | Phase 2 | Pending |
+| BLAME-04 | Phase 2 | Complete |
+| BLAME-05 | Phase 2 | Complete |
+| BLAME-06 | Phase 2 | Complete |
 | TX-01 | Phase 1 | Complete |
 | TX-02 | Phase 1 | Complete |
 | TX-03 | Phase 1 | Complete |
