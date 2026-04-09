@@ -206,11 +206,12 @@ async fn handle_socks5(
             String::from_utf8(name).context("Invalid UTF-8 in SOCKS5 hostname")?
         }
         0x04 => {
-            // IPv6
+            // IPv6 — use plain address string without brackets so that arti's
+            // IntoTorAddr parser accepts it. The bracketed URI form ([::1]) is
+            // not guaranteed to be accepted by arti's host:port string parser.
             let mut ipv6 = [0u8; 16];
             stream.read_exact(&mut ipv6).await?;
-            let addr = std::net::Ipv6Addr::from(ipv6);
-            format!("[{addr}]")
+            std::net::Ipv6Addr::from(ipv6).to_string()
         }
         other => {
             anyhow::bail!("Unsupported SOCKS5 address type: 0x{other:02x}");
