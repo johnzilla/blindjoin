@@ -7,6 +7,10 @@ edition = "2021"
 name = "client"
 path = "src/main.rs"
 
+[lib]
+name = "client"
+path = "src/lib.rs"
+
 [dependencies]
 shared = { path = "../shared" }
 blind-rsa-signatures = { workspace = true }

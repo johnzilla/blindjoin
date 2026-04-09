@@ -487,9 +487,15 @@ pub async fn post_sign(
 }
 
 /// Parse an address string to ScriptBuf (best-effort; falls back to empty script).
+/// Tries all supported networks including Regtest (required for integration tests).
 fn parse_address_to_script(addr_str: &str) -> ScriptBuf {
     use std::str::FromStr;
-    for network in [bitcoin::Network::Signet, bitcoin::Network::Bitcoin, bitcoin::Network::Testnet] {
+    for network in [
+        bitcoin::Network::Signet,
+        bitcoin::Network::Bitcoin,
+        bitcoin::Network::Testnet,
+        bitcoin::Network::Regtest,
+    ] {
         if let Ok(addr) = bitcoin::Address::from_str(addr_str)
             .and_then(|a| a.require_network(network).map_err(bitcoin::address::ParseError::from))
         {

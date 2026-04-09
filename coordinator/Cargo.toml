@@ -35,3 +35,13 @@ tower = { workspace = true }
 tower-http = { version = "0.6", features = ["limit"] }
 base64 = "0.22"
 anyhow = "1"
+
+[dev-dependencies]
+corepc-node = "0.10"
+client = { path = "../client" }
+shared = { path = "../shared" }
+reqwest = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "../tests/integration/mod.rs"
