@@ -49,7 +49,12 @@ Plans:
   2. A participant that registers an input but never registers an output is detected and handled identically to a non-signer
   3. Banned UTXOs survive coordinator restart (append-only ban file) and are rejected on next registration attempt; after ban expiry they can rejoin
   4. After a round completes or blame fires, no round-state struct containing keys, tokens, or mappings remains in process memory (zeroize confirmed by unit test)
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — BanList module, non-signer and missing-output detection, ban check in input registration
+- [ ] 02-02-PLAN.md — Ban file persistence (append-only JSONL), signing/output-reg timeout wired to blame + round restart
+- [ ] 02-03-PLAN.md — Signing unit tests (TEST-06), zeroize confirmation (PRIV-01), blame unit tests (TEST-07), blame integration test
 
 ### Phase 3: Client CLI
 **Goal**: A user can run a single CLI binary to discover a coordinator by direct address, participate in a complete CoinJoin round using bdk_wallet, and verify the transaction before signing
