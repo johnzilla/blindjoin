@@ -95,7 +95,12 @@ Plans:
   2. The client uses a distinct Tor circuit for input registration and a different circuit for output registration (verified by integration test against a logging Tor relay)
   3. GitHub Releases contains downloadable Linux and macOS binaries produced by GitHub Actions CI
   4. ghcr.io hosts a coordinator Docker image that passes a signet smoke test after docker pull
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — arti-client 0.41 deps + coordinator/src/network/tor.rs glue + tor_mode config flag + main.rs TCP-vs-Tor gate (Wave 1)
+- [ ] 05-02-PLAN.md — Client Tor circuit isolation: TorHandle with isolated_client(), CoordinatorClient::new_tor(), --tor CLI flag (Wave 1)
+- [ ] 05-03-PLAN.md — GitHub Actions: release.yml (4-target binary cross-compile) + docker.yml (multi-arch GHCR push) + Dockerfile.client (Wave 1)
 
 ## Progress
 
@@ -108,4 +113,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
 | 3. Client CLI | 2/2 | Complete    | 2026-04-09 |
 | 4. Discovery & Deployment | 3/3 | Complete    | 2026-04-09 |
-| 5. Tor & Release | 0/TBD | Not started | - |
+| 5. Tor & Release | 0/3 | Not started | - |
