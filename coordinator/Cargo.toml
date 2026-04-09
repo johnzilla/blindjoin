@@ -35,7 +35,8 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { version = "0.6", features = ["limit"] }
 base64 = "0.22"
-anyhow = "1"
+anyhow = { workspace = true }
+pkarr = { workspace = true }
 
 [dev-dependencies]
 corepc-node = "0.10"

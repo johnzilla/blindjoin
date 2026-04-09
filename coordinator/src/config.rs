@@ -31,9 +31,48 @@ fn default_ban_file_path() -> String {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct DiscoveryConfig {
+    /// Path to persist Ed25519 PKARR keypair. Coordinator stable identity.
+    #[serde(default = "default_pkarr_key_file")]
+    pub pkarr_key_file: String,
+    /// Re-publish PKARR record interval in seconds. Default 300 (5 min).
+    #[serde(default = "default_heartbeat_interval_secs")]
+    pub heartbeat_interval_secs: u64,
+    /// Coordinator's publicly reachable address published in PKARR record.
+    /// In Phase 4 (clearnet) this is e.g. "127.0.0.1:8080".
+    /// In Phase 5 this will be replaced by the actual .onion address.
+    #[serde(default = "default_coordinator_public_addr")]
+    pub coordinator_public_addr: String,
+}
+
+fn default_pkarr_key_file() -> String {
+    "coordinator_pkarr.key".to_string()
+}
+
+fn default_heartbeat_interval_secs() -> u64 {
+    300
+}
+
+fn default_coordinator_public_addr() -> String {
+    "127.0.0.1:8080".to_string()
+}
+
+impl Default for DiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            pkarr_key_file: default_pkarr_key_file(),
+            heartbeat_interval_secs: default_heartbeat_interval_secs(),
+            coordinator_public_addr: default_coordinator_public_addr(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct CoordinatorConfig {
     pub network: NetworkConfig,
     pub coordinator: CoordinatorSection,
+    #[serde(default)]
+    pub discovery: DiscoveryConfig,
 }
 
 impl CoordinatorConfig {
@@ -74,6 +113,7 @@ impl CoordinatorConfig {
                 listen_addr: "127.0.0.1:8080".into(),
                 ban_file_path: "ban_list.jsonl".into(),
             },
+            discovery: DiscoveryConfig::default(),
         }
     }
 }

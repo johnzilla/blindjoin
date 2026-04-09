@@ -3,6 +3,7 @@ pub mod config;
 
 mod api;
 mod blind;
+mod discovery;
 mod round;
 
 use std::sync::Arc;
@@ -46,6 +47,35 @@ async fn main() -> anyhow::Result<()> {
         cfg.network.bitcoin_rpc_pass.clone(),
     );
     startup_health_check(&rpc).await?;
+
+    // Initialize PKARR keypair and publisher (DISC-01, DISC-03)
+    let pkarr_keypair = discovery::pkarr_pub::load_or_generate_keypair(
+        &cfg.discovery.pkarr_key_file,
+    )?;
+    info!(
+        pubkey = %pkarr_keypair.public_key().to_z32(),
+        "PKARR identity ready — share this key with clients"
+    );
+    let publisher = Arc::new(
+        discovery::pkarr_pub::PkarrPublisher::new(pkarr_keypair.clone())?,
+    );
+
+    // Publish initial record immediately (best-effort; coordinator is "idle" at startup)
+    {
+        let p = Arc::clone(&publisher);
+        let addr = cfg.discovery.coordinator_public_addr.clone();
+        let denom = cfg.coordinator.denomination_sats;
+        let min_p = cfg.coordinator.min_participants;
+        if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
+            &pkarr_keypair, &addr, denom, min_p, "idle",
+        ) {
+            tokio::spawn(async move {
+                if let Err(e) = p.publish_record(packet).await {
+                    tracing::warn!("Initial PKARR publish failed: {e}");
+                }
+            });
+        }
+    }
 
     // Initialize shared round state
     let round_state: Arc<RwLock<RoundState>> = Arc::new(RwLock::new(RoundState::new_idle()));
@@ -123,6 +153,40 @@ async fn main() -> anyhow::Result<()> {
             }
 
             round::output_reg::on_output_reg_timeout(&mut round);
+        });
+    }
+
+    // Spawn PKARR heartbeat task — re-publishes every heartbeat_interval_secs (DISC-03).
+    // Reads current round phase so the published status stays current.
+    {
+        let p = Arc::clone(&publisher);
+        let round_clone = Arc::clone(&round_state);
+        let keypair = pkarr_keypair.clone();
+        let addr = cfg.discovery.coordinator_public_addr.clone();
+        let denom = cfg.coordinator.denomination_sats;
+        let min_p = cfg.coordinator.min_participants;
+        let interval_secs = cfg.discovery.heartbeat_interval_secs;
+
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(
+                Duration::from_secs(interval_secs),
+            );
+            loop {
+                ticker.tick().await;
+                let status = {
+                    let round = round_clone.read().await;
+                    round.phase.as_str().to_string()
+                };
+                if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
+                    &keypair, &addr, denom, min_p, &status,
+                ) {
+                    if let Err(e) = p.publish_record(packet).await {
+                        tracing::warn!("PKARR heartbeat publish failed: {e}");
+                    } else {
+                        tracing::debug!(status, "PKARR heartbeat published");
+                    }
+                }
+            }
         });
     }
 
