@@ -52,7 +52,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — BanList module, non-signer and missing-output detection, ban check in input registration
+- [x] 02-01-PLAN.md — BanList module, non-signer and missing-output detection, ban check in input registration
 - [ ] 02-02-PLAN.md — Ban file persistence (append-only JSONL), signing/output-reg timeout wired to blame + round restart
 - [ ] 02-03-PLAN.md — Signing unit tests (TEST-06), zeroize confirmation (PRIV-01), blame unit tests (TEST-07), blame integration test
 
@@ -96,7 +96,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Protocol | 6/6 | Complete    | 2026-04-09 |
-| 2. Blame & Hardening | 0/TBD | Not started | - |
+| 2. Blame & Hardening | 1/3 | In Progress|  |
 | 3. Client CLI | 0/TBD | Not started | - |
 | 4. Discovery & Deployment | 0/TBD | Not started | - |
 | 5. Tor & Release | 0/TBD | Not started | - |

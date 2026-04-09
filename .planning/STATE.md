@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-core-protocol/01-06-PLAN.md — Phase 1 complete
-last_updated: "2026-04-09T13:26:50.558Z"
-last_activity: 2026-04-09 -- Phase 2 planning complete
+stopped_at: Completed 02-blame-hardening/02-01-PLAN.md
+last_updated: "2026-04-09T13:31:49.384Z"
+last_activity: 2026-04-09
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
-  percent: 67
+  completed_plans: 7
+  percent: 78
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 1 — Core Protocol
+**Current focus:** Phase 2 — Blame & Hardening
 
 ## Current Position
 
-Phase: 2 of 5 (blame & hardening)
-Plan: Not started
+Phase: 2 (Blame & Hardening) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-04-09 -- Phase 2 planning complete
+Last activity: 2026-04-09
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01-core-protocol P06 | 32172 | 2 tasks | 7 files |
+| Phase 02-blame-hardening P01 | 123 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Recent decisions affecting current work:
 - [Phase 01-core-protocol]: Integration test placed under coordinator crate: virtual workspaces cannot have [[test]] targets
 - [Phase 01-core-protocol]: parse_address_to_script extended to include Regtest network in handlers.rs and signing.rs
 - [Phase 01-core-protocol]: Coordinator pre-initialized in InputReg state for integration tests — no admin HTTP endpoint needed
+- [Phase 02-blame-hardening]: Ban check placed at handler layer (not input_reg.rs logic layer) — consistent with how phase checks work in post_input
+- [Phase 02-blame-hardening]: BanList stored in AppState not RoundStateInner — must survive round transitions and state zeroing
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-09T12:00:35.243Z
-Stopped at: Completed 01-core-protocol/01-06-PLAN.md — Phase 1 complete
+Last session: 2026-04-09T13:31:49.381Z
+Stopped at: Completed 02-blame-hardening/02-01-PLAN.md
 Resume file: None
