@@ -57,7 +57,11 @@ pub async fn validate_utxo(
 
     // 3. Value check (UTXO-02)
     // corepc_types GetTxOut (v17/v26) has value as f64 BTC; convert to sats
-    let value_sats = (txout.value * 100_000_000.0).round() as u64;
+    // Use bitcoin::Amount::from_btc for correct decimal-to-satoshi conversion
+    // without floating-point truncation errors.
+    let value_sats = bitcoin::Amount::from_btc(txout.value)
+        .map_err(|e| UtxoError::InvalidProof { reason: format!("BTC amount parse: {e}") })?
+        .to_sat();
     let required = denomination_sats + fee_share_sats;
     if value_sats < required {
         return Err(UtxoError::InsufficientValue { value: value_sats, required });
