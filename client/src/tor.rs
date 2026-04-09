@@ -164,7 +164,10 @@ async fn handle_socks5(
     // Client: \x05 <nmethods> <methods...>
     let mut buf = [0u8; 2];
     stream.read_exact(&mut buf).await?;
-    let _version = buf[0]; // 0x05
+    let version = buf[0];
+    if version != 0x05 {
+        anyhow::bail!("Unsupported SOCKS version: 0x{version:02x} (expected 0x05)");
+    }
     let nmethods = buf[1] as usize;
     let mut methods = vec![0u8; nmethods];
     stream.read_exact(&mut methods).await?;
@@ -179,6 +182,12 @@ async fn handle_socks5(
     // req_hdr[1] = cmd (0x01 = CONNECT)
     // req_hdr[2] = 0x00 (reserved)
     // req_hdr[3] = atyp
+    let cmd = req_hdr[1];
+    if cmd != 0x01 {
+        // Send SOCKS5 error reply: command not supported (0x07)
+        stream.write_all(&[0x05, 0x07, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]).await?;
+        anyhow::bail!("Unsupported SOCKS5 command: 0x{cmd:02x} (only CONNECT 0x01 is supported)");
+    }
     let atyp = req_hdr[3];
 
     let target_host: String = match atyp {
