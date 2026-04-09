@@ -96,7 +96,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Protocol | 6/6 | Complete    | 2026-04-09 |
-| 2. Blame & Hardening | 3/3 | Complete   | 2026-04-09 |
+| 2. Blame & Hardening | 3/3 | Complete    | 2026-04-09 |
 | 3. Client CLI | 0/TBD | Not started | - |
 | 4. Discovery & Deployment | 0/TBD | Not started | - |
 | 5. Tor & Release | 0/TBD | Not started | - |
