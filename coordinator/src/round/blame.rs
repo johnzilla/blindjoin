@@ -168,6 +168,67 @@ pub fn now_unix_secs() -> u64 {
         .as_secs()
 }
 
+/// Outcome returned by on_signing_timeout, consumed by the caller in main.rs.
+pub enum BlameOutcome {
+    /// Round aborted — coordinator returns to Idle without restart.
+    FullAbort,
+    /// Round should restart excluding the listed UTXOs.
+    RestartWithout { banned_utxos: Vec<String> },
+}
+
+/// Called when the signing timeout fires. Detects non-signers, bans them,
+/// appends to ban file, and transitions Signing→Blame→Idle.
+///
+/// `ban_list` is the &mut BanList from AppState (caller holds write lock).
+/// `blame_round_count` is the current consecutive-blame count; if it reaches 2,
+/// triggers FullAbort per Pitfall 3 in PITFALLS.md (T-02-07).
+/// `ban_file_path` is from config (BLAME-05).
+///
+/// BLAME-01, BLAME-04.
+pub fn on_signing_timeout(
+    state: &mut crate::round::state::RoundState,
+    ban_list: &mut BanList,
+    ban_file_path: &str,
+    ban_duration_secs: u64,
+    blame_round_count: u32,
+) -> BlameOutcome {
+    use crate::round::state::Phase;
+
+    let non_signers = if let Some(inner) = &state.inner {
+        detect_non_signers(&inner.registered_inputs, &inner.partial_sigs)
+    } else {
+        vec![]
+    };
+
+    let now = now_unix_secs();
+    let ban_duration = Duration::from_secs(ban_duration_secs);
+
+    for utxo_str in &non_signers {
+        ban_list.ban(utxo_str, now, ban_duration);
+        let entry = BanEntry { banned_at: now, expires_at: now + ban_duration_secs };
+        if let Err(e) = append_ban_entry(ban_file_path, utxo_str, &entry) {
+            tracing::warn!(ban_file = ban_file_path, "Failed to append ban entry: {e}");
+        }
+    }
+
+    // Transition Signing→Blame→Idle (zeroes round state)
+    let _ = state.transition_to(Phase::Blame);
+    let _ = state.transition_to(Phase::Idle);
+
+    // Per Pitfall 3 in PITFALLS.md: cap consecutive blame rounds at 2 (T-02-07)
+    if blame_round_count >= 2 {
+        tracing::warn!("blame round cap reached — full round abort");
+        return BlameOutcome::FullAbort;
+    }
+
+    if non_signers.is_empty() {
+        // Signing timeout fired but nobody was missing — full abort (no restart benefit)
+        BlameOutcome::FullAbort
+    } else {
+        BlameOutcome::RestartWithout { banned_utxos: non_signers }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,41 @@
 use shared::errors::{ApiError, ErrorCode};
 use crate::blind::rsa::BjPublicKey;
+use crate::round::state::RoundState;
 use blind_rsa_signatures::{MessageRandomizer, Signature};
+
+/// Outcome returned by on_output_reg_timeout.
+pub enum OutputRegOutcome {
+    /// All outputs registered — advance to Signing phase.
+    AdvanceToSigning,
+    /// Outputs missing — transition Blame→Idle and restart.
+    BlameRestart,
+}
+
+/// Called when the output registration timeout fires.
+/// If all participants registered outputs, advance to Signing.
+/// If any outputs are missing, blame and restart (missing outputs are anonymous — no individual banning).
+/// BLAME-02, BLAME-04.
+pub fn on_output_reg_timeout(state: &mut RoundState) -> OutputRegOutcome {
+    use crate::round::blame::has_missing_outputs;
+    use crate::round::state::Phase;
+
+    let (input_count, output_count) = if let Some(inner) = &state.inner {
+        (inner.registered_inputs.len(), inner.registered_outputs.len())
+    } else {
+        (0, 0)
+    };
+
+    if has_missing_outputs(input_count, output_count) {
+        // Cannot ban individually (outputs are anonymous). Blame→Idle, restart.
+        let _ = state.transition_to(Phase::Blame);
+        let _ = state.transition_to(Phase::Idle);
+        return OutputRegOutcome::BlameRestart;
+    }
+
+    // All outputs present — advance to Signing
+    let _ = state.transition_to(Phase::Signing);
+    OutputRegOutcome::AdvanceToSigning
+}
 
 /// Pure output registration logic — callable from tests without axum/state machinery.
 ///
