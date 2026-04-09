@@ -51,7 +51,7 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 - **No Rust implementation:** Existing CoinJoin implementations are C# (Wasabi) and Python (JoinMarket). This is the first Rust coordinator.
 - **PKARR as novel contribution:** The round protocol is battle-tested (Wasabi v1). The PKARR discovery layer making coordinators disposable and replaceable is the thesis.
 - **Dependency maturity:** Arti 2.0.0 (Feb 2026) stabilized Tor hidden services in Rust. blind-rsa-signatures by jedisct1 is RFC 9474 compliant.
-- **Builder background:** Owner has Rust + Bitcoin experience (vaultwarden treasury service with Cashu ecash + Lightning).
+- **Builder background:** Owner has Rust + Bitcoin experience (arbstr-vault treasury service with Cashu ecash + Lightning).
 
 ## Constraints
 
