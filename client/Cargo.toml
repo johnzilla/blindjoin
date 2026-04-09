@@ -29,5 +29,6 @@ uuid = { workspace = true }
 bdk_wallet = { workspace = true }
 anyhow = "1"
 base64 = "0.22"
+pkarr = { workspace = true }
 hex = { workspace = true }
 rand = "0.8"

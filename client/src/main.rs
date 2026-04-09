@@ -2,6 +2,7 @@ use clap::Parser;
 use tracing::info;
 
 mod config;
+mod discover;
 mod http;
 mod round;
 mod wallet;
@@ -51,7 +52,16 @@ async fn main() -> anyhow::Result<()> {
         ClientWallet::from_wif(wif, utxo, utxo_value_sats, network)?
     };
 
-    let client = CoordinatorClient::new(cfg.coordinator_url.clone());
+    // CLI-01: If --pkarr-pubkey is provided, resolve coordinator URL from DHT.
+    let coordinator_url = if let Some(ref pkarr_key) = cfg.pkarr_pubkey {
+        let info = discover::discover_coordinator(pkarr_key)
+            .await
+            .map_err(|e| anyhow::anyhow!("PKARR discovery failed: {e}"))?;
+        info.coordinator_url
+    } else {
+        cfg.coordinator_url.clone()
+    };
+    let client = CoordinatorClient::new(coordinator_url);
 
     info!("Polling for INPUT_REG phase");
     let info = client.poll_until_phase("input_reg", cfg.poll_interval_ms).await?;

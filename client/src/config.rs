@@ -42,4 +42,9 @@ pub struct ClientConfig {
     /// Polling interval in milliseconds for GET /info
     #[arg(long, default_value_t = 1000)]
     pub poll_interval_ms: u64,
+
+    /// Discover coordinator via PKARR DHT using a public key (z32 format, starts with "pk:").
+    /// If set, overrides --coordinator-url with the resolved endpoint.
+    #[arg(long, env = "BLINDJOIN_PKARR_PUBKEY")]
+    pub pkarr_pubkey: Option<String>,
 }
