@@ -1,0 +1,3 @@
+mod strategy;
+
+fn main() {}

@@ -1,5 +1,5 @@
 [workspace]
-members = ["coordinator", "client", "shared"]
+members = ["coordinator", "client", "shared", "liquidity-bot"]
 resolver = "2"
 
 [workspace.dependencies]

@@ -1,0 +1,17 @@
+[package]
+name = "liquidity-bot"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "liquidity-bot"
+path = "src/main.rs"
+
+[dependencies]
+client = { path = "../client" }
+shared = { path = "../shared" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+bitcoin = { workspace = true }
