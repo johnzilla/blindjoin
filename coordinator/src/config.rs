@@ -20,6 +20,14 @@ pub struct CoordinatorSection {
     pub blame_ban_duration_secs: u64,
     pub fee_rate_sat_per_vbyte: u64,
     pub listen_addr: String,          // e.g. "0.0.0.0:8080"
+    /// Path to the append-only ban file. Defaults to "ban_list.jsonl".
+    /// BLAME-05: persists ban records across coordinator restarts.
+    #[serde(default = "default_ban_file_path")]
+    pub ban_file_path: String,
+}
+
+fn default_ban_file_path() -> String {
+    "ban_list.jsonl".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -64,6 +72,7 @@ impl CoordinatorConfig {
                 blame_ban_duration_secs: 3600,
                 fee_rate_sat_per_vbyte: 2,
                 listen_addr: "127.0.0.1:8080".into(),
+                ban_file_path: "ban_list.jsonl".into(),
             },
         }
     }

@@ -86,6 +86,7 @@ async fn spawn_coordinator(
             blame_ban_duration_secs: 60,
             fee_rate_sat_per_vbyte: 1,
             listen_addr: listen_addr.clone(),
+            ban_file_path: "ban_list.jsonl".into(),
         },
     });
 
@@ -461,6 +462,7 @@ async fn coordinator_info_endpoint_fields() {
             blame_ban_duration_secs: 60,
             fee_rate_sat_per_vbyte: 1,
             listen_addr: addr.to_string(),
+            ban_file_path: "ban_list.jsonl".into(),
         },
     });
 

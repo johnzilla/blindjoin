@@ -42,6 +42,7 @@ corepc-node = "0.10"
 client = { path = "../client" }
 shared = { path = "../shared" }
 reqwest = { workspace = true }
+tempfile = "3"
 
 [[test]]
 name = "integration"

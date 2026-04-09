@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use serde::{Deserialize, Serialize};
 
 /// A single ban record stored under SHA-256(utxo outpoint string) hex key in BanList.
 #[derive(Debug, Clone)]
@@ -88,6 +89,77 @@ pub fn has_missing_outputs(
     output_count < input_count
 }
 
+/// On-disk record format (one JSON line per ban event).
+/// utxo_hash = hex(SHA-256(utxo_str.as_bytes())) — raw outpoints are NOT persisted.
+/// This matches the in-memory BanList key format (established in plan 01).
+/// PRIV-02 extension: hashing prevents outpoint disclosure even if the ban file leaks.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BanRecord {
+    pub utxo_hash: String,
+    pub banned_at: u64,
+    pub expires_at: u64,
+}
+
+/// Hash a utxo_str for on-disk storage.
+/// Centralised here so callers never need to hash manually.
+pub fn hash_utxo_str(utxo_str: &str) -> String {
+    use sha2::{Sha256, Digest};
+    hex::encode(Sha256::digest(utxo_str.as_bytes()))
+}
+
+/// Append a single ban record to the ban file (append-only, newline-delimited JSON).
+/// Creates the file if it does not exist.
+/// BLAME-05.
+pub fn append_ban_entry(path: &str, utxo_str: &str, entry: &BanEntry) -> std::io::Result<()> {
+    use std::io::Write;
+    let record = BanRecord {
+        utxo_hash: hash_utxo_str(utxo_str),
+        banned_at: entry.banned_at,
+        expires_at: entry.expires_at,
+    };
+    let line = serde_json::to_string(&record)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{}", line)
+}
+
+/// Load all unexpired ban entries from the ban file.
+/// Returns Ok(vec![]) if the file does not exist (first startup).
+/// Skips unparseable lines with a tracing::warn!.
+/// Returns (utxo_hash, BanEntry) pairs — the hash is stored directly in BanList.load_entry.
+/// BLAME-05, BLAME-06.
+pub fn load_unexpired_entries(path: &str, now_secs: u64) -> std::io::Result<Vec<(String, BanEntry)>> {
+    use std::io::{BufRead, BufReader};
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(e),
+    };
+    let reader = BufReader::new(file);
+    let mut result = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        match serde_json::from_str::<BanRecord>(line) {
+            Ok(record) if now_secs < record.expires_at => {
+                result.push((record.utxo_hash.clone(), BanEntry {
+                    banned_at: record.banned_at,
+                    expires_at: record.expires_at,
+                }));
+            }
+            Ok(_) => {} // expired — skip silently
+            Err(_) => {
+                tracing::warn!("ban_file: skipping unparseable line");
+            }
+        }
+    }
+    Ok(result)
+}
+
 /// Returns the current Unix timestamp in seconds.
 pub fn now_unix_secs() -> u64 {
     SystemTime::now()
@@ -172,5 +244,79 @@ mod tests {
     fn has_missing_outputs_detects_gap() {
         assert!(has_missing_outputs(3, 2));
         assert!(!has_missing_outputs(3, 3));
+    }
+
+    // --- Ban file persistence tests (BLAME-05, BLAME-06) ---
+
+    #[test]
+    fn ban_file_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ban_list.jsonl");
+        let path_str = path.to_str().unwrap();
+
+        let entry1 = BanEntry { banned_at: 1000, expires_at: 5000 };
+        let entry2 = BanEntry { banned_at: 2000, expires_at: 9000 };
+
+        append_ban_entry(path_str, "tx1:0", &entry1).unwrap();
+        append_ban_entry(path_str, "tx2:1", &entry2).unwrap();
+
+        // Load with now=500 (both entries unexpired)
+        let loaded = load_unexpired_entries(path_str, 500).unwrap();
+        assert_eq!(loaded.len(), 2, "Both entries should be loaded");
+
+        // Verify hashes match what hash_utxo_str produces
+        let hash1 = hash_utxo_str("tx1:0");
+        let hash2 = hash_utxo_str("tx2:1");
+        let loaded_hashes: Vec<&str> = loaded.iter().map(|(h, _)| h.as_str()).collect();
+        assert!(loaded_hashes.contains(&hash1.as_str()), "tx1:0 hash must be present");
+        assert!(loaded_hashes.contains(&hash2.as_str()), "tx2:1 hash must be present");
+
+        // Verify BanEntry fields
+        let e1 = loaded.iter().find(|(h, _)| h == &hash1).map(|(_, e)| e).unwrap();
+        assert_eq!(e1.banned_at, 1000);
+        assert_eq!(e1.expires_at, 5000);
+    }
+
+    #[test]
+    fn ban_file_expired_filtered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ban_list.jsonl");
+        let path_str = path.to_str().unwrap();
+
+        // expires_at = 1000; load with now = 2000 → should be filtered
+        let entry = BanEntry { banned_at: 500, expires_at: 1000 };
+        append_ban_entry(path_str, "tx3:0", &entry).unwrap();
+
+        let loaded = load_unexpired_entries(path_str, 2000).unwrap();
+        assert!(loaded.is_empty(), "Expired entry must not be loaded");
+    }
+
+    #[test]
+    fn ban_file_missing_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist.jsonl");
+        let loaded = load_unexpired_entries(nonexistent.to_str().unwrap(), 1000).unwrap();
+        assert!(loaded.is_empty(), "Missing file must return empty vec, not error");
+    }
+
+    #[test]
+    fn ban_file_skips_corrupt_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ban_list.jsonl");
+        let path_str = path.to_str().unwrap();
+
+        // Write a valid entry, then a corrupt line, then another valid entry
+        let good = BanEntry { banned_at: 100, expires_at: 9999 };
+        append_ban_entry(path_str, "tx4:0", &good).unwrap();
+
+        // Manually append a corrupt line
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new().append(true).open(path_str).unwrap();
+        writeln!(f, "{{not valid json}}").unwrap();
+
+        append_ban_entry(path_str, "tx5:0", &good).unwrap();
+
+        let loaded = load_unexpired_entries(path_str, 50).unwrap();
+        assert_eq!(loaded.len(), 2, "Corrupt line must be skipped, valid entries loaded");
     }
 }
