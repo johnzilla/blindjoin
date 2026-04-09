@@ -3,6 +3,7 @@ use tokio::sync::RwLock;
 use axum::{Router, routing::{get, post}};
 use tower_http::limit::RequestBodyLimitLayer;
 use crate::round::state::RoundState;
+use crate::round::blame::BanList;
 use crate::bitcoin::rpc::BitcoinRpc;
 use crate::config::CoordinatorConfig;
 
@@ -14,6 +15,8 @@ pub struct AppState {
     pub round: Arc<RwLock<RoundState>>,
     pub rpc: Arc<BitcoinRpc>,
     pub config: Arc<CoordinatorConfig>,
+    /// In-memory ban list. Survives across rounds. Checked before UTXO validation.
+    pub ban_list: Arc<RwLock<BanList>>,
 }
 
 pub fn build_router(
@@ -21,6 +24,7 @@ pub fn build_router(
     rpc: Arc<BitcoinRpc>,
     config: Arc<CoordinatorConfig>,
 ) -> Router {
+    let ban_list = Arc::new(RwLock::new(BanList::new()));
     Router::new()
         .route("/info", get(handlers::get_info))
         .route("/round/input", post(handlers::post_input))
@@ -28,5 +32,5 @@ pub fn build_router(
         .route("/round/sign", post(handlers::post_sign))
         .route("/round/tx", get(handlers::get_tx))
         .layer(RequestBodyLimitLayer::new(64 * 1024)) // 64KB max request body (T-04-02)
-        .with_state(AppState { round, rpc, config })
+        .with_state(AppState { round, rpc, config, ban_list })
 }

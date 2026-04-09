@@ -98,6 +98,22 @@ pub async fn post_input(
             "blinded_token is not valid base64", None)
     })?;
 
+    // Ban check — fast rejection before acquiring round write lock (T-02-01).
+    // BanList::is_banned hashes the outpoint internally; pass the raw string.
+    // No UTXO identifiers are logged here (PRIV-02).
+    {
+        let ban_guard = state.ban_list.read().await;
+        let now = crate::round::blame::now_unix_secs();
+        if ban_guard.is_banned(&req.utxo_outpoint, now) {
+            return Err(api_error(
+                StatusCode::FORBIDDEN,
+                "UTXO_BANNED",
+                "UTXO is temporarily banned",
+                None,
+            ));
+        }
+    }
+
     // Write lock for state mutation
     let mut guard = state.round.write().await;
 
