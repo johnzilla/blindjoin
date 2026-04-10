@@ -17,6 +17,7 @@ use tracing::info;
 use crate::api::AppState;
 use crate::round::state::Phase;
 use crate::round::input_reg::{register_input, parse_outpoint};
+use crate::blind::rsa::RsaBlindSigner;
 use crate::round::output_reg::register_output_logic;
 use crate::round::signing::{process_sign, SignResult};
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
@@ -113,6 +114,58 @@ pub async fn post_input(
         }
     }
 
+    // Decode ownership proof for pre-lock UTXO validation (AVAIL-01)
+    let ownership_proof = shared::protocol::OwnershipProof::from_json_hex_str(&req.ownership_proof)
+        .map_err(|e| api_error(StatusCode::BAD_REQUEST, "INVALID_PROOF", e, None))?;
+
+    // Build snapshot of registered UTXOs and round config under read lock.
+    // This snapshot may be stale by the time we mutate state — the TOCTOU re-check
+    // inside register_input (under write lock) is the authoritative guard (D-02).
+    let (registered_snapshot, denomination_sats_snap, fee_rate_snap, max_participants_snap, snap_round_id) = {
+        let guard = state.round.read().await;
+        let rid = guard.round_id.to_string();
+        let snap: std::collections::HashSet<bitcoin::OutPoint> = guard.inner.as_ref()
+            .map(|inner| inner.registered_inputs.keys().filter_map(|s| parse_outpoint(s)).collect())
+            .unwrap_or_default();
+        (snap,
+         state.config.coordinator.denomination_sats,
+         state.config.coordinator.fee_rate_sat_per_vbyte,
+         state.config.coordinator.max_participants,
+         rid)
+    };
+
+    // Compute fee share for UTXO value check — use max_participants (pessimistic, WR-06)
+    let fee_share_pre_lock = estimate_fee_share(max_participants_snap, fee_rate_snap);
+
+    // Validate UTXO before acquiring write lock (AVAIL-01: RPC outside write lock).
+    // On failure, return immediately — write lock is never taken for bad UTXOs.
+    crate::bitcoin::utxo::validate_utxo(
+        &state.rpc,
+        &utxo,
+        &registered_snapshot,
+        denomination_sats_snap,
+        fee_share_pre_lock,
+        &ownership_proof,
+        &snap_round_id,
+    ).await.map_err(|e| {
+        use crate::bitcoin::utxo::UtxoError;
+        let (status, code, msg) = match e {
+            UtxoError::NotFound => (StatusCode::BAD_REQUEST, "UTXO_NOT_FOUND",
+                "UTXO not found or already spent".to_string()),
+            UtxoError::AlreadyRegistered => (StatusCode::CONFLICT, "UTXO_ALREADY_REGISTERED",
+                "UTXO already registered in this round".to_string()),
+            UtxoError::InsufficientValue { value: _, required } => (StatusCode::BAD_REQUEST,
+                "UTXO_INSUFFICIENT_VALUE",
+                format!("UTXO value below required threshold of {required} sats")),
+            UtxoError::InvalidProof { reason: _ } => (StatusCode::BAD_REQUEST,
+                "INVALID_PROOF",
+                "BIP-322 ownership proof verification failed".to_string()),
+            UtxoError::RpcUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE,
+                "RPC_UNAVAILABLE", msg),
+        };
+        api_error(status, code, msg, None)
+    })?;
+
     // Write lock for state mutation
     let mut guard = state.round.write().await;
 
@@ -129,8 +182,6 @@ pub async fn post_input(
 
     let round_id = guard.round_id;
     let round_id_str = round_id.to_string();
-    let denomination_sats = state.config.coordinator.denomination_sats;
-    let fee_rate = state.config.coordinator.fee_rate_sat_per_vbyte;
     let max_participants = state.config.coordinator.max_participants;
 
     // Check round not full
@@ -153,21 +204,26 @@ pub async fn post_input(
         ));
     }
 
+    // Extract cached signer DER to reconstruct outside the borrow on guard.inner,
+    // avoiding the immutable-into-mutable borrow conflict (same pattern as AVAIL-02 fix).
+    let signer_der = guard.inner.as_ref().unwrap().rsa_signing_key.clone();
+    let signer = RsaBlindSigner::from_der_secret_key(&signer_der).map_err(|e| {
+        api_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
+            format!("Signer reconstruction failed: {e}"), Some(&round_id_str))
+    })?;
+
+    // Call synchronous register_input under write lock (AVAIL-01: no RPC inside lock)
     let result = register_input(
         &mut guard,
-        &state.rpc,
+        &signer,
         &utxo,
-        &req.ownership_proof,
         &blinded_token_bytes,
         &req.change_address,
-        denomination_sats,
-        fee_rate,
-        max_participants,
         &round_id_str,
-    ).await.map_err(|e| {
+    ).map_err(|e| {
         let status = match e.code {
             shared::errors::ErrorCode::WrongPhase => StatusCode::CONFLICT,
-            shared::errors::ErrorCode::RpcUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            shared::errors::ErrorCode::UtxoAlreadyRegistered => StatusCode::CONFLICT,
             _ => StatusCode::BAD_REQUEST,
         };
         let code_str = serde_json::to_string(&e.code)
