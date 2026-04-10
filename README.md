@@ -40,7 +40,7 @@ Requires Rust 1.75+ and cargo.
 
 ```bash
 cargo build --workspace
-cargo test --workspace
+cargo test --workspace --lib   # unit tests (no bitcoind required)
 ```
 
 ## Run the Coordinator
