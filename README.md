@@ -124,6 +124,20 @@ Download pre-built binaries from [GitHub Releases](https://github.com/johnzilla/
 
 Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `ghcr.io/johnzilla/blindjoin-client`, and `ghcr.io/johnzilla/blindjoin-bot`.
 
+## CI/CD
+
+Every pull request runs three independent CI jobs:
+
+| Job | Command | Blocks merge? |
+|-----|---------|---------------|
+| `cargo test` | `cargo test --workspace` | Yes |
+| `cargo clippy` | `cargo clippy --workspace -- -D warnings` | Yes |
+| `cargo audit` | `cargo audit --deny high --deny critical` | Yes (high/critical only) |
+
+Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
+
+To enable branch protection, see [docs/branch-protection.md](docs/branch-protection.md).
+
 ## Project Structure
 
 ```
@@ -131,7 +145,7 @@ blindjoin/
   coordinator/       # CoinJoin coordinator binary
     src/
       api/           # HTTP handlers (axum)
-      bitcoin/       # RPC client, UTXO validation, BIP-322, PSBT builder
+      bitcoin/       # RPC client, UTXO validation, BIP-322, PSBT builder, fee estimation
       blind/         # RSA blind signature engine
       round/         # State machine, input/output reg, signing, blame
       discovery/     # PKARR DHT publisher
@@ -159,15 +173,16 @@ blindjoin/
       strategy.rs    # Join strategy and round participation
   docker/            # Docker Compose stack
     docker-compose.yml
-    Dockerfile.coordinator
-    Dockerfile.client
-    Dockerfile.bot
+    Dockerfile        # Multi-target Dockerfile (coordinator, client, liquidity-bot)
     bitcoind/bitcoin.conf
+  docs/
+    branch-protection.md  # GitHub branch protection setup guide
   tests/
     integration/     # End-to-end CoinJoin round tests
   .github/workflows/
-    release.yml      # Cross-compiled binary releases
-    docker.yml       # Multi-arch Docker image publishing
+    ci.yml           # PR-triggered test, clippy, audit gates
+    release.yml      # Cross-compiled binary releases (gated on test+clippy)
+    docker.yml       # Multi-arch Docker image publishing (gated on test+clippy)
 ```
 
 ## Security Model
@@ -184,6 +199,8 @@ The coordinator **can**:
 - See which UTXOs registered (observable on-chain anyway)
 
 Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs verified for all inputs. Banned UTXOs persisted to disk (SHA-256 hashed, append-only JSONL). No PII logging.
+
+**Availability hardening (v1.1):** Async RPC calls execute before the write lock so slow bitcoind cannot serialize participants. RSA keys are parsed once per round (not per request). Blinded tokens are size-bounded to the RSA modulus. Addresses are validated at registration time (not at PSBT build). Duplicate partial signatures are rejected.
 
 ## Key Dependencies
 
