@@ -37,7 +37,8 @@ services:
   coordinator:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.coordinator
+      dockerfile: docker/Dockerfile
+      target: coordinator
     environment:
       BLINDJOIN__NETWORK__BITCOIN_RPC_URL: "http://bitcoind:38332"
       BLINDJOIN__NETWORK__BITCOIN_RPC_USER: "blindjoin"
@@ -72,7 +73,8 @@ services:
   liquidity-bot:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.bot
+      dockerfile: docker/Dockerfile
+      target: liquidity-bot
     environment:
       BLINDJOIN_COORDINATOR_URL: "http://coordinator:8080"
       BLINDJOIN_NETWORK: "signet"
