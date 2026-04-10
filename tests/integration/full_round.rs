@@ -38,6 +38,7 @@ fn build_input_reg_round_state() -> coordinator::round::state::RoundState {
     state.rsa_pubkey_der = Some(pk_der);
     state.inner = Some(RoundStateInner {
         rsa_signing_key: sk_der,
+        rsa_signer: signer,
         round_secret,
         registered_inputs: HashMap::new(),
         redeemed_tokens: std::collections::HashSet::new(),
