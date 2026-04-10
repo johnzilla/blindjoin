@@ -16,6 +16,7 @@ Shipped v1.0 MVP with 7,353 lines of Rust across 5 phases (17 plans).
 Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio.
 Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
 PKARR DHT discovery live. Docker Compose stack operational. GitHub Actions CI for releases.
+Phase 6 complete — CI/CD security pipeline with cargo test, clippy, and audit gates on PRs and releases.
 
 ## Requirements
 
@@ -40,7 +41,7 @@ PKARR DHT discovery live. Docker Compose stack operational. GitHub Actions CI fo
 
 ### Active
 
-- [ ] CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases
+- [x] CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases — v1.1 Phase 6
 - [ ] Eliminate write-lock DoS: move async RPC call outside RoundState write lock in post_input
 - [ ] Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests
 
@@ -113,4 +114,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-09 after v1.1 milestone start*
+*Last updated: 2026-04-10 after Phase 6 completion*
