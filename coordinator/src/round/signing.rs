@@ -56,6 +56,16 @@ pub async fn process_sign(
         });
     }
 
+    // Reject duplicate submission — prevent a participant from replacing their valid
+    // signature with malformed data and forcing a blame round (WR-01).
+    if inner.partial_sigs.contains_key(&utxo_str) {
+        return Err(ApiError {
+            code: ErrorCode::SessionInvalid,
+            message: "Partial signature already submitted for this input".into(),
+            round_id: Some(round_id_str.to_string()),
+        });
+    }
+
     // Record partial signature (keyed by utxo_outpoint)
     inner.partial_sigs.insert(utxo_str, partial_signature.to_vec());
 
