@@ -2,7 +2,6 @@ use bitcoin::OutPoint;
 use shared::errors::{ApiError, ErrorCode};
 use crate::round::state::{RegisteredInput, RoundState};
 use crate::round::manager::generate_session_token;
-use crate::blind::rsa::RsaBlindSigner;
 use sha2::{Sha256, Digest};
 use blind_rsa_signatures::BlindMessage;
 
