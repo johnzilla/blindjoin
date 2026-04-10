@@ -38,17 +38,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CICD-01 | — | Pending |
-| CICD-02 | — | Pending |
-| CICD-03 | — | Pending |
-| CICD-04 | — | Pending |
-| AVAIL-01 | — | Pending |
-| AVAIL-02 | — | Pending |
+| CICD-01 | Phase 6 | Pending |
+| CICD-02 | Phase 6 | Pending |
+| CICD-03 | Phase 6 | Pending |
+| CICD-04 | Phase 6 | Pending |
+| AVAIL-01 | Phase 7 | Pending |
+| AVAIL-02 | Phase 7 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 6 total
-- Mapped to phases: 0
-- Unmapped: 6
+- Mapped to phases: 6
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-09*
