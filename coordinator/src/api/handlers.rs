@@ -97,6 +97,23 @@ pub async fn post_input(
             "blinded_token is not valid base64", None)
     })?;
 
+    // Size-bound blinded_token to the RSA modulus length (WR-02).
+    // RSABSSA-SHA384-PSS blinded messages must be exactly the modulus size.
+    // Accepting arbitrarily large blobs imposes CPU cost before the write lock.
+    const RSA_2048_BYTES: usize = 256;
+    const RSA_4096_BYTES: usize = 512;
+    if blinded_token_bytes.len() != RSA_2048_BYTES && blinded_token_bytes.len() != RSA_4096_BYTES {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "INVALID_TOKEN",
+            format!(
+                "blinded_token must be {} or {} bytes (RSA modulus size), got {}",
+                RSA_2048_BYTES, RSA_4096_BYTES, blinded_token_bytes.len()
+            ),
+            None,
+        ));
+    }
+
     // Ban check — fast rejection before acquiring round write lock (T-02-01).
     // BanList::is_banned hashes the outpoint internally; pass the raw string.
     // No UTXO identifiers are logged here (PRIV-02).
