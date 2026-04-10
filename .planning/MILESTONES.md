@@ -1,5 +1,19 @@
 # Milestones
 
+## v1.1 Security & Availability Hardening (Shipped: 2026-04-10)
+
+**Phases completed:** 2 phases, 4 plans, 7 tasks
+
+**Key accomplishments:**
+
+- PR-triggered CI gate with cargo test, clippy, and audit as independent jobs; release and Docker workflows gated on test+clippy prerequisite
+- All GitHub Actions pinned to immutable commit SHAs; SHA-256 checksums on release archives; workflow permissions scoped per-job
+- validate_utxo RPC moved before RoundState write lock — slow bitcoind cannot serialize concurrent input registrations (AVAIL-01)
+- RsaBlindSigner cached per-round in RoundStateInner — no per-request RSA key deserialization on hot path (AVAIL-02)
+- Address validation at registration time, blinded token size bounds, duplicate partial-sig guard, fee formula consolidated to single canonical function
+
+---
+
 ## v1.0 MVP (Shipped: 2026-04-09)
 
 **Phases completed:** 5 phases, 17 plans, 21 tasks

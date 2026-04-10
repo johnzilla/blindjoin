@@ -12,12 +12,12 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 ## Current State
 
-Shipped v1.0 MVP with 7,353 lines of Rust across 5 phases (17 plans).
+Shipped v1.1 Security & Availability Hardening (5,918 LOC Rust, 7 phases total across 2 milestones).
 Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio.
 Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
-PKARR DHT discovery live. Docker Compose stack operational. GitHub Actions CI for releases.
-Phase 6 complete — CI/CD security pipeline with cargo test, clippy, and audit gates on PRs and releases.
-Phase 7 complete — Coordinator DoS hardening: RPC moved before write lock, RSA signer cached per-round.
+PKARR DHT discovery live. Docker Compose stack operational.
+CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned.
+Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds.
 
 ## Requirements
 
@@ -40,20 +40,13 @@ Phase 7 complete — Coordinator DoS hardening: RPC moved before write lock, RSA
 - ✓ Integration tests: full round (3+ participants), blame protocol, adversarial scenarios on signet — v1.0
 - ✓ Pre-built binaries via GitHub Releases, Docker images via ghcr.io — v1.0
 
+- ✓ CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases — v1.1
+- ✓ Eliminate write-lock DoS: move async RPC call outside RoundState write lock in post_input — v1.1
+- ✓ Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests — v1.1
+
 ### Active
 
-- [x] CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases — v1.1 Phase 6
-- [x] Eliminate write-lock DoS: move async RPC call outside RoundState write lock in post_input — v1.1 Phase 7
-- [x] Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests — v1.1 Phase 7
-
-## Current Milestone: v1.1 Security & Availability Hardening
-
-**Goal:** Eliminate urgent DoS vectors and add CI security gates to protect the coordinator and release pipeline.
-
-**Target features:**
-- CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases
-- Eliminate write-lock DoS: move async RPC call outside the RoundState write lock in post_input
-- Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests
+(No active requirements — next milestone will define new ones)
 
 ### Out of Scope
 
@@ -74,6 +67,7 @@ Phase 7 complete — Coordinator DoS hardening: RPC moved before write lock, RSA
 - **Dependency maturity:** Arti 2.0.0 (Feb 2026) stabilized Tor hidden services in Rust. blind-rsa-signatures by jedisct1 is RFC 9474 compliant.
 - **Builder background:** Owner has Rust + Bitcoin experience (arbstr-vault treasury service with Cashu ecash + Lightning).
 - **v1.0 shipped:** Full protocol working on signet with Tor, PKARR discovery, Docker deployment, and CI/CD.
+- **v1.1 shipped:** CI/CD security gates (test/clippy/audit on PRs and releases), coordinator DoS hardening (RPC before lock, RSA caching), supply-chain hardening (SHA-pinned actions, release checksums).
 
 ## Constraints
 
@@ -96,6 +90,10 @@ Phase 7 complete — Coordinator DoS hardening: RPC moved before write lock, RSA
 | PKARR for coordinator discovery | Decentralized; makes coordinators replaceable; no hardcoded addresses | ✓ Good — DHT publish + resolve working |
 | In-process SOCKS5 proxy for client Tor | arti-client 0.41 has no launch_socks5_listener(); minimal RFC 1928 bridge | ⚠ Revisit — works but adds ~80 LOC |
 | Docker Compose with cargo-chef builds | Multi-stage Dockerfiles, separate images per binary | ✓ Good — clean separation |
+| Validate-then-lock for post_input | RPC before write lock eliminates DoS from slow bitcoind | ✓ Good — AVAIL-01 verified |
+| Cache RsaBlindSigner in RoundStateInner | Parse RSA key once per round, not per request | ✓ Good — AVAIL-02 verified |
+| SHA-pin all GitHub Actions | Immutable commit SHAs prevent supply-chain tampering | ✓ Good — CR-01 resolved |
+| cargo audit deny high+critical only | Low/medium advisories are informational, not blockers | ✓ Good — reduces false-positive friction |
 
 ## Evolution
 
@@ -115,4 +113,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after Phase 7 completion*
+*Last updated: 2026-04-10 after v1.1 milestone*
