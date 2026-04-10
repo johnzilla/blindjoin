@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: MVP
-status: milestone_complete
-stopped_at: v1.0 milestone complete
-last_updated: "2026-04-09T23:45:00.000Z"
+milestone: v1.1
+milestone_name: Security & Availability Hardening
+status: defining_requirements
+stopped_at: Defining requirements for v1.1
+last_updated: "2026-04-09T00:00:00.000Z"
 last_activity: 2026-04-09
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 17
-  completed_plans: 17
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,15 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-09)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Milestone v1.0 complete — planning next milestone
+**Current focus:** Milestone v1.1 — Security & Availability Hardening
 
 ## Current Position
 
-Milestone: v1.0 MVP — SHIPPED 2026-04-09
-Phases: 5/5 complete
-Plans: 17/17 complete
-
-Progress: [████████████████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-09 — Milestone v1.1 started
 
 ## Accumulated Context
 
@@ -49,5 +48,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-04-09
-Stopped at: v1.0 milestone complete
+Stopped at: Defining requirements for v1.1
 Resume file: None

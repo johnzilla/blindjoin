@@ -40,7 +40,18 @@ PKARR DHT discovery live. Docker Compose stack operational. GitHub Actions CI fo
 
 ### Active
 
-(No active requirements — next milestone will define new ones)
+- [ ] CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases
+- [ ] Eliminate write-lock DoS: move async RPC call outside RoundState write lock in post_input
+- [ ] Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests
+
+## Current Milestone: v1.1 Security & Availability Hardening
+
+**Goal:** Eliminate urgent DoS vectors and add CI security gates to protect the coordinator and release pipeline.
+
+**Target features:**
+- CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases
+- Eliminate write-lock DoS: move async RPC call outside the RoundState write lock in post_input
+- Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests
 
 ### Out of Scope
 
@@ -102,4 +113,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-09 after v1.0 milestone*
+*Last updated: 2026-04-09 after v1.1 milestone start*
