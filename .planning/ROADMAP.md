@@ -51,7 +51,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — Add rsa_signer cache to RoundStateInner; replace per-request from_der_secret_key in handlers (AVAIL-02)
+- [x] 07-01-PLAN.md — Add rsa_signer cache to RoundStateInner; replace per-request from_der_secret_key in handlers (AVAIL-02)
 - [ ] 07-02-PLAN.md — Refactor register_input to sync; move validate_utxo before write lock in post_input (AVAIL-01)
 
 ## Progress
@@ -64,6 +64,6 @@ Plans:
 | 4. Discovery & Deployment | v1.0 | 3/3 | Complete | 2026-04-09 |
 | 5. Tor & Release | v1.0 | 3/3 | Complete | 2026-04-09 |
 | 6. CI/CD Security Pipeline | v1.1 | 1/1 | Complete   | 2026-04-10 |
-| 7. Coordinator DoS Hardening | v1.1 | 0/2 | Not started | - |
+| 7. Coordinator DoS Hardening | v1.1 | 1/2 | In Progress|  |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`

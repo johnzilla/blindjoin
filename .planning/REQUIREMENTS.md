@@ -17,7 +17,7 @@ Requirements for Security & Availability Hardening milestone. Each maps to roadm
 ### Coordinator Availability
 
 - [ ] **AVAIL-01**: post_input performs async bitcoind RPC call before acquiring RoundState write lock
-- [ ] **AVAIL-02**: RSA private key is parsed once at round creation; handlers reuse the parsed RsaBlindSigner
+- [x] **AVAIL-02**: RSA private key is parsed once at round creation; handlers reuse the parsed RsaBlindSigner
 
 ## Future Requirements
 
@@ -43,7 +43,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CICD-03 | Phase 6 | Complete |
 | CICD-04 | Phase 6 | Complete |
 | AVAIL-01 | Phase 7 | Pending |
-| AVAIL-02 | Phase 7 | Pending |
+| AVAIL-02 | Phase 7 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 6 total
