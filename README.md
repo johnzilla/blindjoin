@@ -115,12 +115,7 @@ When `--tor` is enabled, the client uses per-phase Tor circuit isolation: input 
 
 ## Pre-built Binaries
 
-Download pre-built binaries from [GitHub Releases](https://github.com/johnzilla/blindjoin/releases). Available for:
-
-- Linux x86_64
-- Linux aarch64
-- macOS x86_64
-- macOS aarch64
+Download pre-built binaries from [GitHub Releases](https://github.com/johnzilla/blindjoin/releases) (Linux x86_64). Other platforms: build from source with `cargo build --release`.
 
 Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `ghcr.io/johnzilla/blindjoin-client`, and `ghcr.io/johnzilla/blindjoin-bot`.
 

@@ -27,64 +27,34 @@ jobs:
         run: cargo audit --deny high --deny critical
 
   build:
-    name: Build ${{ matrix.target }}
+    name: Build linux-amd64
     needs: check
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: blindjoin-linux-amd64.tar.gz
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: blindjoin-linux-arm64.tar.gz
-            cross: true
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            archive: blindjoin-macos-amd64.tar.gz
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            archive: blindjoin-macos-arm64.tar.gz
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        with:
-          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          key: ${{ matrix.target }}
 
-      - name: Install cross (ARM64 Linux)
-        if: matrix.cross
-        run: cargo install cross --locked
-
-      - name: Build (native)
-        if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }} --bin coordinator --bin client --bin liquidity-bot
-
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --target ${{ matrix.target }} --bin coordinator --bin client --bin liquidity-bot
+      - name: Build coordinator and client
+        run: cargo build --release --bin coordinator --bin client --bin liquidity-bot
 
       - name: Package
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/coordinator dist/
-          cp target/${{ matrix.target }}/release/client dist/
-          cp target/${{ matrix.target }}/release/liquidity-bot dist/
-          tar czf ${{ matrix.archive }} -C dist .
-          sha256sum ${{ matrix.archive }} > ${{ matrix.archive }}.sha256 || shasum -a 256 ${{ matrix.archive }} > ${{ matrix.archive }}.sha256
+          cp target/release/coordinator dist/
+          cp target/release/client dist/
+          cp target/release/liquidity-bot dist/
+          tar czf blindjoin-linux-amd64.tar.gz -C dist .
+          sha256sum blindjoin-linux-amd64.tar.gz > blindjoin-linux-amd64.tar.gz.sha256
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
           files: |
-            ${{ matrix.archive }}
-            ${{ matrix.archive }}.sha256
+            blindjoin-linux-amd64.tar.gz
+            blindjoin-linux-amd64.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
