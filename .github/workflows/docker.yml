@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   check:
@@ -31,6 +30,9 @@ jobs:
     name: Docker ${{ matrix.image }}
     needs: check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
