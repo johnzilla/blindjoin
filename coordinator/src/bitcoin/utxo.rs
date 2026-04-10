@@ -166,7 +166,9 @@ pub fn verify_bip322_simple(
 
     // 6. Verify pubkey matches the script_pubkey (hash160 check for P2WPKH)
     let compressed = bitcoin::PublicKey::new(pubkey);
-    let expected_wpkh = ScriptBuf::new_p2wpkh(&compressed.wpubkey_hash().unwrap());
+    let wpkh = compressed.wpubkey_hash()
+        .map_err(|_| Bip322Error::PubkeyParseError)?;
+    let expected_wpkh = ScriptBuf::new_p2wpkh(&wpkh);
     if expected_wpkh != script_pubkey.to_owned() {
         return Err(Bip322Error::ScriptMismatch);
     }
