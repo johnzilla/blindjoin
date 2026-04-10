@@ -9,8 +9,23 @@ permissions:
   packages: write
 
 jobs:
+  check:
+    name: Check (test + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace
+      - name: Run clippy
+        run: cargo clippy --workspace -- -D warnings
+
   docker:
     name: Docker ${{ matrix.image }}
+    needs: check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
