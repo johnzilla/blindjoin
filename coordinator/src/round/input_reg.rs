@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use bitcoin::OutPoint;
 use shared::errors::{ApiError, ErrorCode};
-use crate::blind::rsa::RsaBlindSigner;
 use crate::bitcoin::rpc::BitcoinRpc;
 use crate::bitcoin::utxo::validate_utxo;
 use crate::round::state::{RegisteredInput, RoundState};
@@ -19,12 +18,12 @@ pub struct InputRegResult {
 
 /// Core input registration logic. Called from handler with write-locked state.
 ///
-/// Validates the UTXO, blind-signs the blinded_token, generates session token,
-/// and records the registration in round state.
+/// Validates the UTXO, blind-signs the blinded_token using the cached signer in
+/// `state.inner.rsa_signer` (AVAIL-02: no per-request key deserialization),
+/// generates session token, and records the registration in round state.
 ///
 /// # Arguments
 /// - `state`          — mutable round state (write-locked by caller)
-/// - `signer`         — RSA blind signer for this round
 /// - `rpc`            — Bitcoin Core RPC client
 /// - `utxo`           — the UTXO being registered
 /// - `ownership_proof_json` — canonical JSON-array-of-hex-strings ownership proof
@@ -36,7 +35,6 @@ pub struct InputRegResult {
 /// - `round_id_str`   — current round_id as string (for BIP-322 message)
 pub async fn register_input(
     state: &mut RoundState,
-    signer: &RsaBlindSigner,
     rpc: &BitcoinRpc,
     utxo: &OutPoint,
     ownership_proof_json: &str,
@@ -116,9 +114,9 @@ pub async fn register_input(
         }
     })?;
 
-    // Blind-sign the blinded message
+    // Blind-sign the blinded message using the cached signer (AVAIL-02: no per-request key deserialization)
     let blind_msg = BlindMessage(blinded_token_bytes.to_vec());
-    let blind_sig = signer.blind_sign(&blind_msg).map_err(|e| ApiError {
+    let blind_sig = inner.rsa_signer.blind_sign(&blind_msg).map_err(|e| ApiError {
         code: ErrorCode::InvalidToken,
         message: format!("Blind signing failed: {e}"),
         round_id: Some(round_id_str.to_string()),

@@ -20,7 +20,6 @@ use crate::round::input_reg::{register_input, parse_outpoint};
 use crate::round::output_reg::register_output_logic;
 use crate::round::signing::{process_sign, SignResult};
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
-use crate::blind::rsa::RsaBlindSigner;
 use blind_rsa_signatures::MessageRandomizer;
 use bitcoin::ScriptBuf;
 
@@ -154,18 +153,8 @@ pub async fn post_input(
         ));
     }
 
-    // Get the RSA signer for this round — reconstruct from stored key bytes
-    let signer = {
-        let key_bytes = guard.inner.as_ref().unwrap().rsa_signing_key.clone();
-        RsaBlindSigner::from_der_secret_key(&key_bytes).map_err(|e| {
-            api_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
-                format!("Failed to load RSA key: {e}"), Some(&round_id_str))
-        })?
-    };
-
     let result = register_input(
         &mut guard,
-        &signer,
         &state.rpc,
         &utxo,
         &req.ownership_proof,
@@ -276,17 +265,13 @@ pub async fn post_output(
     let round_id_str = round_id.to_string();
     let denomination_sats = state.config.coordinator.denomination_sats;
 
-    // Reconstruct signer from stored key
-    let signer = {
-        let key_bytes = guard.inner.as_ref()
-            .ok_or_else(|| api_error(StatusCode::CONFLICT, "WRONG_PHASE",
-                "Round inner state not initialized", Some(&round_id_str)))?
-            .rsa_signing_key.clone();
-        RsaBlindSigner::from_der_secret_key(&key_bytes).map_err(|e| {
-            api_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
-                format!("Failed to load RSA key: {e}"), Some(&round_id_str))
-        })?
-    };
+    // Use cached RSA public key for token verification (signer parsed once at creation — AVAIL-02).
+    // Clone the public key here to release the immutable borrow before the mutable borrow below.
+    // BjPublicKey implements Clone (blind-rsa-signatures 0.17.1, lib.rs:601).
+    let rsa_public_key = guard.inner.as_ref()
+        .ok_or_else(|| api_error(StatusCode::CONFLICT, "WRONG_PHASE",
+            "Round inner state not initialized", Some(&round_id_str)))?
+        .rsa_signer.public_key.clone();
 
     // Run pure output reg logic
     {
@@ -296,7 +281,7 @@ pub async fn post_output(
         })?;
 
         register_output_logic(
-            &signer.public_key,
+            &rsa_public_key,
             &mut inner.redeemed_tokens,
             &token_msg,
             &sig_bytes,
