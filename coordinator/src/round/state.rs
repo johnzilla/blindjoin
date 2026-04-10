@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use zeroize::Zeroize;
+use crate::blind::rsa::RsaBlindSigner;
 
 /// The round phase state machine.
 /// Only valid transitions are permitted via RoundState::transition_to().
@@ -72,7 +73,15 @@ pub struct RegisteredOutput {
 pub struct RoundStateInner {
     /// RSA private key bytes for blind signing (this round only), DER-encoded.
     /// Zeroed when inner is dropped (after BROADCAST or BLAME transitions to IDLE).
+    /// D-07: raw bytes kept alongside parsed signer so zeroize-on-drop still fires.
     pub rsa_signing_key: Vec<u8>,
+    /// Parsed RSA blind signer — cached once at round creation (D-04, D-05, AVAIL-02).
+    /// Not zeroized on drop (upstream SecretKey limitation; raw bytes above ARE zeroed).
+    ///
+    /// ARCH NOTE: RoundStateInner is currently only constructed in tests (full_round.rs,
+    /// signing.rs). Production round-start logic (future phase) MUST also populate this
+    /// field at that time. See phase 07 CONTEXT.md for details.
+    pub rsa_signer: RsaBlindSigner,
     /// Per-round HMAC secret for session tokens (D-05). 32 random bytes.
     pub round_secret: [u8; 32],
     /// Set of registered input UTXOs for double-registration prevention.
@@ -216,12 +225,14 @@ mod tests {
     /// This is the correctness assertion confirming memory zeroing runs when round completes.
     #[test]
     fn transition_to_idle_clears_inner() {
+        use crate::blind::rsa::RsaBlindSigner;
         let mut state = RoundState::new_idle();
         // Simulate having entered a round
         state.phase = Phase::Signing;
         state.rsa_pubkey_der = Some(vec![1, 2, 3]); // simulate active round
         state.inner = Some(RoundStateInner {
             rsa_signing_key: vec![0xAA; 32],
+            rsa_signer: RsaBlindSigner::generate().unwrap(),
             round_secret: [0xBB; 32],
             registered_inputs: Default::default(),
             redeemed_tokens: HashSet::new(),
@@ -246,5 +257,38 @@ mod tests {
         assert!(result.is_err());
         // Phase must not have changed
         assert_eq!(state.phase, Phase::Idle);
+    }
+
+    /// AVAIL-02: Verify rsa_signer in RoundStateInner is consistent with rsa_signing_key bytes.
+    /// If these disagree, a signer-key mismatch would cause all blind signature verifications
+    /// to fail — catching this at test time prevents a silent regression.
+    #[test]
+    fn rsa_signer_consistent_with_key_bytes() {
+        use crate::blind::rsa::RsaBlindSigner;
+
+        let signer = RsaBlindSigner::generate().unwrap();
+        let sk_der = signer.secret_key_der().unwrap();
+        let expected_hash = signer.public_key_hash();
+
+        // Simulate what round creation stores: signer moved into inner, raw bytes also stored
+        let inner = RoundStateInner {
+            rsa_signing_key: sk_der.clone(),
+            rsa_signer: signer,
+            round_secret: [0u8; 32],
+            registered_inputs: Default::default(),
+            redeemed_tokens: HashSet::new(),
+            registered_outputs: vec![],
+            partial_sigs: Default::default(),
+            change_addresses: Default::default(),
+        };
+
+        // The cached signer's public key hash must match what was generated
+        assert_eq!(inner.rsa_signer.public_key_hash(), expected_hash,
+            "AVAIL-02: cached rsa_signer must match the generated key");
+
+        // The raw key bytes must round-trip to the same public key hash
+        let reconstructed = RsaBlindSigner::from_der_secret_key(&inner.rsa_signing_key).unwrap();
+        assert_eq!(reconstructed.public_key_hash(), expected_hash,
+            "AVAIL-02: raw rsa_signing_key bytes must decode to same key");
     }
 }
