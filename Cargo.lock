@@ -849,6 +849,7 @@ name = "client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arti-client",
  "base64 0.22.1",
  "bdk_wallet",
  "bitcoin",
@@ -864,6 +865,7 @@ dependencies = [
  "sha2 0.11.0",
  "shared",
  "tokio",
+ "tor-rtcompat",
  "tracing",
  "tracing-subscriber",
  "uuid",

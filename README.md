@@ -1,20 +1,40 @@
 # blindjoin
 
-A standalone CoinJoin coordinator and client for Bitcoin. Uses RSA blind signatures (RFC 9474) so the coordinator cryptographically cannot link transaction inputs to outputs. MIT licensed. No fees. No company.
+A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures (RFC 9474) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via PKARR DHT and all production traffic flows over Tor hidden services.
 
-**Status:** Phase 1 complete (core protocol). Coordinator and client compile and pass 38 tests. Integration test scaffolded for regtest. Signet/mainnet rounds require a running bitcoind.
+MIT licensed. No fees. No company. No terms of service.
 
 ## What This Does
 
 1. Coordinator announces a fixed-denomination CoinJoin round (default: 0.01 BTC)
-2. Participants register inputs and receive blind-signed tokens
-3. Participants register outputs using unblinded tokens (on a fresh connection)
+2. Participants register inputs with BIP-322 ownership proofs and receive blind-signed tokens
+3. Participants register outputs using unblinded tokens (on a fresh Tor circuit)
 4. Coordinator builds the transaction, participants verify and sign
 5. Coordinator broadcasts the final CoinJoin transaction
+6. Non-signers are detected, banned, and the round restarts with remaining participants
 
-The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses ephemeral RSA keys that are destroyed after broadcast.
+The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses ephemeral RSA keys that are destroyed after broadcast. All round state is zeroed from memory.
 
-## Build
+## Quick Start (Docker)
+
+The fastest way to run blindjoin is with Docker Compose. This starts bitcoind (signet), the coordinator, and a liquidity bot that auto-joins rounds.
+
+```bash
+# Clone and configure
+git clone https://github.com/johnzilla/blindjoin.git
+cd blindjoin
+cp .env.example .env
+# Edit .env with your signet UTXO details (see below)
+
+# Start the stack
+docker compose -f docker/docker-compose.yml up
+```
+
+The coordinator will start, publish its address to the PKARR DHT, and wait for participants. The liquidity bot joins rounds automatically to fill the anonymity set.
+
+To get a signet UTXO for the bot, use the [signet faucet](https://signet.bc-2.jp/).
+
+## Build from Source
 
 Requires Rust 1.75+ and cargo.
 
@@ -31,21 +51,33 @@ Requires a running Bitcoin Core node (signet, testnet, or regtest).
 # Copy and edit config
 cp blindjoin.toml.example blindjoin.toml
 
-# Start coordinator
+# Start coordinator (clearnet, for development)
 cargo run -p coordinator
+
+# Start coordinator (Tor hidden service, for production)
+BLINDJOIN_COORDINATOR_TOR_MODE=true cargo run -p coordinator
 ```
 
-The coordinator listens on `0.0.0.0:8080` by default. All settings can be overridden with `BLINDJOIN_*` environment variables.
+When `tor_mode` is enabled, the coordinator runs as a Tor v3 hidden service via arti-client. No clearnet listener is created. The .onion address is published to the PKARR DHT automatically.
+
+When `tor_mode` is disabled (default), the coordinator listens on `0.0.0.0:8080` for development and testing.
 
 ### Configuration
 
-See `blindjoin.toml.example` for all options:
+See `blindjoin.toml.example` for all options. All settings can be overridden with `BLINDJOIN_*` environment variables.
 
-- `network.bitcoin_network` — signet (default), testnet4, regtest, mainnet
-- `network.bitcoin_rpc_url` — Bitcoin Core RPC endpoint
-- `coordinator.denomination_sats` — fixed output amount (default: 1,000,000 sats)
-- `coordinator.min_participants` — minimum to start a round (default: 3)
-- `coordinator.listen_addr` — HTTP listen address (default: 0.0.0.0:8080)
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `network.bitcoin_network` | signet | signet, testnet4, regtest, mainnet |
+| `network.bitcoin_rpc_url` | 127.0.0.1:38332 | Bitcoin Core RPC endpoint |
+| `coordinator.denomination_sats` | 1,000,000 | Fixed output amount (0.01 BTC) |
+| `coordinator.min_participants` | 3 | Minimum to start a round |
+| `coordinator.max_participants` | 20 | Maximum per round |
+| `coordinator.listen_addr` | 0.0.0.0:8080 | HTTP listen address (clearnet mode) |
+| `coordinator.tor_mode` | false | Run as Tor hidden service |
+| `coordinator.blame_ban_duration_secs` | 3600 | Ban duration for misbehaving UTXOs |
+| `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |
+| `discovery.heartbeat_interval_secs` | 300 | PKARR re-publish interval |
 
 ### API Endpoints
 
@@ -62,40 +94,80 @@ Errors return structured JSON: `{"error": {"code": "UTXO_SPENT", "message": "...
 ## Run the Client
 
 ```bash
+# Direct connection (development)
 cargo run -p client -- --coordinator-url http://127.0.0.1:8080 \
+  --wif <your-private-key-wif> \
+  --output-address <destination-address>
+
+# Via Tor (production)
+cargo run -p client -- --coordinator-url http://<onion-address> \
+  --wif <your-private-key-wif> \
+  --output-address <destination-address> \
+  --tor
+
+# Discover coordinator via PKARR DHT
+cargo run -p client -- --pkarr-pubkey <coordinator-public-key> \
   --wif <your-private-key-wif> \
   --output-address <destination-address>
 ```
 
-The client handles the full round participation flow: input registration, token blinding, output registration, transaction verification, and signing.
+When `--tor` is enabled, the client uses per-phase Tor circuit isolation: input registration flows through one circuit (alice) and output registration flows through a different circuit (bob). This prevents the coordinator from correlating phases by Tor circuit.
+
+## Pre-built Binaries
+
+Download pre-built binaries from [GitHub Releases](https://github.com/johnzilla/blindjoin/releases). Available for:
+
+- Linux x86_64
+- Linux aarch64
+- macOS x86_64
+- macOS aarch64
+
+Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `ghcr.io/johnzilla/blindjoin-client`, and `ghcr.io/johnzilla/blindjoin-bot`.
 
 ## Project Structure
 
 ```
 blindjoin/
-  coordinator/     # CoinJoin coordinator binary
+  coordinator/       # CoinJoin coordinator binary
     src/
-      api/         # HTTP handlers (axum)
-      bitcoin/     # RPC client, UTXO validation, BIP-322, PSBT builder
-      blind/       # RSA blind signature engine
-      round/       # State machine, input/output registration, signing, blame
-      config.rs    # TOML + env var configuration
-      main.rs      # Startup, health checks, server
-  client/          # CLI participant client
+      api/           # HTTP handlers (axum)
+      bitcoin/       # RPC client, UTXO validation, BIP-322, PSBT builder
+      blind/         # RSA blind signature engine
+      round/         # State machine, input/output reg, signing, blame
+      discovery/     # PKARR DHT publisher
+      network/       # Tor hidden service (arti-client)
+      config.rs      # TOML + env var configuration
+      main.rs        # Startup, health checks, server
+  client/            # CLI participant client
     src/
-      round/       # Input registration, output registration, signing
-      wallet.rs    # Key management, BIP-322 proofs, PSBT signing
-      http.rs      # Coordinator HTTP client
-      config.rs    # CLI argument parsing
-  shared/          # Protocol types shared between coordinator and client
+      round/         # Input registration, output registration, signing
+      wallet.rs      # bdk_wallet key management, BIP-322 proofs, PSBT signing
+      http.rs        # Coordinator HTTP client (clearnet + Tor)
+      tor.rs         # Per-phase Tor circuit isolation (alice/bob)
+      discover.rs    # PKARR DHT coordinator discovery
+      config.rs      # CLI argument parsing (clap)
+  shared/            # Protocol types shared between coordinator and client
     src/
-      protocol.rs  # Wire message structs (serde, forward-compatible)
-      token.rs     # Blind token message computation (domain-separated SHA-256)
-      bip322.rs    # BIP-322 Simple message signing primitives
-      errors.rs    # Structured error codes
-      types.rs     # Common types (RoundId, Denomination)
+      protocol.rs    # Wire message structs (serde, forward-compatible)
+      token.rs       # Blind token message computation (domain-separated SHA-256)
+      bip322.rs      # BIP-322 Simple message signing primitives
+      errors.rs      # Structured error codes
+      types.rs       # Common types (RoundId, Denomination)
+  liquidity-bot/     # Auto-joins rounds for testing and cold-start
+    src/
+      main.rs        # Polling loop, signet safety guard
+      strategy.rs    # Join strategy and round participation
+  docker/            # Docker Compose stack
+    docker-compose.yml
+    Dockerfile.coordinator
+    Dockerfile.client
+    Dockerfile.bot
+    bitcoind/bitcoin.conf
   tests/
-    integration/   # End-to-end CoinJoin round tests
+    integration/     # End-to-end CoinJoin round tests
+  .github/workflows/
+    release.yml      # Cross-compiled binary releases
+    docker.yml       # Multi-arch Docker image publishing
 ```
 
 ## Security Model
@@ -103,22 +175,15 @@ blindjoin/
 The coordinator **cannot**:
 - Link inputs to outputs (RSA blind signatures, RFC 9474)
 - Steal funds (participants sign their own inputs)
-- Reconstruct round data after completion (all state zeroed from memory)
+- Reconstruct round data after completion (all state zeroed from memory via zeroize)
+- Correlate input and output registration by Tor circuit (client uses isolated circuits)
 
 The coordinator **can**:
-- Refuse to complete rounds (participants detect and switch coordinators)
+- Refuse to complete rounds (participants detect and switch coordinators via DHT)
 - Register sybil inputs (fixed minimum participant count dilutes impact)
 - See which UTXOs registered (observable on-chain anyway)
 
-Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs verified for all inputs. No PII logging.
-
-## Roadmap
-
-- [x] **Phase 1: Core Protocol** — Round state machine, blind signatures, UTXO validation, PSBT construction, HTTP API, client CLI (38 tests)
-- [ ] **Phase 2: Blame & Hardening** — Non-signer detection, ban persistence, memory zeroing audit
-- [ ] **Phase 3: Client CLI** — End-to-end integration tests on signet
-- [ ] **Phase 4: Discovery & Deployment** — PKARR DHT coordinator discovery, Docker Compose
-- [ ] **Phase 5: Tor & Release** — Tor hidden service via arti, pre-built binaries
+Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs verified for all inputs. Banned UTXOs persisted to disk (SHA-256 hashed, append-only JSONL). No PII logging.
 
 ## Key Dependencies
 
@@ -126,10 +191,13 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 |-------|---------|
 | `blind-rsa-signatures` | RFC 9474 RSA blind signatures (jedisct1) |
 | `bitcoin` (rust-bitcoin) | Bitcoin primitives, PSBT, scripts |
+| `bdk_wallet` | Client wallet: key management, UTXO selection, PSBT signing |
+| `arti-client` | Tor hidden service (coordinator) and circuit isolation (client) |
+| `pkarr` | Coordinator discovery via Mainline DHT |
 | `axum` | HTTP framework for coordinator API |
 | `tokio` | Async runtime |
 | `zeroize` | Memory zeroing for sensitive round state |
-| `subtle` | Constant-time comparison for session tokens |
+| `reqwest` | HTTP client with SOCKS5 proxy support for Tor |
 
 ## License
 
