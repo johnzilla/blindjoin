@@ -34,7 +34,10 @@
   2. A PR with a failing `cargo test --workspace` cannot be merged — CI status is required
   3. A PR with a `cargo audit`-detected CVE in the dependency tree fails CI and cannot be merged
   4. A PR with any `cargo clippy --workspace -- -D warnings` warning fails CI and cannot be merged
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 06-01-PLAN.md — Create ci.yml PR gate, add check prereqs to release.yml and docker.yml, document branch protection setup
 
 ### Phase 7: Coordinator DoS Hardening
 **Goal**: Input registration handlers cannot serialize concurrent participants behind each other's RPC latency or key deserialization cost
@@ -56,7 +59,7 @@
 | 3. Client CLI | v1.0 | 2/2 | Complete | 2026-04-09 |
 | 4. Discovery & Deployment | v1.0 | 3/3 | Complete | 2026-04-09 |
 | 5. Tor & Release | v1.0 | 3/3 | Complete | 2026-04-09 |
-| 6. CI/CD Security Pipeline | v1.1 | 0/? | Not started | - |
+| 6. CI/CD Security Pipeline | v1.1 | 0/1 | Not started | - |
 | 7. Coordinator DoS Hardening | v1.1 | 0/? | Not started | - |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
