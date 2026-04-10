@@ -9,10 +9,10 @@ Requirements for Security & Availability Hardening milestone. Each maps to roadm
 
 ### CI/CD Security Pipeline
 
-- [ ] **CICD-01**: CI runs `cargo test --workspace` before any build or publish
-- [ ] **CICD-02**: CI runs `cargo audit` to scan dependencies for known vulnerabilities
-- [ ] **CICD-03**: CI runs `cargo clippy --workspace -- -D warnings` to enforce lint quality
-- [ ] **CICD-04**: All CI checks run on every pull request, not just release builds
+- [x] **CICD-01**: CI runs `cargo test --workspace` before any build or publish
+- [x] **CICD-02**: CI runs `cargo audit` to scan dependencies for known vulnerabilities
+- [x] **CICD-03**: CI runs `cargo clippy --workspace -- -D warnings` to enforce lint quality
+- [x] **CICD-04**: All CI checks run on every pull request, not just release builds
 
 ### Coordinator Availability
 
@@ -38,10 +38,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CICD-01 | Phase 6 | Pending |
-| CICD-02 | Phase 6 | Pending |
-| CICD-03 | Phase 6 | Pending |
-| CICD-04 | Phase 6 | Pending |
+| CICD-01 | Phase 6 | Complete |
+| CICD-02 | Phase 6 | Complete |
+| CICD-03 | Phase 6 | Complete |
+| CICD-04 | Phase 6 | Complete |
 | AVAIL-01 | Phase 7 | Pending |
 | AVAIL-02 | Phase 7 | Pending |
 
