@@ -70,7 +70,7 @@ pub fn build_bip322_to_sign(to_spend: &Transaction) -> Transaction {
         }],
         output: vec![TxOut {
             value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return(&[]),
+            script_pubkey: ScriptBuf::new_op_return([]),
         }],
     }
 }
