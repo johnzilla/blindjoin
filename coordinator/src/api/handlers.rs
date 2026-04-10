@@ -182,6 +182,15 @@ pub async fn post_input(
         api_error(status, code, msg, None)
     })?;
 
+    // Validate change_address before acquiring write lock (WR-03).
+    // An invalid address would otherwise surface at PSBT build time and abort the entire round.
+    {
+        let bitcoin_network = parse_bitcoin_network(&state.config.network.bitcoin_network);
+        parse_address_to_script(&req.change_address, bitcoin_network).map_err(|e| {
+            api_error(StatusCode::BAD_REQUEST, "INVALID_ADDRESS", e, None)
+        })?;
+    }
+
     // Write lock for state mutation
     let mut guard = state.round.write().await;
 
@@ -310,6 +319,15 @@ pub async fn post_output(
         }
         None => None,
     };
+
+    // Validate output_address before acquiring write lock (WR-03).
+    // An invalid address would otherwise abort the entire round at PSBT build time.
+    {
+        let bitcoin_network = parse_bitcoin_network(&state.config.network.bitcoin_network);
+        parse_address_to_script(&req.output_address, bitcoin_network).map_err(|e| {
+            api_error(StatusCode::BAD_REQUEST, "INVALID_ADDRESS", e, None)
+        })?;
+    }
 
     // Write lock
     let mut guard = state.round.write().await;
