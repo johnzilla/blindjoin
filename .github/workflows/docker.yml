@@ -24,8 +24,8 @@ jobs:
         run: cargo clippy --workspace -- -D warnings
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
-      - name: Run audit (deny high and critical)
-        run: cargo audit --deny high --deny critical
+      - name: Run audit
+        run: cargo audit
 
   docker:
     name: Docker ${{ matrix.image }}
