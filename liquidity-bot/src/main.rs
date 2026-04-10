@@ -166,7 +166,7 @@ async fn participate_in_round(
     info!("Input registered");
 
     // Wait for output_reg phase
-    http.poll_until_phase("output_reg", 1000).await
+    http.poll_until_phase("output_reg", 1000, tokio::time::Duration::from_secs(600)).await
         .context("Timeout waiting for output_reg phase")?;
     info!("OUTPUT_REG phase detected");
 
@@ -176,7 +176,7 @@ async fn participate_in_round(
     info!("Output registered");
 
     // Wait for signing phase
-    http.poll_until_phase("signing", 1000).await
+    http.poll_until_phase("signing", 1000, tokio::time::Duration::from_secs(600)).await
         .context("Timeout waiting for signing phase")?;
     info!("SIGNING phase detected");
 
