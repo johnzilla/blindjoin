@@ -44,6 +44,43 @@
 
 ---
 
+## Milestone: v1.1 — Security & Availability Hardening
+
+**Shipped:** 2026-04-10
+**Phases:** 2 | **Plans:** 4 | **Timeline:** 1 day (2026-04-09 → 2026-04-10)
+
+### What Was Built
+- CI/CD security pipeline: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check prerequisites
+- Supply-chain hardening: all GitHub Actions SHA-pinned, SHA-256 checksums on release archives, per-job permission scoping
+- Coordinator DoS hardening: validate_utxo RPC moved before write lock (AVAIL-01), RsaBlindSigner cached per-round (AVAIL-02)
+- Input validation: blinded token size bounds, address pre-validation, duplicate partial-sig guard, fee formula consolidation
+
+### What Worked
+- **Targeted discuss-phase**: Only 3 gray areas per phase — kept discussion fast and focused for well-defined hardening work.
+- **Gap closure cycle**: Verification caught that 07-02 executor re-introduced the RSA deserialization bug. The gap closure plan (07-03) fixed it cleanly in one task.
+- **Code review + fix pipeline**: Caught and auto-fixed 8 findings across both phases (SHA pinning, audit in releases, checksums, permission scoping, dup-sig, token bounds, address validation, fee duplication).
+- **Inline execution for gap closure**: Small fix executed inline without subagent overhead — faster and cheaper.
+
+### What Was Inefficient
+- **Borrow checker deviations**: Both 07-01 and 07-02 executors hit Rust borrow conflicts not anticipated in the plan. The plan assumed a signer parameter pattern that conflicted with &mut state. Plan-time should verify borrow patterns with cargo check.
+- **SUMMARY.md one-liners still broken**: The one_liner extraction from summaries still returns "One-liner:" literal text. Agents aren't populating the frontmatter field correctly.
+
+### Patterns Established
+- Validate-then-lock pattern for coordinator handlers with async I/O
+- Cached parsed crypto objects in state structs (keep raw bytes for zeroize, parsed object for hot path)
+- CI workflow structure: separate ci.yml for PRs + check prereqs in release/docker workflows
+
+### Key Lessons
+1. **Verify Rust borrow patterns at plan time** — if a plan passes &signer and &mut state to the same function, check that the borrow checker accepts it. A quick `cargo check` during planning saves a gap closure cycle.
+2. **Gap closure works well** — the verify → plan-gaps → execute-gaps → re-verify cycle closed AVAIL-02 cleanly. Don't fear gaps; the system handles them.
+3. **Code review fixes are high-value** — the 8 auto-fixes improved supply-chain security, input validation, and code quality with minimal effort.
+
+### Cost Observations
+- Model mix: ~15% opus (planning), ~85% sonnet (execution, review, verification)
+- Notable: Gap closure (07-03) added 1 extra plan but caught a real regression — worth the cost
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -51,14 +88,18 @@
 | Milestone | Timeline | Phases | Key Change |
 |-----------|----------|--------|------------|
 | v1.0 | 3 days | 5 | Initial milestone — established Prove-Then-Layer pattern |
+| v1.1 | 1 day | 2 | Hardening milestone — established gap closure cycle and code review fix pipeline |
 
 ### Cumulative Quality
 
 | Milestone | Rust LOC | Plans | Requirements |
 |-----------|----------|-------|-------------|
 | v1.0 | 7,353 | 17 | 52 (51 checked) |
+| v1.1 | 5,918 | 4 | 6 (6 checked) |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Verify crate APIs exist before writing plans that depend on them
 2. Sequential execution without worktrees is simpler and more reliable for solo builders
+3. Verify Rust borrow patterns at plan time — cargo check during planning prevents gap closure cycles
+4. Code review + auto-fix pipeline catches real issues with minimal overhead (~10%)
