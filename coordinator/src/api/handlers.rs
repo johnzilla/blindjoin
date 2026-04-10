@@ -20,6 +20,7 @@ use crate::round::input_reg::{register_input, parse_outpoint};
 use crate::round::output_reg::register_output_logic;
 use crate::round::signing::{process_sign, SignResult};
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
+use crate::bitcoin::fee::estimate_fee_share;
 use blind_rsa_signatures::MessageRandomizer;
 use bitcoin::ScriptBuf;
 
@@ -475,10 +476,9 @@ pub async fn get_tx(
     let psbt_bytes = psbt.serialize();
     let psbt_b64 = B64.encode(&psbt_bytes);
 
-    let n = participant_inputs.len() as u64;
-    let estimated_vsize = 10 + n * 68 + n * 2 * 31;
-    let fee_total_sats = estimated_vsize * fee_rate;
-    let fee_per_participant_sats = if n > 0 { fee_total_sats / n } else { 0 };
+    let n = participant_inputs.len() as u32;
+    let fee_per_participant_sats = estimate_fee_share(n, fee_rate);
+    let fee_total_sats = fee_per_participant_sats * n as u64;
 
     Ok(Json(RoundTxResponse {
         round_id,
@@ -598,11 +598,4 @@ fn parse_bitcoin_network(network_str: &str) -> bitcoin::Network {
         "regtest" => bitcoin::Network::Regtest,
         _ => bitcoin::Network::Signet,
     }
-}
-
-fn estimate_fee_share(n: u32, fee_rate: u64) -> u64 {
-    let n = n as u64;
-    if n == 0 { return 0; }
-    let estimated_vsize = 10 + n * 68 + n * 2 * 31;
-    (estimated_vsize * fee_rate) / n
 }

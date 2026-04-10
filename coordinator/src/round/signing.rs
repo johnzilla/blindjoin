@@ -5,6 +5,7 @@ use crate::round::manager::verify_session_token;
 use crate::round::input_reg::parse_outpoint;
 use crate::bitcoin::rpc::BitcoinRpc;
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
+use crate::bitcoin::fee::estimate_fee_share;
 use crate::config::CoordinatorConfig;
 use bitcoin::ScriptBuf;
 use tracing::info;
@@ -116,7 +117,7 @@ async fn assemble_and_broadcast(
             })?;
         participant_inputs.push(ParticipantInput {
             outpoint,
-            value_sats: config.coordinator.denomination_sats + estimate_fee_share_per_participant(
+            value_sats: config.coordinator.denomination_sats + estimate_fee_share(
                 inner.registered_inputs.len() as u32,
                 config.coordinator.fee_rate_sat_per_vbyte,
             ),
@@ -254,13 +255,6 @@ fn parse_bitcoin_network(network_str: &str) -> bitcoin::Network {
         "regtest" => bitcoin::Network::Regtest,
         _ => bitcoin::Network::Signet, // safe default
     }
-}
-
-fn estimate_fee_share_per_participant(n: u32, fee_rate: u64) -> u64 {
-    let n = n as u64;
-    if n == 0 { return 0; }
-    let estimated_vsize = 10 + n * 68 + n * 2 * 31;
-    (estimated_vsize * fee_rate) / n
 }
 
 // TEST-06: Signing unit tests
