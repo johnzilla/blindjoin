@@ -21,9 +21,11 @@ pub struct AppState {
     /// Count of consecutive blame rounds for the current original round.
     /// Capped at 2 (BLAME-04, Pitfall 3): after cap, full abort without restart.
     /// AtomicU32 prevents TOCTOU on concurrent timer reads (T-02-10).
+    #[allow(dead_code)]
     pub blame_round_count: Arc<AtomicU32>,
 }
 
+#[allow(dead_code)]
 pub fn build_router(
     round: Arc<RwLock<RoundState>>,
     rpc: Arc<BitcoinRpc>,

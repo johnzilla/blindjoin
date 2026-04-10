@@ -37,8 +37,8 @@ pub async fn register_output(
     let denomination = current_info.denomination_sats;
 
     let req = OutputRegRequest {
-        unblinded_token: B64.encode(&state.message_bytes),
-        signature: B64.encode(&state.unblinded_sig_bytes()),
+        unblinded_token: B64.encode(state.message_bytes),
+        signature: B64.encode(state.unblinded_sig_bytes()),
         output_address: output_address.to_string(),
         amount_sats: denomination,
         msg_randomizer: msg_randomizer_b64,

@@ -47,7 +47,7 @@ pub async fn register_input(
     let message_bytes = compute_blind_token_message(&output_script, denomination);
 
     // 3. Blind the message (D-03) using DefaultRng from blind-rsa-signatures
-    let blinding_result = pk.blind(&mut DefaultRng, &message_bytes)
+    let blinding_result = pk.blind(&mut DefaultRng, message_bytes)
         .map_err(|e| anyhow!("Blinding failed: {e}"))?;
 
     // 4. Generate BIP-322 ownership proof for the UTXO
@@ -78,7 +78,7 @@ pub async fn register_input(
     let blind_sig = BlindSignature(blind_sig_bytes);
 
     // finalize() also internally verifies the unblinded signature
-    let sig = pk.finalize(&blind_sig, &blinding_result, &message_bytes)
+    let sig = pk.finalize(&blind_sig, &blinding_result, message_bytes)
         .map_err(|e| anyhow!("Unblinding/finalization failed — blind signature invalid: {e}"))?;
 
     let session_token = B64.decode(&resp.session_token)?;

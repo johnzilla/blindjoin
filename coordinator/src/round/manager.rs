@@ -16,6 +16,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// can be aborted if the phase advances early (e.g., max_participants reached).
 ///
 /// Per D-16: input_reg and output_reg timeouts are 60s, signing timeout is 30s.
+#[allow(dead_code)]
 pub async fn run_phase_timer(
     round: Arc<RwLock<RoundState>>,
     expected_phase: Phase,
@@ -25,7 +26,7 @@ pub async fn run_phase_timer(
     tokio::time::sleep(timeout).await;
     let mut guard = round.write().await;
     if guard.phase == expected_phase {
-        on_timeout(&mut *guard);
+        on_timeout(&mut guard);
     }
     // If phase already advanced — no-op. Timer task exits cleanly.
 }

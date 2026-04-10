@@ -4,6 +4,7 @@ use anyhow::Result;
 pub struct PkarrPublisher {
     client: Client,
     /// Public to allow main.rs to read the public key for logging.
+    #[allow(dead_code)]
     pub keypair: Keypair,
 }
 

@@ -33,6 +33,7 @@ use tokio::net::{TcpListener, TcpStream};
 /// allocations or TorClient handles are leaked.
 pub struct TorHandle {
     /// The coordinator's base URL (scheme + host, no trailing slash)
+    #[allow(dead_code)]
     coordinator_url: String,
     /// Proxy URL for the Alice (input registration) circuit.
     alice_proxy: String,
@@ -79,11 +80,13 @@ impl TorHandle {
     }
 
     /// Returns the coordinator URL for the Alice (input registration) circuit.
+    #[allow(dead_code)]
     pub fn alice_url(&self) -> &str {
         &self.coordinator_url
     }
 
     /// Returns the coordinator URL for the Bob (output registration) circuit.
+    #[allow(dead_code)]
     pub fn bob_url(&self) -> &str {
         &self.coordinator_url
     }

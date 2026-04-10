@@ -139,7 +139,6 @@ async fn main() -> Result<()> {
         match participate_in_round(&http, &wallet, &info).await {
             Ok(()) => {
                 info!("Round participation complete");
-                consecutive_failures = 0;
                 // Exit after one successful round (UTXO is now spent).
                 // Docker Compose restart policy will re-launch with updated env vars.
                 info!("Bot exiting — UTXO spent. Update BLINDJOIN_UTXO/WIF and restart.");

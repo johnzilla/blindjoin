@@ -584,7 +584,7 @@ pub async fn post_sign(
 fn parse_address_to_script(addr_str: &str, expected_network: bitcoin::Network) -> Result<ScriptBuf, String> {
     use std::str::FromStr;
     bitcoin::Address::from_str(addr_str)
-        .and_then(|a| a.require_network(expected_network).map_err(bitcoin::address::ParseError::from))
+        .and_then(|a| a.require_network(expected_network))
         .map(|a| a.script_pubkey())
         .map_err(|e| format!("Invalid address '{}': {}", addr_str, e))
 }

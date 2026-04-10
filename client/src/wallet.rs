@@ -2,6 +2,7 @@ use bitcoin::{Network, OutPoint, Psbt, ScriptBuf, Txid};
 use std::str::FromStr;
 use anyhow::{anyhow, Result};
 use bdk_wallet::{KeychainKind, Wallet};
+#[allow(deprecated)]
 use bdk_wallet::signer::SignOptions;
 
 /// HD-wallet backed CoinJoin client using bdk_wallet 2.3.
@@ -14,6 +15,7 @@ use bdk_wallet::signer::SignOptions;
 /// Address derivation uses bdk_wallet::Wallet::peek_address (index 0, no state mutation).
 /// PSBT signing uses bdk_wallet::Wallet::sign with witness_utxo populated.
 pub struct BdkClientWallet {
+    #[allow(dead_code)]
     pub network: Network,
     pub utxo_outpoint: OutPoint,
     pub utxo_value_sats: u64,
@@ -121,7 +123,6 @@ impl BdkClientWallet {
     ) -> Result<Self> {
         use bdk_wallet::keys::GeneratableKey;
         use bdk_wallet::keys::bip39::{Mnemonic, Language, WordCount};
-        use bdk_wallet::miniscript::Segwitv0;
         use bdk_wallet::keys::DerivableKey;
         use bdk_wallet::keys::ExtendedKey;
 
@@ -252,6 +253,7 @@ impl BdkClientWallet {
         });
 
         // Sign via bdk_wallet
+        #[allow(deprecated)]
         self.inner.sign(psbt, SignOptions::default())
             .map_err(|e| anyhow!("bdk_wallet signing failed: {e}"))?;
 

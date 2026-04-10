@@ -48,6 +48,7 @@ impl BanList {
     }
 
     /// Expose entries for persistence (plan 02).
+    #[allow(dead_code)]
     pub fn entries(&self) -> &HashMap<String, BanEntry> {
         &self.entries
     }
@@ -118,7 +119,7 @@ pub fn append_ban_entry(path: &str, utxo_str: &str, entry: &BanEntry) -> std::io
         expires_at: entry.expires_at,
     };
     let line = serde_json::to_string(&record)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -173,7 +174,10 @@ pub enum BlameOutcome {
     /// Round aborted — coordinator returns to Idle without restart.
     FullAbort,
     /// Round should restart excluding the listed UTXOs.
-    RestartWithout { banned_utxos: Vec<String> },
+    RestartWithout {
+        #[allow(dead_code)]
+        banned_utxos: Vec<String>,
+    },
 }
 
 /// Called when the signing timeout fires. Detects non-signers, bans them,

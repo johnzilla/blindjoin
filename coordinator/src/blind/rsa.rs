@@ -7,6 +7,7 @@ use sha2::{Sha256, Digest};
 /// Type aliases for the chosen parameter set: SHA-384, PSS, Randomized (RFC 9474 default).
 pub type BjPublicKey = PublicKey<Sha384, PSS, Randomized>;
 pub type BjSecretKey = SecretKey<Sha384, PSS, Randomized>;
+#[allow(dead_code)]
 pub type BjKeyPair = KeyPair<Sha384, PSS, Randomized>;
 
 /// RFC 9474 RSA blind signer — one instance per round.
@@ -24,6 +25,7 @@ pub struct RsaBlindSigner {
     secret_key: BjSecretKey, // Never pub — unlinkability depends on key secrecy
 }
 
+#[allow(dead_code)]
 impl RsaBlindSigner {
     /// Generate a fresh RSA-2048 blind signing keypair.
     /// Called once at the start of each round (D-02: per-round ephemeral keys).

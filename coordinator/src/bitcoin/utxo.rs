@@ -152,7 +152,7 @@ pub fn verify_bip322_simple(
     let secp_msg = SecpMessage::from_digest(sighash.to_byte_array());
 
     // sig_bytes may include the sighash type byte at the end — strip it
-    let sig_der = if sig_bytes.last().copied().map_or(false, |b| b == 0x01) {
+    let sig_der = if sig_bytes.last().copied() == Some(0x01) {
         &sig_bytes[..sig_bytes.len() - 1]
     } else {
         sig_bytes.as_slice()
@@ -169,7 +169,7 @@ pub fn verify_bip322_simple(
     let wpkh = compressed.wpubkey_hash()
         .map_err(|_| Bip322Error::PubkeyParseError)?;
     let expected_wpkh = ScriptBuf::new_p2wpkh(&wpkh);
-    if expected_wpkh != script_pubkey.to_owned() {
+    if expected_wpkh != *script_pubkey {
         return Err(Bip322Error::ScriptMismatch);
     }
 

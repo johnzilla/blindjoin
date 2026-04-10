@@ -6,6 +6,7 @@ pub mod sign;
 pub struct InputRegState {
     pub round_id: uuid::Uuid,
     pub session_token: Vec<u8>,
+    #[allow(dead_code)]
     pub blinding_secret: blind_rsa_signatures::Secret,
     pub msg_randomizer: Option<blind_rsa_signatures::MessageRandomizer>,
     pub message_bytes: [u8; 32],
