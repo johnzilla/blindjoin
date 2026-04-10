@@ -21,7 +21,7 @@
 **v1.1 Security & Availability Hardening**
 
 - [x] **Phase 6: CI/CD Security Pipeline** - Cargo test, audit, and clippy gates run on every pull request (completed 2026-04-10)
-- [ ] **Phase 7: Coordinator DoS Hardening** - Async RPC and key parse moved outside the write lock
+- [x] **Phase 7: Coordinator DoS Hardening** - Async RPC and key parse moved outside the write lock (completed 2026-04-10)
 
 ## Phase Details
 
@@ -52,7 +52,7 @@ Plans:
 
 Plans:
 - [x] 07-01-PLAN.md — Add rsa_signer cache to RoundStateInner; replace per-request from_der_secret_key in handlers (AVAIL-02)
-- [ ] 07-02-PLAN.md — Refactor register_input to sync; move validate_utxo before write lock in post_input (AVAIL-01)
+- [x] 07-02-PLAN.md — Refactor register_input to sync; move validate_utxo before write lock in post_input (AVAIL-01)
 
 ## Progress
 
@@ -64,6 +64,6 @@ Plans:
 | 4. Discovery & Deployment | v1.0 | 3/3 | Complete | 2026-04-09 |
 | 5. Tor & Release | v1.0 | 3/3 | Complete | 2026-04-09 |
 | 6. CI/CD Security Pipeline | v1.1 | 1/1 | Complete   | 2026-04-10 |
-| 7. Coordinator DoS Hardening | v1.1 | 1/2 | In Progress|  |
+| 7. Coordinator DoS Hardening | v1.1 | 2/2 | Complete   | 2026-04-10 |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
