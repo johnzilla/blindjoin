@@ -17,7 +17,6 @@ use tracing::info;
 use crate::api::AppState;
 use crate::round::state::Phase;
 use crate::round::input_reg::{register_input, parse_outpoint};
-use crate::blind::rsa::RsaBlindSigner;
 use crate::round::output_reg::register_output_logic;
 use crate::round::signing::{process_sign, SignResult};
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
@@ -204,18 +203,10 @@ pub async fn post_input(
         ));
     }
 
-    // Extract cached signer DER to reconstruct outside the borrow on guard.inner,
-    // avoiding the immutable-into-mutable borrow conflict (same pattern as AVAIL-02 fix).
-    let signer_der = guard.inner.as_ref().unwrap().rsa_signing_key.clone();
-    let signer = RsaBlindSigner::from_der_secret_key(&signer_der).map_err(|e| {
-        api_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
-            format!("Signer reconstruction failed: {e}"), Some(&round_id_str))
-    })?;
-
     // Call synchronous register_input under write lock (AVAIL-01: no RPC inside lock)
+    // register_input accesses inner.rsa_signer directly (AVAIL-02: no per-request key deserialization)
     let result = register_input(
         &mut guard,
-        &signer,
         &utxo,
         &blinded_token_bytes,
         &req.change_address,

@@ -23,7 +23,6 @@ pub struct InputRegResult {
 ///
 /// # Arguments
 /// - `state`              — mutable round state (write-locked by caller)
-/// - `signer`             — RSA blind signer (cached in inner; passed separately to avoid borrow conflict)
 /// - `utxo`               — the UTXO being registered (already validated by caller pre-lock)
 /// - `blinded_token_bytes`— base64-decoded blinded message from client
 /// - `change_address`     — bech32 change address string
@@ -34,7 +33,6 @@ pub struct InputRegResult {
 /// The pre-lock validation snapshot may be stale; this check is authoritative.
 pub fn register_input(
     state: &mut RoundState,
-    signer: &RsaBlindSigner,
     utxo: &OutPoint,
     blinded_token_bytes: &[u8],
     change_address: &str,
@@ -63,7 +61,7 @@ pub fn register_input(
 
     // Blind-sign the blinded message using the cached signer (AVAIL-02: no per-request key deserialization)
     let blind_msg = BlindMessage(blinded_token_bytes.to_vec());
-    let blind_sig = signer.blind_sign(&blind_msg).map_err(|e| ApiError {
+    let blind_sig = inner.rsa_signer.blind_sign(&blind_msg).map_err(|e| ApiError {
         code: ErrorCode::InvalidToken,
         message: format!("Blind signing failed: {e}"),
         round_id: Some(round_id_str.to_string()),
@@ -159,16 +157,10 @@ mod tests {
         ).unwrap();
         let utxo = OutPoint::new(txid, 0);
 
-        // Borrow the cached signer from inner before passing to register_input.
-        // register_input takes a separate &RsaBlindSigner param to avoid the
-        // immutable-into-mutable borrow conflict on state (D-01 pattern).
-        let cached_signer_der = state.inner.as_ref().unwrap().rsa_signing_key.clone();
-        let cached_signer = RsaBlindSigner::from_der_secret_key(&cached_signer_der).unwrap();
-
         // register_input is a plain fn — no .await needed (AVAIL-01)
+        // It accesses inner.rsa_signer directly (AVAIL-02: no per-request key deserialization)
         let result = register_input(
             &mut state,
-            &cached_signer,
             &utxo,
             &blinded_bytes,
             "tb1qtest000000000000000000000000000000000000",
@@ -192,7 +184,7 @@ mod tests {
         use std::str::FromStr;
         use crate::round::state::RegisteredInput;
 
-        let (mut state, signer) = make_input_reg_state();
+        let (mut state, _signer) = make_input_reg_state();
         let txid = Txid::from_str(
             "0000000000000000000000000000000000000000000000000000000000000002"
         ).unwrap();
@@ -214,7 +206,6 @@ mod tests {
 
         let result = register_input(
             &mut state,
-            &signer,
             &utxo,
             &blinded_bytes,
             "tb1qdouble",
