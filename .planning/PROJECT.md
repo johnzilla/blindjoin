@@ -17,6 +17,7 @@ Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pk
 Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
 PKARR DHT discovery live. Docker Compose stack operational. GitHub Actions CI for releases.
 Phase 6 complete — CI/CD security pipeline with cargo test, clippy, and audit gates on PRs and releases.
+Phase 7 complete — Coordinator DoS hardening: RPC moved before write lock, RSA signer cached per-round.
 
 ## Requirements
 
@@ -42,8 +43,8 @@ Phase 6 complete — CI/CD security pipeline with cargo test, clippy, and audit 
 ### Active
 
 - [x] CI/CD security pipeline: cargo test, cargo audit, cargo clippy as gates on PRs and releases — v1.1 Phase 6
-- [ ] Eliminate write-lock DoS: move async RPC call outside RoundState write lock in post_input
-- [ ] Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests
+- [x] Eliminate write-lock DoS: move async RPC call outside RoundState write lock in post_input — v1.1 Phase 7
+- [x] Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests — v1.1 Phase 7
 
 ## Current Milestone: v1.1 Security & Availability Hardening
 
@@ -114,4 +115,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after Phase 6 completion*
+*Last updated: 2026-04-10 after Phase 7 completion*
