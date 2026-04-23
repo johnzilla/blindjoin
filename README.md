@@ -17,7 +17,7 @@ The blind signature scheme (RFC 9474) makes it cryptographically impossible for 
 
 ## FAQ
 
-Read the [FAQ](https://github.com/johnzilla/blindjoin/FAQ.md).
+Read the [FAQ](FAQ.md).
 
 ## Quick Start (Docker)
 
