@@ -217,4 +217,5 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 ## License
 
-MIT
+[MIT](LICENSE)
+
