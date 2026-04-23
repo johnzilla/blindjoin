@@ -15,6 +15,10 @@ MIT licensed. No fees. No company. No terms of service.
 
 The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses ephemeral RSA keys that are destroyed after broadcast. All round state is zeroed from memory.
 
+## FAQ
+
+Read the [FAQ](https://github.com/johnzilla/blindjoin/FAQ.md).
+
 ## Quick Start (Docker)
 
 The fastest way to run blindjoin is with Docker Compose. This starts bitcoind (signet), the coordinator, and a liquidity bot that auto-joins rounds.
