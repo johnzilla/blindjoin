@@ -33,6 +33,11 @@ impl Phase {
             (self, next),
             (Phase::Idle, Phase::InputReg)
             | (Phase::InputReg, Phase::OutputReg)
+            // InputReg → Idle: quorum failure on input-reg timeout. Nobody (or too
+            // few) registered, so no participant is blamed; the round simply
+            // resets and start_round() re-arms a fresh one. This edge is required
+            // by the continuous-rounds policy (see coordinator/src/run.rs).
+            | (Phase::InputReg, Phase::Idle)
             | (Phase::OutputReg, Phase::Signing)
             | (Phase::OutputReg, Phase::Blame)  // BLAME-02: missing output → blame from OutputReg
             | (Phase::Signing, Phase::Broadcast)
@@ -78,9 +83,9 @@ pub struct RoundStateInner {
     /// Parsed RSA blind signer — cached once at round creation (D-04, D-05, AVAIL-02).
     /// Not zeroized on drop (upstream SecretKey limitation; raw bytes above ARE zeroed).
     ///
-    /// ARCH NOTE: RoundStateInner is currently only constructed in tests (full_round.rs,
-    /// signing.rs). Production round-start logic (future phase) MUST also populate this
-    /// field at that time. See phase 07 CONTEXT.md for details.
+    /// Constructed in production by `round::manager::start_round`. Tests may construct
+    /// directly via the public field; they should prefer `start_round` where possible
+    /// to keep production and test bootstrap aligned.
     pub rsa_signer: RsaBlindSigner,
     /// Per-round HMAC secret for session tokens (D-05). 32 random bytes.
     pub round_secret: [u8; 32],
@@ -193,6 +198,7 @@ mod tests {
         let valid = [
             (Phase::Idle, Phase::InputReg),
             (Phase::InputReg, Phase::OutputReg),
+            (Phase::InputReg, Phase::Idle),  // quorum-failure abort (continuous rounds)
             (Phase::OutputReg, Phase::Signing),
             (Phase::Signing, Phase::Broadcast),
             (Phase::Signing, Phase::Blame),
@@ -211,13 +217,28 @@ mod tests {
             (Phase::Idle, Phase::Signing),
             (Phase::Idle, Phase::Broadcast),
             (Phase::InputReg, Phase::Signing),
-            (Phase::InputReg, Phase::Idle),
             (Phase::OutputReg, Phase::InputReg),
             (Phase::Broadcast, Phase::Signing),
         ];
         for (from, to) in invalid {
             assert!(!from.can_transition_to(&to), "{:?} -> {:?} should be INVALID", from, to);
         }
+    }
+
+    /// InputReg → Idle is a valid abort edge (continuous-rounds policy: when InputReg
+    /// times out below quorum, the round resets without blame and a fresh one starts).
+    /// Verifies the transition also clears inner state and assigns a fresh round_id.
+    #[test]
+    fn input_reg_to_idle_resets_round() {
+        let mut state = RoundState::new_idle();
+        state.transition_to(Phase::InputReg).unwrap();
+        let original_round_id = state.round_id;
+        state.participant_count = 0; // quorum failure scenario
+        state.transition_to(Phase::Idle).expect("InputReg → Idle must be permitted");
+        assert_eq!(state.phase, Phase::Idle);
+        assert!(state.inner.is_none());
+        assert_ne!(state.round_id, original_round_id, "Idle transition must assign fresh round_id");
+        assert_eq!(state.participant_count, 0);
     }
 
     /// PRIV-01: Verify inner is None (dropped + zeroed) after Broadcast→Idle transition.
