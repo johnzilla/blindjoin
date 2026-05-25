@@ -29,7 +29,9 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
+        # --all-targets includes integration tests, so future struct/API drift
+        # that breaks tests/integration/ surfaces as a CI failure, not silent rot.
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   audit:
     name: cargo audit

@@ -102,13 +102,13 @@ mod tests {
 
         // Blind a dummy message to get a valid blinding result
         let message_bytes = [0u8; 32];
-        let blinding_result = pk.blind(&mut DefaultRng, &message_bytes).expect("blind");
+        let blinding_result = pk.blind(&mut DefaultRng, message_bytes).expect("blind");
 
         // Sign and finalize for a valid Signature
         let sk_der = kp.sk.to_der().unwrap();
         let sk = BjSecretKey::from_der(&sk_der).unwrap();
         let blind_sig = sk.blind_sign(&blinding_result.blind_message).unwrap();
-        let sig = pk.finalize(&blind_sig, &blinding_result, &message_bytes).unwrap();
+        let sig = pk.finalize(&blind_sig, &blinding_result, message_bytes).unwrap();
 
         InputRegState {
             round_id: uuid::Uuid::new_v4(),

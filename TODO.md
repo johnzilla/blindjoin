@@ -1,22 +1,21 @@
 # TODO
 
-## Tech Debt
+## Resolved 2026-05-25
 
-### Integration tests don't compile (`tests/integration/full_round.rs`)
+- [x] **Integration tests now compile.** Reconciled struct/API drift in
+  `tests/integration/full_round.rs` against current `CoordinatorSection`
+  (`tor_mode`), `CoordinatorConfig` (`discovery`), and `Client::poll_until_phase`
+  (`Duration` arg) signatures. Also fixed a needless-borrow lint in
+  `client/src/round/sign.rs` and applied related lints in the integration
+  test. CI clippy step upgraded to `--all-targets` so future test-code drift
+  surfaces as a CI failure rather than silent rot. Integration tests still
+  require a live bitcoind to run; without one they skip gracefully.
 
-The integration test file has ~1500 lines of end-to-end CoinJoin round tests that
-require a live bitcoind (signet/regtest). During v1.0 and v1.1 development, several
-struct signatures and function APIs changed without updating this file:
+- [x] **`cargo audit` CI step is now blocking** (was previously
+  `continue-on-error: true`). Documented residual-risk advisories declared in
+  `.cargo/audit.toml`, each with a written rationale. `rustls-webpki` bumped
+  to 0.103.13 to clear three open advisories.
 
-- `CoordinatorSection` missing `tor_mode` field (added in Phase 5)
-- `CoordinatorConfig` missing `discovery` field (added in Phase 4)
-- `poll_until_phase` now takes a `Duration` timeout argument (added in v1.0 bugfix)
+## Open
 
-**Impact:** Integration tests don't compile. Unit tests (67 tests) all pass and cover
-the coordinator, client, and shared crate logic. CI runs `cargo test --workspace --lib`.
-
-**When to fix:** When setting up real signet testing — the integration tests need a
-running bitcoind anyway, so fixing compilation without being able to run them is
-premature. Fix the signatures and verify end-to-end on signet at the same time.
-
-**Files:** `tests/integration/full_round.rs`, `coordinator/src/config.rs` (for struct shapes)
+(no open tech-debt items as of 2026-05-25)

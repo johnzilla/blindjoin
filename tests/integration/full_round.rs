@@ -61,7 +61,7 @@ async fn spawn_coordinator(
     rpc_pass: String,
 ) -> String {
     use coordinator::bitcoin::rpc::BitcoinRpc;
-    use coordinator::config::{CoordinatorConfig, CoordinatorSection, NetworkConfig};
+    use coordinator::config::{CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig};
 
     // Bind to port 0 (OS assigns an ephemeral port). Keep the listener open —
     // pass it directly into axum::serve to avoid the TOCTOU race where the port
@@ -88,7 +88,9 @@ async fn spawn_coordinator(
             fee_rate_sat_per_vbyte: 1,
             listen_addr: listen_addr.clone(),
             ban_file_path: "ban_list.jsonl".into(),
+            tor_mode: false,
         },
+        discovery: DiscoveryConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
@@ -320,7 +322,7 @@ async fn full_round_three_clients() {
 
                 // Poll until INPUT_REG (coordinator already starts in input_reg)
                 let info = coordinator_client
-                    .poll_until_phase("input_reg", 100)
+                    .poll_until_phase("input_reg", 100, Duration::from_secs(600))
                     .await
                     .expect("poll for input_reg");
 
@@ -330,7 +332,7 @@ async fn full_round_three_clients() {
 
                 // Poll until OUTPUT_REG
                 coordinator_client
-                    .poll_until_phase("output_reg", 100)
+                    .poll_until_phase("output_reg", 100, Duration::from_secs(600))
                     .await
                     .expect("poll for output_reg");
 
@@ -340,7 +342,7 @@ async fn full_round_three_clients() {
 
                 // Poll until SIGNING
                 coordinator_client
-                    .poll_until_phase("signing", 100)
+                    .poll_until_phase("signing", 100, Duration::from_secs(600))
                     .await
                     .expect("poll for signing");
 
@@ -450,7 +452,7 @@ async fn spawn_coordinator_with_blame(
 ) -> (String, Arc<tokio::sync::RwLock<coordinator::round::blame::BanList>>) {
     use coordinator::api::build_router_with_ban_list;
     use coordinator::bitcoin::rpc::BitcoinRpc;
-    use coordinator::config::{CoordinatorConfig, CoordinatorSection, NetworkConfig};
+    use coordinator::config::{CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig};
     use coordinator::round::blame::BanList;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -476,7 +478,9 @@ async fn spawn_coordinator_with_blame(
             fee_rate_sat_per_vbyte: 1,
             listen_addr: listen_addr.clone(),
             ban_file_path: "/dev/null".into(), // no persistence in test
+            tor_mode: false,
         },
+        discovery: DiscoveryConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
@@ -654,7 +658,7 @@ async fn blame_non_signer_timeout() {
             let coordinator_client = CoordinatorClient::new(url);
 
             let info = coordinator_client
-                .poll_until_phase("input_reg", 100)
+                .poll_until_phase("input_reg", 100, Duration::from_secs(600))
                 .await
                 .expect("poll for input_reg");
 
@@ -663,7 +667,7 @@ async fn blame_non_signer_timeout() {
                 .expect("register_input");
 
             coordinator_client
-                .poll_until_phase("output_reg", 100)
+                .poll_until_phase("output_reg", 100, Duration::from_secs(600))
                 .await
                 .expect("poll for output_reg");
 
@@ -673,7 +677,7 @@ async fn blame_non_signer_timeout() {
 
             if should_sign {
                 coordinator_client
-                    .poll_until_phase("signing", 100)
+                    .poll_until_phase("signing", 100, Duration::from_secs(600))
                     .await
                     .expect("poll for signing");
 
@@ -814,7 +818,7 @@ async fn spawn_coordinator_with_blame_and_restart(
 ) -> (String, Arc<tokio::sync::RwLock<coordinator::round::blame::BanList>>) {
     use coordinator::api::build_router_with_ban_list;
     use coordinator::bitcoin::rpc::BitcoinRpc;
-    use coordinator::config::{CoordinatorConfig, CoordinatorSection, NetworkConfig};
+    use coordinator::config::{CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig};
     use coordinator::round::blame::BanList;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -840,7 +844,9 @@ async fn spawn_coordinator_with_blame_and_restart(
             fee_rate_sat_per_vbyte: 1,
             listen_addr: listen_addr.clone(),
             ban_file_path: "/dev/null".into(),
+            tor_mode: false,
         },
+        discovery: DiscoveryConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
@@ -945,7 +951,7 @@ async fn adversarial_replay_token() {
         let coordinator_client = CoordinatorClient::new(coordinator_url.clone());
 
         let info = coordinator_client
-            .poll_until_phase("input_reg", 100)
+            .poll_until_phase("input_reg", 100, Duration::from_secs(600))
             .await
             .expect("poll for input_reg");
 
@@ -962,7 +968,7 @@ async fn adversarial_replay_token() {
         use client::http::CoordinatorClient;
         let coordinator_client = CoordinatorClient::new(coordinator_url.clone());
         coordinator_client
-            .poll_until_phase("output_reg", 100)
+            .poll_until_phase("output_reg", 100, Duration::from_secs(600))
             .await
             .expect("poll for output_reg");
     }
@@ -991,7 +997,7 @@ async fn adversarial_replay_token() {
         use shared::protocol::OutputRegRequest;
 
         let reg = &reg_states[0];
-        let unblinded_token_b64 = B64.encode(&reg.message_bytes);
+        let unblinded_token_b64 = B64.encode(reg.message_bytes);
         let signature_b64 = B64.encode(reg.unblinded_sig_bytes());
         let msg_randomizer_b64 = reg.msg_randomizer.as_ref().map(|m| B64.encode(m.0));
 
@@ -1058,7 +1064,7 @@ async fn adversarial_invalid_utxo() {
     // We need a valid-looking blinded_token and ownership_proof (the RPC check should
     // fire before full signature verification, but we still need syntactically valid fields)
     use base64::{engine::general_purpose::STANDARD as B64, Engine};
-    let fake_blinded_token = B64.encode(&[0u8; 64]); // syntactically valid base64
+    let fake_blinded_token = B64.encode([0u8; 64]); // syntactically valid base64
     // Fake ownership proof: valid JSON array with one hex item
     let fake_ownership_proof = "[\"00\"]";
     let fake_change_addr = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
@@ -1130,7 +1136,7 @@ async fn adversarial_wrong_denomination() {
         let coordinator_client = CoordinatorClient::new(coordinator_url.clone());
 
         let info = coordinator_client
-            .poll_until_phase("input_reg", 100)
+            .poll_until_phase("input_reg", 100, Duration::from_secs(600))
             .await
             .expect("poll for input_reg");
 
@@ -1147,7 +1153,7 @@ async fn adversarial_wrong_denomination() {
         use client::http::CoordinatorClient;
         let coordinator_client = CoordinatorClient::new(coordinator_url.clone());
         coordinator_client
-            .poll_until_phase("output_reg", 100)
+            .poll_until_phase("output_reg", 100, Duration::from_secs(600))
             .await
             .expect("poll for output_reg");
     }
@@ -1158,7 +1164,7 @@ async fn adversarial_wrong_denomination() {
         use shared::protocol::OutputRegRequest;
 
         let reg = &reg_states[0];
-        let unblinded_token_b64 = B64.encode(&reg.message_bytes);
+        let unblinded_token_b64 = B64.encode(reg.message_bytes);
         let signature_b64 = B64.encode(reg.unblinded_sig_bytes());
         let msg_randomizer_b64 = reg.msg_randomizer.as_ref().map(|m| B64.encode(m.0));
 
@@ -1237,11 +1243,11 @@ async fn adversarial_tampered_psbt_rejected() {
     let kp = BjKeyPair::generate(&mut DefaultRng, 2048).expect("keygen");
     let pk = BjPublicKey::from_der(&kp.pk.to_der().unwrap()).unwrap();
     let message_bytes = [0u8; 32];
-    let blinding_result = pk.blind(&mut DefaultRng, &message_bytes).expect("blind");
+    let blinding_result = pk.blind(&mut DefaultRng, message_bytes).expect("blind");
     let sk_der = kp.sk.to_der().unwrap();
     let sk = BjSecretKey::from_der(&sk_der).unwrap();
     let blind_sig = sk.blind_sign(&blinding_result.blind_message).unwrap();
-    let sig = pk.finalize(&blind_sig, &blinding_result, &message_bytes).unwrap();
+    let sig = pk.finalize(&blind_sig, &blinding_result, message_bytes).unwrap();
 
     let state = InputRegState {
         round_id: uuid::Uuid::new_v4(),
@@ -1279,7 +1285,7 @@ async fn adversarial_tampered_psbt_rejected() {
 async fn coordinator_info_endpoint_fields() {
     use coordinator::api::build_router;
     use coordinator::bitcoin::rpc::BitcoinRpc;
-    use coordinator::config::{CoordinatorConfig, CoordinatorSection, NetworkConfig};
+    use coordinator::config::{CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig};
     use coordinator::round::state::RoundState;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1303,7 +1309,9 @@ async fn coordinator_info_endpoint_fields() {
             fee_rate_sat_per_vbyte: 1,
             listen_addr: addr.to_string(),
             ban_file_path: "ban_list.jsonl".into(),
+            tor_mode: false,
         },
+        discovery: DiscoveryConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(
@@ -1436,7 +1444,7 @@ async fn round_restart_and_completion_after_blame() {
             let coordinator_client = CoordinatorClient::new(url);
 
             let info = coordinator_client
-                .poll_until_phase("input_reg", 100)
+                .poll_until_phase("input_reg", 100, Duration::from_secs(600))
                 .await
                 .expect("poll for input_reg");
 
@@ -1445,7 +1453,7 @@ async fn round_restart_and_completion_after_blame() {
                 .expect("register_input");
 
             coordinator_client
-                .poll_until_phase("output_reg", 100)
+                .poll_until_phase("output_reg", 100, Duration::from_secs(600))
                 .await
                 .expect("poll for output_reg");
 
@@ -1455,7 +1463,7 @@ async fn round_restart_and_completion_after_blame() {
 
             if should_sign {
                 coordinator_client
-                    .poll_until_phase("signing", 100)
+                    .poll_until_phase("signing", 100, Duration::from_secs(600))
                     .await
                     .expect("poll for signing");
 
@@ -1509,7 +1517,7 @@ async fn round_restart_and_completion_after_blame() {
         let banned_req = shared::protocol::InputRegRequest {
             utxo_outpoint: non_signer_utxo.clone(),
             ownership_proof: "[\"00\"]".to_string(),
-            blinded_token: B64.encode(&[0u8; 64]),
+            blinded_token: B64.encode([0u8; 64]),
             change_address: "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080".to_string(),
         };
 
@@ -1547,7 +1555,7 @@ async fn round_restart_and_completion_after_blame() {
 
             // Coordinator is already in input_reg after restart
             let info = coordinator_client
-                .poll_until_phase("input_reg", 100)
+                .poll_until_phase("input_reg", 100, Duration::from_secs(600))
                 .await
                 .expect("round 2 poll for input_reg");
 
@@ -1556,7 +1564,7 @@ async fn round_restart_and_completion_after_blame() {
                 .expect("round 2 register_input");
 
             coordinator_client
-                .poll_until_phase("output_reg", 100)
+                .poll_until_phase("output_reg", 100, Duration::from_secs(600))
                 .await
                 .expect("round 2 poll for output_reg");
 
@@ -1565,7 +1573,7 @@ async fn round_restart_and_completion_after_blame() {
                 .expect("round 2 register_output");
 
             coordinator_client
-                .poll_until_phase("signing", 100)
+                .poll_until_phase("signing", 100, Duration::from_secs(600))
                 .await
                 .expect("round 2 poll for signing");
 
