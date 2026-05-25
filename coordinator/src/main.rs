@@ -118,49 +118,45 @@ async fn main() -> anyhow::Result<()> {
                 };
 
                 match phase {
-                    Phase::OutputReg => {
-                        if last_output_reg_round != Some(round_id) {
-                            last_output_reg_round = Some(round_id);
-                            let round_c = Arc::clone(&round_clone);
-                            tracing::debug!(%round_id, "Arming output_reg timeout timer");
-                            tokio::spawn(async move {
-                                tokio::time::sleep(output_reg_timeout).await;
-                                let mut round = round_c.write().await;
-                                if round.round_id == round_id && round.phase == Phase::OutputReg {
-                                    round::output_reg::on_output_reg_timeout(&mut round);
-                                }
-                            });
-                        }
+                    Phase::OutputReg if last_output_reg_round != Some(round_id) => {
+                        last_output_reg_round = Some(round_id);
+                        let round_c = Arc::clone(&round_clone);
+                        tracing::debug!(%round_id, "Arming output_reg timeout timer");
+                        tokio::spawn(async move {
+                            tokio::time::sleep(output_reg_timeout).await;
+                            let mut round = round_c.write().await;
+                            if round.round_id == round_id && round.phase == Phase::OutputReg {
+                                round::output_reg::on_output_reg_timeout(&mut round);
+                            }
+                        });
                     }
-                    Phase::Signing => {
-                        if last_signing_round != Some(round_id) {
-                            last_signing_round = Some(round_id);
-                            let round_c = Arc::clone(&round_clone);
-                            let ban_list_c = Arc::clone(&ban_list_clone);
-                            let blame_count_c = Arc::clone(&blame_count_clone);
-                            let ban_file_c = ban_file.clone();
-                            tracing::debug!(%round_id, "Arming signing timeout timer");
-                            tokio::spawn(async move {
-                                tokio::time::sleep(signing_timeout).await;
-                                let mut round = round_c.write().await;
-                                if round.round_id != round_id || round.phase != Phase::Signing {
-                                    return; // already advanced — no-op
+                    Phase::Signing if last_signing_round != Some(round_id) => {
+                        last_signing_round = Some(round_id);
+                        let round_c = Arc::clone(&round_clone);
+                        let ban_list_c = Arc::clone(&ban_list_clone);
+                        let blame_count_c = Arc::clone(&blame_count_clone);
+                        let ban_file_c = ban_file.clone();
+                        tracing::debug!(%round_id, "Arming signing timeout timer");
+                        tokio::spawn(async move {
+                            tokio::time::sleep(signing_timeout).await;
+                            let mut round = round_c.write().await;
+                            if round.round_id != round_id || round.phase != Phase::Signing {
+                                return; // already advanced — no-op
+                            }
+                            let mut bl = ban_list_c.write().await;
+                            let count = blame_count_c.load(Ordering::Relaxed);
+                            let outcome = round::blame::on_signing_timeout(
+                                &mut round, &mut bl, &ban_file_c, ban_duration, count,
+                            );
+                            match outcome {
+                                BlameOutcome::FullAbort => {
+                                    blame_count_c.store(0, Ordering::Relaxed);
                                 }
-                                let mut bl = ban_list_c.write().await;
-                                let count = blame_count_c.load(Ordering::Relaxed);
-                                let outcome = round::blame::on_signing_timeout(
-                                    &mut round, &mut bl, &ban_file_c, ban_duration, count,
-                                );
-                                match outcome {
-                                    BlameOutcome::FullAbort => {
-                                        blame_count_c.store(0, Ordering::Relaxed);
-                                    }
-                                    BlameOutcome::RestartWithout { .. } => {
-                                        blame_count_c.fetch_add(1, Ordering::Relaxed);
-                                    }
+                                BlameOutcome::RestartWithout { .. } => {
+                                    blame_count_c.fetch_add(1, Ordering::Relaxed);
                                 }
-                            });
-                        }
+                            }
+                        });
                     }
                     _ => {}
                 }
