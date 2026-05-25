@@ -2,6 +2,8 @@
 
 A standalone, open-source CoinJoin coordinator and client for Bitcoin signet/testnet, discoverable via Pubky (PKARR), private via Tor, built in Rust. MIT licensed. No fees. No company. No terms of service.
 
+> **Note:** This document is the architectural and design-rationale companion to the normative wire-protocol specification at [`docs/PROTOCOL.md`](docs/PROTOCOL.md). For implementation-level message formats, field semantics, and round-lifecycle MUST/SHOULD requirements, refer to PROTOCOL.md. This document covers the higher-level system design.
+
 ---
 
 ## Executive Summary

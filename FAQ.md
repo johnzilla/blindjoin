@@ -80,6 +80,25 @@ Yes. The coordinator requires a trusted Bitcoin Core node (Signet by default) fo
 
 It is a solid v1.x implementation with good testing, security hardening, and Docker support. However, it is still experimental privacy software on Signet. Use with caution and audit the code before relying on it for high-value mixing.
 
+The current pre-production gap is documented openly: see the draft [protocol specification](docs/PROTOCOL.md), and the open-source security posture below.
+
+</details>
+
+<details>
+<summary>Is there a protocol specification I can review?</summary>
+
+Yes — a BIP-style normative specification is being drafted at [docs/PROTOCOL.md](docs/PROTOCOL.md). It is explicitly marked as a draft and will be filled in over the course of the planned formal-spec milestone. Sections without `[TODO]` markers are normative as written. Review issues and PRs against the spec are welcome.
+
+</details>
+
+<details>
+<summary>What's the security posture of the dependency tree?</summary>
+
+- TLS is pure-Rust [rustls](https://github.com/rustls/rustls) end-to-end. The openssl crate chain is not pulled in.
+- `cargo audit` runs on every PR and **blocks merge** on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml). Each ignore in that file carries a written rationale.
+- `cargo clippy --workspace --all-targets -- -D warnings` runs on every PR and blocks merge on any lint, including in integration-test code — so future struct/API drift in the test scaffolding surfaces as a CI failure rather than silent rot.
+- GitHub Actions are pinned to immutable commit SHAs; release archives include SHA-256 checksums.
+
 </details>
 
 <details>

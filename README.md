@@ -15,9 +15,11 @@ MIT licensed. No fees. No company. No terms of service.
 
 The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses ephemeral RSA keys that are destroyed after broadcast. All round state is zeroed from memory.
 
-## FAQ
+## Documentation
 
-Read the [FAQ](FAQ.md).
+- **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.
+- **[Protocol specification (draft)](docs/PROTOCOL.md)** — BIP-style normative spec of the coordinator–client wire protocol. Work-in-progress; review and issue feedback welcome.
+- **[Technical design](blindjoin-technical-spec.md)** — architectural background and design rationale.
 
 ## Quick Start (Docker)
 
@@ -40,7 +42,7 @@ To get a signet UTXO for the bot, use the [signet faucet](https://signet.bc-2.jp
 
 ## Build from Source
 
-Requires Rust 1.75+ and cargo.
+Requires Rust 1.89+ and cargo (the floor is set by `arti-client` 0.41).
 
 ```bash
 cargo build --workspace
@@ -177,13 +179,17 @@ blindjoin/
     Dockerfile        # Multi-target Dockerfile (coordinator, client, liquidity-bot)
     bitcoind/bitcoin.conf
   docs/
+    PROTOCOL.md           # BIP-style wire-protocol spec (draft; Milestone 1)
     branch-protection.md  # GitHub branch protection setup guide
   tests/
-    integration/     # End-to-end CoinJoin round tests
+    integration/     # End-to-end CoinJoin round tests (skip gracefully w/o bitcoind)
+  .cargo/
+    audit.toml       # Declared residual risks (each ignore documented inline)
   .github/workflows/
-    ci.yml           # PR-triggered test, clippy, audit gates
+    ci.yml           # PR-triggered test, clippy --all-targets, audit gates
     release.yml      # Cross-compiled binary releases (gated on test+clippy)
     docker.yml       # Multi-arch Docker image publishing (gated on test+clippy)
+  TODO.md            # Open and recently-resolved tech-debt items
 ```
 
 ## Security Model
@@ -203,6 +209,8 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Availability hardening (v1.1):** Async RPC calls execute before the write lock so slow bitcoind cannot serialize participants. RSA keys are parsed once per round (not per request). Blinded tokens are size-bounded to the RSA modulus. Addresses are validated at registration time (not at PSBT build). Duplicate partial signatures are rejected.
 
+**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. The `cargo audit` CI step blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. The `cargo clippy --all-targets` CI step blocks merge on any lint, including in integration-test code.
+
 ## Key Dependencies
 
 | Crate | Purpose |
@@ -210,7 +218,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 | `blind-rsa-signatures` | RFC 9474 RSA blind signatures (jedisct1) |
 | `bitcoin` (rust-bitcoin) | Bitcoin primitives, PSBT, scripts |
 | `bdk_wallet` | Client wallet: key management, UTXO selection, PSBT signing |
-| `arti-client` | Tor hidden service (coordinator) and circuit isolation (client) |
+| `arti-client` | Tor hidden service (coordinator) and circuit isolation (client). Configured `default-features = false` with the `rustls` feature so the TLS backend is pure-Rust and the openssl chain is not in the dep tree. |
 | `pkarr` | Coordinator discovery via Mainline DHT |
 | `axum` | HTTP framework for coordinator API |
 | `tokio` | Async runtime |

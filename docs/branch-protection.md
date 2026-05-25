@@ -31,9 +31,9 @@ These names come from the `name:` field of each job in `.github/workflows/ci.yml
 
 | Status Check | CI Job | What It Enforces |
 |---|---|---|
-| `cargo test` | `test` | `cargo test --workspace` must pass |
-| `cargo clippy` | `clippy` | `cargo clippy --workspace -- -D warnings` must pass |
-| `cargo audit` | `audit` | No high or critical CVEs in dependency tree |
+| `cargo test` | `test` | `cargo test --workspace --lib` must pass |
+| `cargo clippy` | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` must pass (includes integration-test code, so test-scaffolding drift surfaces as CI failure) |
+| `cargo audit` | `audit` | `cargo audit` must exit zero. Accepted residual-risk advisories are declared in [`.cargo/audit.toml`](../.cargo/audit.toml) with a written rationale per ignore. |
 
 ## Notes
 
