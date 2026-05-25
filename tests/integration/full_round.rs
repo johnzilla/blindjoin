@@ -17,38 +17,16 @@ use tokio::sync::RwLock;
 // ---------------------------------------------------------------------------
 // Helper: initialise a round state in InputReg with a fresh RSA key.
 // ---------------------------------------------------------------------------
+/// Bootstrap a fresh round in InputReg using the production code path —
+/// the same `coordinator::round::manager::start_round` that `coordinator::run`
+/// invokes at startup. No hand-rolled `RoundStateInner` — eliminates the
+/// T-06-02 test-only backdoor that hid the v1.1 round-bootstrap regression.
 fn build_input_reg_round_state() -> coordinator::round::state::RoundState {
-    use coordinator::blind::rsa::RsaBlindSigner;
-    use coordinator::round::state::{Phase, RoundState, RoundStateInner};
-    use std::collections::HashMap;
-
-    let signer = RsaBlindSigner::generate().expect("RSA keygen");
-    let sk_der = signer.secret_key_der().expect("sk to DER");
-    let pk_der = signer.public_key_spki_der().expect("pk to SPKI DER");
-    let pk_hash = signer.public_key_hash();
-
-    // Fixed test round secret (non-zero so HMAC generates valid tokens)
-    let mut round_secret = [0u8; 32];
-    for (i, b) in round_secret.iter_mut().enumerate() {
-        *b = (i as u8).wrapping_add(1);
-    }
+    use coordinator::round::manager::start_round;
+    use coordinator::round::state::RoundState;
 
     let mut state = RoundState::new_idle();
-    state.rsa_pubkey_hash = Some(pk_hash);
-    state.rsa_pubkey_der = Some(pk_der);
-    state.inner = Some(RoundStateInner {
-        rsa_signing_key: sk_der,
-        rsa_signer: signer,
-        round_secret,
-        registered_inputs: HashMap::new(),
-        redeemed_tokens: std::collections::HashSet::new(),
-        registered_outputs: Vec::new(),
-        partial_sigs: HashMap::new(),
-        change_addresses: HashMap::new(),
-    });
-    // Transition Idle → InputReg
-    state.transition_to(Phase::InputReg).expect("transition to InputReg");
-
+    start_round(&mut state).expect("start_round must succeed from Idle");
     state
 }
 
