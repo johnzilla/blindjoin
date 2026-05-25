@@ -129,9 +129,11 @@ Every pull request runs three independent CI jobs:
 
 | Job | Command | Blocks merge? |
 |-----|---------|---------------|
-| `cargo test` | `cargo test --workspace` | Yes |
+| `cargo test` | `cargo test --workspace --lib` | Yes |
 | `cargo clippy` | `cargo clippy --workspace -- -D warnings` | Yes |
-| `cargo audit` | `cargo audit --deny high --deny critical` | Yes (high/critical only) |
+| `cargo audit` | `cargo audit` | Yes |
+
+The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare accepted residual risks. Each ignored advisory carries a written rationale in that file; an ignore without a rationale is a code-review-blocking change.
 
 Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
 

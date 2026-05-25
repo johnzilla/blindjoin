@@ -1,0 +1,48 @@
+# cargo-audit configuration for blindjoin.
+#
+# This file lists advisories that are intentionally accepted as residual risk.
+# Each entry below must include a written rationale. Adding an ignore without
+# a documented reason is a code-review-blocking change.
+#
+# Reviewed: 2026-05-25.
+
+[advisories]
+ignore = [
+    # rsa crate (transitive via blind-rsa-signatures) — Marvin Attack timing
+    # sidechannel. No upstream fix available.
+    #
+    # Why accepted as residual risk in blindjoin:
+    # The Marvin Attack model assumes the attacker can submit many chosen
+    # ciphertexts against the same long-lived private key and measure
+    # decryption timing precisely. blindjoin's coordinator generates a fresh
+    # ephemeral RSA keypair per round, performs at most `max_participants`
+    # blind-sign operations against it (default cap: 20 per round), and
+    # destroys the key via `zeroize` after the round broadcasts. The attack
+    # model's preconditions (long-lived key, unlimited measurements) do not
+    # obtain.
+    #
+    # This residual-risk acceptance is explicitly in scope for the planned
+    # external security audit. If the audit finds the ephemeral-key mitigation
+    # insufficient (e.g. cross-round timing oracles via shared TLS state),
+    # this entry will be removed and a remediation plan published.
+    "RUSTSEC-2023-0071",
+
+    # rand crate (transitive) — unsoundness when a custom logger calls
+    # `rand::rng()` during another rand operation.
+    #
+    # blindjoin uses `tracing` + `tracing-subscriber` for logging. Neither
+    # has a custom logger that invokes `rand::rng()` during rand calls. The
+    # attack precondition is structurally absent from this codebase.
+    "RUSTSEC-2026-0097",
+
+    # bincode 2.0.1 — marked unmaintained.
+    #
+    # Transitive dependency (not directly used by blindjoin). Will track
+    # upstream for a maintained replacement. Not a runtime vulnerability.
+    "RUSTSEC-2025-0141",
+
+    # paste 1.0.15 — proc-macro crate marked unmaintained.
+    #
+    # Compile-time-only macro. No runtime code path. Transitive dep.
+    "RUSTSEC-2024-0436",
+]

@@ -34,7 +34,8 @@ jobs:
   audit:
     name: cargo audit
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # Blocks merge: cargo audit exits non-zero on any advisory not listed in
+    # .cargo/audit.toml. Each ignore in audit.toml carries a written rationale.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
