@@ -254,10 +254,16 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
             ban_list,
         );
 
+        // T-08-03-01: thread the connection-cap value through to the accept loop.
+        // The semaphore inside serve_onion_service bounds in-flight HS streams.
+        let max_concurrent_connections = cfg.coordinator.max_concurrent_connections;
+
         // Spawn the hidden service — it bootstraps Tor, sends the onion address, then
         // serves forever. T-05-04: on fatal error the process exits 1.
         tokio::spawn(async move {
-            if let Err(e) = serve_onion_service(app, addr_tx).await {
+            if let Err(e) =
+                serve_onion_service(app, addr_tx, max_concurrent_connections).await
+            {
                 error!(error = %e, "Onion service fatal error");
                 std::process::exit(1);
             }
@@ -269,6 +275,14 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         ))?
     } else {
         // Clearnet path — Phase 4 compatible (default for tests/dev).
+        // T-08-03-05 (accept): the max_concurrent_connections cap is enforced only
+        // in tor_mode = true. The clearnet path uses axum::serve which has its own
+        // internal accept loop and is intentionally NOT capped per Phase 8 A4
+        // resolution — clearnet is dev/test only per CONTEXT D-01.
+        tracing::warn!(
+            max_concurrent_connections = cfg.coordinator.max_concurrent_connections,
+            "Clearnet mode: max_concurrent_connections is NOT enforced — clearnet is dev/test only. Production deployments must use tor_mode = true."
+        );
         let app = api::build_router_with_ban_list(
             round_state.clone(),
             Arc::new(rpc),
