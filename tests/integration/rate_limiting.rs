@@ -471,23 +471,33 @@ async fn request_timeout_returns_408() {
         panic!("flush partial body: {e}");
     }
 
-    // Pause for 3 seconds — three times the `request_timeout_secs = 1` deadline.
-    // The TimeoutLayer's wrapper future MUST elapse during this sleep and emit
-    // a 408 response.
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
     // ----- Read the response and assert 408 -----
-    // Cap the read at 1 KiB and 5s — the response is small and the connection
-    // should be closed by the server after emitting 408. We DO NOT send the
-    // remaining body bytes — the server already responded by now.
+    // WR-02 (Phase 8 review): start the read concurrently with the wait, and
+    // record when the FIRST response byte arrives. This proves the 408 fires
+    // near `request_timeout_secs = 1` instead of at the 3 s end-of-pause —
+    // catching a regression where the layer would wait for the full
+    // Content-Length: 200 body before emitting the timeout response.
+    //
+    // The previous shape (sleep 3s then read) could not distinguish
+    // "timeout-on-deadline" from "timeout-after-body-completion". The new
+    // shape measures elapsed time from request flush to first response byte
+    // and asserts it is within (request_timeout_secs + 750 ms slack), where
+    // 750 ms covers CI scheduler jitter and tower_http internal poll cost
+    // without exceeding the 3 s pause window.
+    let request_flushed_at = tokio::time::Instant::now();
+
     let read_fut = async {
         let mut buf = Vec::with_capacity(1024);
-        // Read until EOF or 1 KiB — whichever comes first.
         let mut tmp = [0u8; 256];
+        let mut first_byte_at: Option<tokio::time::Instant> = None;
+        // Read until EOF or 1 KiB — whichever comes first.
         loop {
             match stream.read(&mut tmp).await {
                 Ok(0) => break, // EOF
                 Ok(n) => {
+                    if first_byte_at.is_none() {
+                        first_byte_at = Some(tokio::time::Instant::now());
+                    }
                     buf.extend_from_slice(&tmp[..n]);
                     if buf.len() >= 1024 {
                         break;
@@ -496,23 +506,43 @@ async fn request_timeout_returns_408() {
                 Err(e) => return Err(format!("read response: {e}")),
             }
         }
-        Ok(buf)
+        Ok((buf, first_byte_at))
     };
 
-    let resp_bytes = match tokio::time::timeout(Duration::from_secs(5), read_fut).await {
-        Ok(Ok(b)) => b,
-        Ok(Err(e)) => {
-            run_handle.abort();
-            panic!("error reading response: {e}");
-        }
-        Err(_) => {
-            run_handle.abort();
-            panic!(
-                "timed out (5s) waiting to read response — the server may not have emitted \
-                 a 408 response within the deadline. Plan 02's TimeoutLayer may not be wired."
-            );
-        }
-    };
+    let (resp_bytes, first_byte_at) =
+        match tokio::time::timeout(Duration::from_secs(5), read_fut).await {
+            Ok(Ok((b, t))) => (b, t),
+            Ok(Err(e)) => {
+                run_handle.abort();
+                panic!("error reading response: {e}");
+            }
+            Err(_) => {
+                run_handle.abort();
+                panic!(
+                    "timed out (5s) waiting to read response — the server may not have emitted \
+                     a 408 response within the deadline. Plan 02's TimeoutLayer may not be wired."
+                );
+            }
+        };
+
+    // WR-02: upper time-bound. request_timeout_secs = 1; allow 750 ms slack.
+    // If the timeout layer is wired correctly the first response byte should
+    // arrive at ~1 s post-flush (give or take poll quanta). A first byte
+    // arriving at ~3 s would mean the layer waits for full body completion
+    // before firing — a regression we want to catch in CI.
+    let time_to_first_byte = first_byte_at
+        .expect("expected at least one response byte before EOF when 408 fires")
+        .duration_since(request_flushed_at);
+    let upper_bound = Duration::from_millis(1_750);
+    assert!(
+        time_to_first_byte < upper_bound,
+        "408 must fire near the deadline (~{request_timeout_secs}s), not after the 3s body \
+         pause completes. Observed time-to-first-byte = {time_to_first_byte:?}, upper bound = \
+         {upper_bound:?}. A failure here typically means tower_http::timeout::TimeoutLayer is \
+         waiting for full body before emitting 408 — check ServiceBuilder layer ordering in \
+         coordinator/src/api/mod.rs against Pitfall 4.",
+        request_timeout_secs = 1,
+    );
 
     // Cleanup BEFORE the assert so the panic message includes the abort.
     run_handle.abort();
