@@ -1,5 +1,12 @@
 name: Docker
 
+env:
+  # Force GitHub Actions runner to execute Node 20 JS actions on Node 24,
+  # silencing the deprecation warning ahead of the June 2026 hard cutover.
+  # See: actions/checkout v6.0.2 still declares `using: node20` — upgrading
+  # the action SHA is tracked separately (see TODO at top of ci.yml).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     tags: ['v*']
