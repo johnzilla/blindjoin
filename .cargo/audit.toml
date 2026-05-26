@@ -4,7 +4,7 @@
 # Each entry below must include a written rationale. Adding an ignore without
 # a documented reason is a code-review-blocking change.
 #
-# Reviewed: 2026-05-25.
+# Reviewed: 2026-05-26.
 
 [advisories]
 ignore = [
@@ -26,6 +26,25 @@ ignore = [
     # insufficient (e.g. cross-round timing oracles via shared TLS state),
     # this entry will be removed and a remediation plan published.
     "RUSTSEC-2023-0071",
+
+    # rand 0.9.x / 0.10.x (transitive via arti-client and blind-rsa-signatures)
+    # — unsoundness when a custom logger calls `rand::rng()` during another
+    # rand operation.
+    #
+    # The 0.8.x track was fixed in 0.8.6 (we bumped to that in quick task
+    # 260526-d7m). Upstream patches for 0.9.x and 0.10.x have not shipped yet;
+    # cargo audit surfaces these as warning-class unsoundness on the residual
+    # deps.
+    #
+    # Why accepted as residual risk in blindjoin:
+    # blindjoin uses `tracing` + `tracing-subscriber` for logging. Neither has
+    # a custom logger that invokes `rand::rng()` during rand calls. The attack
+    # precondition (a custom logger reaching back into rand's reseeding path)
+    # is structurally absent from this codebase.
+    #
+    # Remove this entry once rand publishes a fixed 0.9.x and 0.10.x and the
+    # transitive bumps land via blind-rsa-signatures and arti-client.
+    "RUSTSEC-2026-0097",
 
     # bincode 2.0.1 — marked unmaintained.
     #
