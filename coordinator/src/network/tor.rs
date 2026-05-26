@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use arti_client::{TorClient, TorClientConfig};
 use arti_client::config::onion_service::OnionServiceConfigBuilder;
-use tor_hsservice::handle_rend_requests;
+use tor_hsservice::{handle_rend_requests, ClientError};
 use tor_cell::relaycell::msg::Connected;
 use safelog::DisplayRedacted as _;
 use hyper_util::rt::TokioIo;
@@ -20,6 +20,26 @@ use hyper::server::conn::http1;
 use futures_util::StreamExt;
 use anyhow::Context;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+/// Map a `tor_hsservice::ClientError` to a stable static tag for logging
+/// (Phase 8 WR-05). Returns a `&'static str` — never the error's `Display`
+/// chain — so no circuit identifiers, partial introduction-point keys, or
+/// peer-side stream metadata can leak into operator logs.
+///
+/// The match is exhaustive on the current `ClientError` variants
+/// (tor-hsservice 0.41). The `_` arm covers any future variant added by a
+/// minor arti bump; choosing a static fallback over `e.kind()` keeps this
+/// translation free of additional dependencies and avoids the
+/// `tor_error::HasKind` re-export trail.
+fn client_error_kind(err: &ClientError) -> &'static str {
+    match err {
+        ClientError::BadIntroduce(_) => "bad_introduce",
+        ClientError::EstablishSession(_) => "establish_session",
+        ClientError::AcceptStream(_) => "accept_stream",
+        ClientError::RejectStream(_) => "reject_stream",
+        _ => "other",
+    }
+}
 
 /// RAII guard for the per-connection semaphore permit (Phase 8 WR-01 fix).
 ///
@@ -145,7 +165,17 @@ pub async fn serve_onion_service(
         let data_stream = match stream_req.accept(Connected::new_empty()).await {
             Ok(ds) => ds,
             Err(e) => {
-                tracing::warn!(error = %e, "Failed to accept HS stream");
+                // Phase 8 WR-05: log a stable variant tag instead of the
+                // error's Display/Debug. ClientError's top-level Display
+                // strings are static today (see tor-hsservice-0.41.0 err.rs)
+                // BUT its `#[source]` chain wraps tor_proto::Error which
+                // can include circuit-side metadata under future versions.
+                // CLAUDE.md forbids logging anything that could correlate
+                // clients across accept events. Mapping to a kind tag here
+                // keeps the log shape stable across arti minor versions
+                // and audit-trail-proof.
+                let kind = client_error_kind(&e);
+                tracing::warn!(error_kind = kind, "Failed to accept HS stream");
                 // T-08-03-03: release the slot on accept failure so it does not leak.
                 drop(permit);
                 continue;
@@ -174,8 +204,15 @@ pub async fn serve_onion_service(
             // it the borrow checker would still allow `guard` to be dropped
             // at the top of the async block. Do not "simplify" away.
             drop(guard);
-            if let Err(e) = result {
-                tracing::debug!(error = %e, "HS connection closed");
+            if let Err(_e) = result {
+                // Phase 8 WR-05: hyper::Error's Display may include
+                // peer-side framing details. Log only the fact that the
+                // connection ended with an error — no error data crosses
+                // the privacy boundary. Connection-close failures are
+                // common (Tor circuit teardown, client disconnect) so a
+                // counter would be more useful than per-event logs, but
+                // that is left as a follow-up.
+                tracing::debug!("HS connection closed with error");
             }
         });
     }
