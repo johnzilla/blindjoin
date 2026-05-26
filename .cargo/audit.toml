@@ -27,14 +27,6 @@ ignore = [
     # this entry will be removed and a remediation plan published.
     "RUSTSEC-2023-0071",
 
-    # rand crate (transitive) — unsoundness when a custom logger calls
-    # `rand::rng()` during another rand operation.
-    #
-    # blindjoin uses `tracing` + `tracing-subscriber` for logging. Neither
-    # has a custom logger that invokes `rand::rng()` during rand calls. The
-    # attack precondition is structurally absent from this codebase.
-    "RUSTSEC-2026-0097",
-
     # bincode 2.0.1 — marked unmaintained.
     #
     # Transitive dependency (not directly used by blindjoin). Will track
