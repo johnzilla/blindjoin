@@ -573,22 +573,25 @@ This phase is **not a rename/refactor/migration** — it is a feature add. The R
 | A4 | The clearnet `axum::serve(listener, app)` path is acceptable to leave UNCAPPED for connections (option (c) in structure note), OR the planner converts it to manual accept loop (option (a)). CONTEXT notes clearnet is dev/test only, which supports (c). | Architecture Patterns / Recommended Project Structure | If operators run clearnet in production despite the warning, max_concurrent_connections silently fails to enforce. Recommend planner pick (a) for defense in depth, or (c) with a `tracing::warn!` at startup that the cap is tor-only. |
 | A5 | JSON-envelope 429 body is desirable (matching project convention) — but plain-text `Too Many Requests! Wait for Ns` would also satisfy D-03 (which only requires 429 + Retry-After). CONTEXT D-06 explicitly leaves body shape to Claude's discretion. | Code Examples Example 1 | Planner choice. JSON envelope = ~30 lines additional code (custom `error_handler`); plain text = zero extra code. Recommend JSON for consistency. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Connection cap target: connections or concurrent requests?**
    - What we know: D-04 says `max_concurrent_connections` (worded as connections). The natural fit is per-stream semaphore in the accept loop, which is what this research recommends.
    - What's unclear: If the operator actually wants "max concurrent in-flight HTTP requests across all connections" (looser bound — connections can be idle), a `tower::ConcurrencyLimitLayer` at the Router root would be the right tool, but with its queueing behavior, that's typically not what "max concurrent connections" reviewers mean.
    - Recommendation: ship as connection cap (semaphore in accept loop). The wording in D-04 supports this directly. If the planner wants both — bounded connections AND bounded concurrent requests — these are independent layers and can both be added.
+   - **RESOLVED:** ship as connection cap (semaphore in accept loop) per Plan 03. CONTEXT D-04 wording `max_concurrent_connections` is taken at face value. No `ConcurrencyLimitLayer` added — operator can request a separate concurrent-request cap in a follow-up phase if profiling shows it matters.
 
 2. **Per-route timeout vs uniform timeout?**
    - What we know: D-04 declares a single `request_timeout_secs`. Single TimeoutLayer at Router scope is correct under that declaration.
    - What's unclear: If `/round/tx` PSBT construction at max_participants = 20 sometimes exceeds 30 s (the default), this clamp causes spurious 408s.
    - Recommendation: ship single uniform timeout per D-04 strictly; add per-route override as a follow-up if profiling shows it matters. Note in PLAN.md as a deliberate "watch this" item.
+   - **RESOLVED:** ship single uniform `tower_http::timeout::TimeoutLayer::with_status_code(REQUEST_TIMEOUT, Duration::from_secs(request_timeout_secs))` at Router scope per Plan 02 (A3). Per-route override deferred; PLAN.md / SUMMARY records the `/round/tx` watch-this concern.
 
 3. **Should the integration test exercise the connection-cap?**
    - What we know: D-06 says "hammer one write endpoint past the configured limit; assert 429 + Retry-After." Connection-cap is a separate axis.
    - What's unclear: Whether the same integration-test file should also test the semaphore (open `max_concurrent_connections + 1` parallel reqwest connections, assert the +1th blocks).
    - Recommendation: yes — write the connection-cap test alongside the rate-limit test in the same file. Use `tokio::join!` of N+1 long-running connection futures and assert one of them is parked (or use `tokio::time::timeout` on the parked future). Minor scope add but high signal value. Planner discretion.
+   - **RESOLVED:** 429+Retry-After test mandatory (Plan 04 Task 1 `info_endpoint_returns_429_when_flooded`); 408 timeout test mandatory (Plan 04 Task 1 `request_timeout_returns_408`, per the revision making the OR-skip clause non-optional); connection-cap runtime test DEFERRED per A4 — clearnet-only test infra cannot exercise the tor-only semaphore (Plan 03 attaches the cap inside the arti accept loop). Coverage stands via Plan 03 grep audits; a TODO comment inside `tests/integration/rate_limiting.rs` documents the deferral.
 
 ## Sources
 
