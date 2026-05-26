@@ -34,7 +34,13 @@ config = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { version = "0.6", features = ["limit", "timeout"] }
-tower_governor = "0.8"
+# Phase 8 WR-03: drop `tonic` from tower_governor's default feature set —
+# the coordinator never instantiates gRPC, and pulling tonic transitively
+# inflates binary size and CVE surface for no benefit. The `tracing`
+# feature stays OFF: enabling it would emit per-request log lines from
+# tower_governor's namespace at info level (per-429 audit not done).
+# Bump in lockstep with `governor = "0.10"` below — see IN-02.
+tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 # Direct dep on governor so middleware.rs can name `NoOpMiddleware` / `QuantaInstant`
 # as type parameters in `RateLimitLayers` struct fields. This is already a transitive
 # dep of tower_governor 0.8 (which re-exports `governor::*` only via crate path,
