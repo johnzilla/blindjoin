@@ -7,6 +7,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
+use anyhow::Context;
 use tokio::sync::RwLock;
 use tokio::sync::oneshot;
 use tracing::{error, info};
@@ -37,6 +38,12 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         tor_mode = cfg.coordinator.tor_mode,
         "Coordinator starting"
     );
+
+    // Phase 8 CR-01 / CR-02: validate hardening knobs once, up front, so
+    // misconfiguration produces a single structured error here instead of a
+    // deep-stack panic from `GovernorConfigBuilder::finish().expect(..)` or a
+    // silent deadlock from `Semaphore::new(0).acquire_owned().await`.
+    cfg.validate().context("Invalid coordinator configuration")?;
 
     // Fail-fast startup health checks (D-12)
     let rpc = BitcoinRpc::new(

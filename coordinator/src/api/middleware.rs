@@ -68,11 +68,21 @@ pub struct RateLimitLayers {
 /// minute's budget then must wait. `per_millisecond = 60_000 / rpm`: one token
 /// replenishes every (60s / rpm). Example: 30 rpm → 2_000 ms per token, burst 30.
 ///
-/// Panics indirectly if rpm = 0 (caller's `.finish().expect(...)` catches it —
-/// preferred over panicking here so the message points at the misconfigured
-/// CoordinatorSection field).
+/// Bounds: rpm MUST be in `1..=60_000`. Above 60_000, integer division yields
+/// `period_ms = 0` and `GovernorConfigBuilder::finish()` returns `None`,
+/// triggering an opaque panic in `build_rate_limit_layers`. Phase 8 CR-01 fix:
+/// `CoordinatorConfig::validate()` (called from `run::run`) is the primary
+/// fence — this `assert!` is defense in depth so the message blames the
+/// correct field if validation is ever bypassed (e.g. a direct call from a
+/// future test or a custom embedding of the router).
 fn per_min_to_governor(rpm: u32) -> (u64, u32) {
-    let period_ms = 60_000u64 / rpm.max(1) as u64; // .max(1) defensive — .finish() will reject rpm=0 anyway
+    assert!(
+        (1..=60_000).contains(&rpm),
+        "rate_limit_*_per_min must be in 1..=60_000; got {rpm}. Configure via \
+         BLINDJOIN__COORDINATOR__RATE_LIMIT_{{INFO,WRITES}}_PER_MIN, or call \
+         CoordinatorConfig::validate() before constructing the router.",
+    );
+    let period_ms = 60_000u64 / rpm as u64;
     (period_ms, rpm)
 }
 

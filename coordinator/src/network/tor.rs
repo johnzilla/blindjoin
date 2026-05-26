@@ -26,6 +26,19 @@ pub async fn serve_onion_service(
     addr_tx: tokio::sync::oneshot::Sender<String>,
     max_concurrent_connections: u32,
 ) -> anyhow::Result<()> {
+    // Phase 8 CR-02 defense-in-depth: refuse to start the accept loop with a
+    // zero-capacity semaphore. `CoordinatorConfig::validate()` is the primary
+    // fence; this `ensure!` makes the requirement local so a future caller
+    // that bypasses `run::run` (custom embedding, direct test invocation)
+    // still gets an actionable error instead of a silent deadlock on the
+    // first `Semaphore::acquire_owned().await`.
+    anyhow::ensure!(
+        max_concurrent_connections >= 1,
+        "max_concurrent_connections must be >= 1; got 0. \
+         Set BLINDJOIN__COORDINATOR__MAX_CONCURRENT_CONNECTIONS to a positive value \
+         (recommended minimum 8).",
+    );
+
     // Bootstrap a Tor client — this connects to the Tor network.
     // T-05-04: runs inside tokio::spawn in main.rs; if this fails the process exits 1.
     let tor_client = TorClient::create_bootstrapped(TorClientConfig::default())

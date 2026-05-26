@@ -133,6 +133,57 @@ impl CoordinatorConfig {
             .try_deserialize()
     }
 
+    /// Validate hardening-relevant knobs before any subsystem reads them
+    /// (Phase 8 CR-01 / CR-02). Surfaces a single structured `anyhow::Error`
+    /// with an actionable message and the env-var name to set; called once
+    /// in `run::run` so misconfiguration produces a clean startup error
+    /// instead of a deep-stack panic from
+    /// `GovernorConfigBuilder::finish().expect(..)` or a silent deadlock
+    /// from `Semaphore::new(0).acquire_owned().await`.
+    ///
+    /// Bounds rationale:
+    ///   - `rate_limit_*_per_min`: 1..=60_000. Upper bound is governor's
+    ///     finest expressible rate (one token per millisecond, since
+    ///     `per_millisecond = 60_000 / rpm` truncates to 0 above that).
+    ///     Lower bound is 1 (0 rpm trips `finish().expect(..)`).
+    ///   - `max_concurrent_connections`: >= 1. `Semaphore::new(0)` would
+    ///     park the Tor accept loop forever on the first `acquire_owned`,
+    ///     wedging the coordinator silently. Document a sane minimum of
+    ///     8 — values below that serialize all rendezvous handshakes but
+    ///     are not a hard failure.
+    ///   - `request_timeout_secs`: >= 1. A 0-second timeout would fire
+    ///     before the handler future is polled once, returning 408 for
+    ///     every request.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let c = &self.coordinator;
+
+        anyhow::ensure!(
+            (1..=60_000).contains(&c.rate_limit_info_per_min),
+            "coordinator.rate_limit_info_per_min must be in 1..=60_000; got {}. \
+             Set BLINDJOIN__COORDINATOR__RATE_LIMIT_INFO_PER_MIN to a value in that range.",
+            c.rate_limit_info_per_min,
+        );
+        anyhow::ensure!(
+            (1..=60_000).contains(&c.rate_limit_writes_per_min),
+            "coordinator.rate_limit_writes_per_min must be in 1..=60_000; got {}. \
+             Set BLINDJOIN__COORDINATOR__RATE_LIMIT_WRITES_PER_MIN to a value in that range.",
+            c.rate_limit_writes_per_min,
+        );
+        anyhow::ensure!(
+            c.max_concurrent_connections >= 1,
+            "coordinator.max_concurrent_connections must be >= 1; got 0. \
+             Set BLINDJOIN__COORDINATOR__MAX_CONCURRENT_CONNECTIONS to a positive value \
+             (recommended minimum 8).",
+        );
+        anyhow::ensure!(
+            c.request_timeout_secs >= 1,
+            "coordinator.request_timeout_secs must be >= 1; got 0. \
+             Set BLINDJOIN__COORDINATOR__REQUEST_TIMEOUT_SECS to a positive value.",
+        );
+
+        Ok(())
+    }
+
     /// Default config used in tests when no config file is present.
     pub fn with_defaults() -> Self {
         Self {
