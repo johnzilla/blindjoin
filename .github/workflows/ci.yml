@@ -35,6 +35,24 @@ jobs:
         # that breaks tests/integration/ surfaces as a CI failure, not silent rot.
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  coordinator-smoke:
+    name: coordinator binary builds
+    runs-on: ubuntu-latest
+    # Proves the production `coordinator` binary compiles in release mode.
+    # The binary currently has no `--help` flag — invoking it without a
+    # reachable bitcoind exits non-zero, so a runtime smoke would require
+    # standing up bitcoind in CI (deferred to a follow-on phase). The
+    # release-mode build catches missing-feature-flag / linker-flag
+    # regressions that a debug `cargo test` build would not surface.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Build coordinator (release)
+        run: cargo build --release --bin coordinator
+
   audit:
     name: cargo audit
     runs-on: ubuntu-latest
