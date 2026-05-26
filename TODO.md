@@ -2,6 +2,25 @@
 
 ## Resolved 2026-05-26
 
+- [x] **B-01: Public-endpoint hardening shipped (v1.2 Phase 8).** Per-route
+  rate limits via `tower_governor` 0.8 (reads 60/min, writes 30/min by default)
+  return HTTP 429 + `Retry-After` + a `RATE_LIMITED` JSON envelope; uniform
+  `tower_http::timeout::TimeoutLayer` (default 30s) returns HTTP 408 on stall;
+  Tor accept-loop bounded by a `tokio::sync::Semaphore` (default 256) wrapped
+  in a load-bearing `ConnectionGuard` RAII type. Four operator-tunable knobs
+  on `[coordinator]` (`rate_limit_info_per_min`, `rate_limit_writes_per_min`,
+  `request_timeout_secs`, `max_concurrent_connections`), all validated at
+  startup via `CoordinatorConfig::validate()`. Release builds refuse to start
+  in clearnet mode unless `BLINDJOIN_ALLOW_CLEARNET=1` is explicitly set.
+  Rate limiter uses `GlobalKeyExtractor` (Tor-safe — `PeerIpKeyExtractor`
+  would have been a critical bug). Integration test at
+  `tests/integration/rate_limiting.rs` exercises both 429 and 408 end-to-end
+  when bitcoind is available. Code review (`.planning/phases/08-public-endpoint-hardening/08-REVIEW.md`)
+  found 2 BLOCKER + 6 WARNING items, all fixed in 7 atomic `fix(08): ...`
+  commits before the phase landed. Phase verification 11/11 must-haves
+  verified statically; 3 runtime items deferred to `08-HUMAN-UAT.md` for CI
+  sign-off with bitcoind on PATH.
+
 - [x] **Coordinator now bootstraps a round in production.** v1.1 shipped with the
   Idle→InputReg transition only inside `#[cfg(test)]` blocks; in production the
   coordinator stayed in Idle forever and every API request returned WRONG_PHASE.
@@ -68,8 +87,7 @@
   findings #1 and #2. Estimated ~30 min refactor.
 
 ### Scoped features (see BACKLOG.md)
-- [ ] **B-01:** Public-endpoint hardening (rate limiting, timeouts, connection caps)
 - [ ] **B-02:** BIP-322 multi-script support (P2TR, P2SH-P2WPKH)
 - [ ] **B-03:** Dynamic fee estimation (mempool-aware, safety margin, RBF)
 
-These are deferred features with full scoping in [`.planning/BACKLOG.md`](.planning/BACKLOG.md). Schedule into a future milestone — naturally a "v1.2 Production Readiness" set.
+These are deferred features with full scoping in [`.planning/BACKLOG.md`](.planning/BACKLOG.md). **B-01 shipped 2026-05-26** as Phase 8 of the v1.2 Production Readiness milestone (see Resolved above). B-02 and B-03 remain candidates for future milestones.

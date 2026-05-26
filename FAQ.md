@@ -76,6 +76,15 @@ Yes. The coordinator requires a trusted Bitcoin Core node (Signet by default) fo
 </details>
 
 <details>
+<summary>How does BlindJoin handle abuse and flood traffic?</summary>
+
+Each HTTP route on the coordinator is rate-limited via `tower_governor`: read endpoints (`/info`, `/round/tx`) accept up to 60 req/min; write endpoints (`/round/input`, `/round/output`, `/round/sign`) accept up to 30 req/min. Floods receive HTTP 429 with a `Retry-After` header and a JSON envelope `{"error":{"code":"RATE_LIMITED",...}}`. Handlers that stall past `request_timeout_secs` (default 30s) return HTTP 408. Concurrent Tor streams are bounded by a `tokio::sync::Semaphore` (default 256). All four knobs are operator-tunable in `coordinator.toml` and validated at startup.
+
+Per-peer rate limiting is intentionally not used: every Tor hidden-service stream looks identical to the coordinator, so the rate limiter uses `GlobalKeyExtractor` and sybil resistance lives in BIP-322 ownership proofs and the per-round denomination instead. See the [README §Security Model](README.md#security-model) and `blindjoin-technical-spec.md` §"Availability Threat Model" for the full breakdown.
+
+</details>
+
+<details>
 <summary>Is BlindJoin production-ready?</summary>
 
 It is a solid v1.x implementation with good testing, security hardening, and Docker support. However, it is still experimental privacy software on Signet. Use with caution and audit the code before relying on it for high-value mixing.

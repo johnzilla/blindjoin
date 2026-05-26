@@ -251,6 +251,21 @@ The CLI client can discover coordinators by:
 | Record which UTXOs registered for a round (but NOT which outputs they map to) | This is observable on-chain anyway — the CoinJoin transaction is public |
 | Selectively exclude certain UTXOs | Participants detect exclusion and can report/switch coordinators |
 
+### Availability Threat Model (volume-based DoS — v1.2 Phase 8)
+
+Distinct from coordinator-misbehavior threats above, the coordinator's *own* availability against external flood traffic is bounded by tower middleware on the HTTP layer:
+
+| Attack | Mitigation | Observable behavior |
+|--------|-----------|---------------------|
+| Flood `/info` or `/round/tx` past the read limit | Per-route `tower_governor::GovernorLayer` with `GlobalKeyExtractor` (Tor-safe — see below) | HTTP 429 + `Retry-After: <seconds>` + JSON body `{"error":{"code":"RATE_LIMITED",...}}` |
+| Flood `/round/input`, `/round/output`, or `/round/sign` past the write limit | Same, separate write-bucket `GovernorConfig` (default 30 req/min/route) | HTTP 429 with the same envelope and header |
+| Open a request and stall the body / never close | Uniform Router-scope `tower_http::timeout::TimeoutLayer` honoring `request_timeout_secs` | HTTP 408 emitted at the deadline (not after body completion) |
+| Open more concurrent Tor streams than the coordinator can serve | `tokio::sync::Semaphore` (`max_concurrent_connections`) gating the arti accept loop; permit acquired *before* `accept`, released via `ConnectionGuard` RAII on close | New streams park at the listener until a permit is released |
+
+**Why `GlobalKeyExtractor` and not `PeerIpKeyExtractor`.** All Tor hidden-service streams arrive at the coordinator from the local arti listener and therefore share an effective peer IP. A per-IP key extractor would either lump every participant into one bucket (functionally identical to the global one) or fail to extract a key and surface as HTTP 500. The protocol therefore makes a deliberate trade: rate limits are global per route, and sybil resistance lives in BIP-322 ownership proofs plus the per-round denomination. Per-peer throttling on Tor is not a v1 goal.
+
+All four hardening knobs (`rate_limit_info_per_min`, `rate_limit_writes_per_min`, `request_timeout_secs`, `max_concurrent_connections`) are validated by `CoordinatorConfig::validate()` at startup — out-of-range values are rejected with an actionable error before any subsystem boots, so misconfiguration cannot panic the coordinator under load. Release builds additionally refuse to start in `tor_mode = false` unless `BLINDJOIN_ALLOW_CLEARNET=1` is set in the environment.
+
 ### What Participants Must Do
 
 - Use a fresh Tor circuit for each phase of the round
@@ -407,6 +422,12 @@ round_timeout_output_reg_secs = 60
 round_timeout_signing_secs = 30
 blame_ban_duration_secs = 3600         # 1 hour ban for non-signers
 fee_rate_sat_per_vbyte = 2             # Coordinator-suggested fee rate
+
+# Public-endpoint hardening (v1.2 Phase 8); all validated at startup
+rate_limit_info_per_min = 60           # GET /info, GET /round/tx; 429 + Retry-After on flood
+rate_limit_writes_per_min = 30         # POST /round/input, /round/output, /round/sign
+request_timeout_secs = 30              # Uniform handler deadline; HTTP 408 on stall
+max_concurrent_connections = 256       # Tor accept-loop semaphore cap (tor_mode only)
 
 [tor]
 hidden_service_dir = "./tor/hidden_service"

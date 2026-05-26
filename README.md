@@ -62,11 +62,14 @@ cargo run -p coordinator
 
 # Start coordinator (Tor hidden service, for production)
 BLINDJOIN_COORDINATOR_TOR_MODE=true cargo run -p coordinator
+
+# Release builds refuse to start in clearnet mode unless explicitly acknowledged
+BLINDJOIN_ALLOW_CLEARNET=1 ./target/release/coordinator   # only if you know what you're doing
 ```
 
 When `tor_mode` is enabled, the coordinator runs as a Tor v3 hidden service via arti-client. No clearnet listener is created. The .onion address is published to the PKARR DHT automatically.
 
-When `tor_mode` is disabled (default), the coordinator listens on `0.0.0.0:8080` for development and testing.
+When `tor_mode` is disabled (default), the coordinator listens on `0.0.0.0:8080` for development and testing. **Release builds (`cargo build --release`) refuse to start in clearnet mode** unless `BLINDJOIN_ALLOW_CLEARNET=1` is set — this is a deliberate guardrail against accidentally exposing a production-built coordinator on the open internet without Tor. Debug builds (`cargo run`, `cargo test`) emit a warning and continue.
 
 ### Configuration
 
@@ -82,8 +85,14 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | `coordinator.listen_addr` | 0.0.0.0:8080 | HTTP listen address (clearnet mode) |
 | `coordinator.tor_mode` | false | Run as Tor hidden service |
 | `coordinator.blame_ban_duration_secs` | 3600 | Ban duration for misbehaving UTXOs |
+| `coordinator.rate_limit_info_per_min` | 60 | Per-route limit for read endpoints (`/info`, `/round/tx`); 1..=60_000 |
+| `coordinator.rate_limit_writes_per_min` | 30 | Per-route limit for write endpoints (`/round/input`, `/round/output`, `/round/sign`); 1..=60_000 |
+| `coordinator.request_timeout_secs` | 30 | Uniform per-request handler deadline; clients see HTTP 408 on stall |
+| `coordinator.max_concurrent_connections` | 256 | Cap on simultaneous Tor hidden-service streams; excess connections park |
 | `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |
 | `discovery.heartbeat_interval_secs` | 300 | PKARR re-publish interval |
+
+All four hardening knobs are validated at startup — out-of-range values are rejected with an actionable error before any subsystem reads them.
 
 ### API Endpoints
 
@@ -96,6 +105,8 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | POST | `/round/sign` | Submit partial signature |
 
 Errors return structured JSON: `{"error": {"code": "UTXO_SPENT", "message": "...", "round_id": "..."}}`.
+
+**Rate limiting and timeouts.** All endpoints are rate-limited per route — reads default to 60 req/min, writes to 30 req/min. When a route is flooded, the coordinator returns **HTTP 429** with a `Retry-After` header and the same JSON envelope (`code: "RATE_LIMITED"`). Handlers that stall past `request_timeout_secs` return **HTTP 408**. Clients SHOULD back off according to `Retry-After` and retry on a fresh Tor circuit. Per-peer throttling is intentionally impossible on Tor (`GlobalKeyExtractor` — all Tor connections look identical to the coordinator); sybil resistance comes from BIP-322 ownership proofs and the per-round denomination, not from per-IP rate limits.
 
 ## Run the Client
 
@@ -212,6 +223,8 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Availability hardening (v1.1):** Async RPC calls execute before the write lock so slow bitcoind cannot serialize participants. RSA keys are parsed once per round (not per request). Blinded tokens are size-bounded to the RSA modulus. Addresses are validated at registration time (not at PSBT build). Duplicate partial signatures are rejected.
 
+**Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 60/min, writes 30/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. All four knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP), so the coordinator deliberately uses `GlobalKeyExtractor`; sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
+
 **Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. The `cargo audit` CI step blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. The `cargo clippy --all-targets` CI step blocks merge on any lint, including in integration-test code.
 
 ## Key Dependencies
@@ -224,6 +237,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 | `arti-client` | Tor hidden service (coordinator) and circuit isolation (client). Configured `default-features = false` with the `rustls` feature so the TLS backend is pure-Rust and the openssl chain is not in the dep tree. |
 | `pkarr` | Coordinator discovery via Mainline DHT |
 | `axum` | HTTP framework for coordinator API |
+| `tower_governor`, `tower-http` | Per-route rate limiting (GovernorLayer) and uniform request timeouts (TimeoutLayer) on the coordinator API |
 | `tokio` | Async runtime |
 | `zeroize` | Memory zeroing for sensitive round state |
 | `reqwest` | HTTP client with SOCKS5 proxy support for Tor |

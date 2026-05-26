@@ -15,6 +15,30 @@ blame_ban_duration_secs = 3600      # 1 hour
 fee_rate_sat_per_vbyte = 2
 listen_addr = "0.0.0.0:8080"
 
+# --- Public-endpoint hardening (v1.2 Phase 8) -----------------------------
+# All four knobs below are validated at startup. Out-of-range values fail
+# fast with an actionable error message rather than panicking under load.
+
+# Per-route rate limit on read endpoints (`/info`, `/round/tx`). Requests
+# beyond this rate return HTTP 429 with a Retry-After header and a JSON
+# envelope `{"error":{"code":"RATE_LIMITED",...}}`. Valid range: 1..=60_000.
+rate_limit_info_per_min = 60
+
+# Per-route rate limit on write endpoints (`/round/input`, `/round/output`,
+# `/round/sign`). Same 429 + Retry-After behavior as reads. Valid range:
+# 1..=60_000.
+rate_limit_writes_per_min = 30
+
+# Uniform per-handler deadline. Handlers that exceed this duration return
+# HTTP 408. Protects worker slots from slow clients. Valid range: >= 1.
+request_timeout_secs = 30
+
+# Cap on concurrent Tor hidden-service streams the coordinator will serve.
+# Excess connections park at the accept loop until a permit is released.
+# Only applies in tor_mode = true; clearnet mode is unbounded by design.
+# Valid range: >= 1.
+max_concurrent_connections = 256
+
 [discovery]
 # Path to the coordinator's Ed25519 PKARR keypair.
 # This key is the coordinator's stable Mainline DHT identity.
