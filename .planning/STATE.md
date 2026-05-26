@@ -6,7 +6,7 @@ current_phase: 08
 current_plan: 1
 status: milestone_complete
 stopped_at: Milestone complete (Phase 08 was final phase)
-last_updated: 2026-05-26T12:05:26.821Z
+last_updated: 2026-05-26T13:45:00.000Z
 last_activity: 2026-05-26
 progress:
   total_phases: 1
@@ -25,7 +25,7 @@ Plan: 4 of 4 complete
 **Status:** Milestone complete
 **Current Phase:** 08
 **Last Activity:** 2026-05-26
-**Last Activity Description:** Plan 08-04 (integration test for rate-limit + timeout) completed; Phase 8 work product is now runtime-asserted via tests/integration/rate_limiting.rs (429 + retry-after + RATE_LIMITED envelope AND 408 timeout). Connection-cap end-to-end is deferred per A4 (TODO comment in test file).
+**Last Activity Description:** Completed quick task 260526-d7m: CI hygiene — bumped rand 0.8.5 → 0.8.6 (closes 3 Dependabot alerts on RUSTSEC-2026-0097) and added FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true at workflow level on ci.yml/release.yml/docker.yml (silences the June 2026 Node 20 deprecation).
 
 ## Progress
 
@@ -49,4 +49,10 @@ Plan: 4 of 4 complete
 | Phase-Plan | Duration | Tasks | Files | Completed |
 |------------|----------|-------|-------|-----------|
 | 08-04 | ~5min | 2 | 2 | 2026-05-26 |
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260526-d7m | CI hygiene: bump rand 0.8.5→0.8.6 (RUSTSEC-2026-0097) and force Node 24 runtime for JS actions in CI workflows | 2026-05-26 | (pending) | [260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos](./quick/260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos/) |
 
