@@ -12,12 +12,14 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 ## Current State
 
-Shipped v1.1 Security & Availability Hardening (5,918 LOC Rust, 7 phases total across 2 milestones).
-Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio.
+Phase 8 (Public-endpoint hardening) shipped 2026-05-26 — coordinator HTTP API now resists volume DoS via per-route rate limits (HTTP 429 + Retry-After, RATE_LIMITED JSON envelope), uniform request timeouts (HTTP 408), and Tor accept-loop connection cap (tokio::sync::Semaphore + ConnectionGuard). 4 operator-tunable knobs in `coordinator.toml`; release builds refuse clearnet without `BLINDJOIN_ALLOW_CLEARNET=1`.
+
+Shipped v1.1 Security & Availability Hardening (5,918 LOC Rust, 7 phases total across 2 milestones); v1.2 Production Readiness in progress (Phase 8 complete).
+Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio, tower_governor 0.8, tower-http 0.6.
 Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
 PKARR DHT discovery live. Docker Compose stack operational.
 CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned.
-Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds.
+Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance.
 
 ## Requirements
 
@@ -44,9 +46,15 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - ✓ Eliminate write-lock DoS: move async RPC call outside RoundState write lock in post_input — v1.1
 - ✓ Eliminate key deserialization DoS: parse RSA key once at round creation, reuse across requests — v1.1
 
+- ✓ Per-route rate limiting on coordinator HTTP API (read split 60/min, write split 30/min) with HTTP 429 + Retry-After + RATE_LIMITED JSON envelope — v1.2 Phase 8
+- ✓ Uniform request timeout (HTTP 408) honoring `request_timeout_secs` — v1.2 Phase 8
+- ✓ Tor accept-loop connection cap via `tokio::sync::Semaphore` (default 256) with ConnectionGuard RAII — v1.2 Phase 8
+- ✓ Operator-tunable knobs via `coordinator.toml` and `BLINDJOIN__COORDINATOR__*` env vars; validated at startup — v1.2 Phase 8
+- ✓ GlobalKeyExtractor for rate limiting (Tor-safe; PeerIpKeyExtractor would break under Tor) — v1.2 Phase 8
+
 ### Active
 
-(No active requirements — next milestone will define new ones)
+(No active requirements — runtime-CI sign-off of Phase 8 HTTP 429/408 tests pending bitcoind availability; remaining milestone phases to be defined)
 
 ### Out of Scope
 
@@ -94,6 +102,10 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 | Cache RsaBlindSigner in RoundStateInner | Parse RSA key once per round, not per request | ✓ Good — AVAIL-02 verified |
 | SHA-pin all GitHub Actions | Immutable commit SHAs prevent supply-chain tampering | ✓ Good — CR-01 resolved |
 | cargo audit deny high+critical only | Low/medium advisories are informational, not blockers | ✓ Good — reduces false-positive friction |
+| tower_governor 0.8 + tower-http TimeoutLayer (over rolling your own) | Audited tower middleware; saved DoS-window correctness from scratch | ✓ Good — Phase 8 shipped clean |
+| GlobalKeyExtractor over PeerIpKeyExtractor | Tor-safe by design; per-peer throttling impossible on Tor (single IP) | ✓ Good — would have been a CRITICAL bug |
+| Validate hardening knobs at startup (`config.validate()`) | Fail-fast at boot beats panic-at-first-request or silent deadlock | ✓ Good — CR-01 & CR-02 fixed pre-ship |
+| ConnectionGuard RAII for Tor permits | Load-bearing `let _permit = permit;` is one careless cleanup away from disabling the cap | ✓ Good — WR-01 hardened |
 
 ## Evolution
 
@@ -113,4 +125,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after v1.1 milestone*
+*Last updated: 2026-05-26 after Phase 8 (Public-endpoint hardening)*
