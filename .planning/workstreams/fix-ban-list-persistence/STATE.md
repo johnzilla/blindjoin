@@ -1,5 +1,5 @@
 ---
-workstream: backlog-deferred-items
+workstream: fix-ban-list-persistence
 created: 2026-05-25
 ---
 
