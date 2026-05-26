@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -16,7 +18,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Run tests
-        run: cargo test --workspace --lib
+        run: cargo test --workspace --all-targets
 
   clippy:
     name: cargo clippy
