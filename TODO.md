@@ -2,23 +2,30 @@
 
 ## Resolved 2026-05-26
 
-- [x] **CI hygiene: rand 0.8.6 bump + Node 24 opt-in (quick task 260526-d7m).**
-  Bumped `rand` 0.8.5 → 0.8.6 via `cargo update -p rand@0.8.5 --precise 0.8.6`
-  to close the 3 duplicate Dependabot alerts on `RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc`
-  (the alerts were all keyed off the `< 0.8.6` vulnerable range on the same
-  rand 0.8.5 lockfile instance). Added a workflow-root
-  `env: FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"` block to
-  `.github/workflows/{ci,release,docker}.yml` so all JS actions
-  (`actions/checkout@v6.0.2`, `dtolnay/rust-toolchain@stable`, etc.) execute on
-  Node 24 ahead of GitHub's June 2026 forced flip — silences the deprecation
-  annotation and makes us forward-compatible without bumping pinned action SHAs.
-  CI annotation language shifted from "may not work as expected" to "being
-  forced to run on Node.js 24" — confirms the opt-in works. Restored the
-  RUSTSEC-2026-0097 ignore in `.cargo/audit.toml` with an updated rationale
-  after discovering the same advisory also covers rand 0.9.x (via arti) and
-  0.10.x (via blind-rsa-signatures) — those tracks have no upstream patch yet
-  but the attack precondition (custom logger reaching back into rand's reseeding
-  path) is structurally absent from blindjoin's tracing-based logger.
+- [x] **CI hygiene: full RUSTSEC-2026-0097 closure + Node 24 opt-in (quick
+  task 260526-d7m + follow-up).** Bumped all three transitively-resolved rand
+  tracks to their patched versions: `rand` 0.8.5 → 0.8.6 (closed initial 3
+  Dependabot alerts), then 0.9.2 → 0.9.3 (via arti-client; closed alert #7
+  after Dependabot's database expanded) and 0.10.0 → 0.10.1 (via
+  blind-rsa-signatures; closed alert #1). All three are lockfile-only patch
+  bumps within existing `"0.8"` / `"0.9"` / `"0.10"` semver constraints — no
+  Cargo.toml edits. With every rand instance on a patched version, the
+  `RUSTSEC-2026-0097` ignore in `.cargo/audit.toml` is no longer load-bearing
+  and was removed entirely; cargo audit exits 0 with zero warnings.
+
+  Added a workflow-root `env: FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"`
+  block to `.github/workflows/{ci,release,docker}.yml` so all JS actions
+  (`actions/checkout@v6.0.2`, `dtolnay/rust-toolchain@stable`, etc.) execute
+  on Node 24 ahead of GitHub's June 2026 forced flip — silences the
+  deprecation annotation without bumping pinned action SHAs. CI annotation
+  language shifted from "may not work as expected" to "being forced to run
+  on Node.js 24" — confirms the opt-in works.
+
+  Notable finding: Dependabot's `vulnerable_version_range` field was narrower
+  than RustSec's actual advisory coverage on the initial scan — the database
+  expanded later to surface 0.9.x / 0.10.x instances that cargo audit had
+  flagged from the start. Lesson: cross-check `cargo audit` output even when
+  the Dependabot UI says "all resolved."
 
 - [x] **B-01: Public-endpoint hardening shipped (v1.2 Phase 8).** Per-route
   rate limits via `tower_governor` 0.8 (reads 60/min, writes 30/min by default)
