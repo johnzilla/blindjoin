@@ -24,6 +24,26 @@ pub struct CoordinatorSection {
     /// BLAME-05: persists ban records across coordinator restarts.
     #[serde(default = "default_ban_file_path")]
     pub ban_file_path: String,
+    /// Per-minute global rate limit for read endpoints (e.g. `/info`, `/round/tx`).
+    /// Phase 8 D-04: DoS-mitigation knob. Operator-tunable via
+    /// `BLINDJOIN__COORDINATOR__RATE_LIMIT_INFO_PER_MIN`.
+    #[serde(default = "default_rate_limit_info_per_min")]
+    pub rate_limit_info_per_min: u32,
+    /// Per-minute global rate limit applied uniformly to all write endpoints
+    /// (`/round/register_input`, `/round/output`, `/round/sign`). Phase 8 D-04.
+    /// Operator-tunable via `BLINDJOIN__COORDINATOR__RATE_LIMIT_WRITES_PER_MIN`.
+    #[serde(default = "default_rate_limit_writes_per_min")]
+    pub rate_limit_writes_per_min: u32,
+    /// Uniform per-route request timeout in seconds. Phase 8 D-04.
+    /// Operator-tunable via `BLINDJOIN__COORDINATOR__REQUEST_TIMEOUT_SECS`.
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+    /// Maximum concurrent TCP/HS connections accepted by the listener. Phase 8 D-04.
+    /// Operator-tunable via `BLINDJOIN__COORDINATOR__MAX_CONCURRENT_CONNECTIONS`.
+    /// Note: enforced only in `tor_mode = true` path (Plan 03); clearnet path is
+    /// dev/test only and currently uncapped.
+    #[serde(default = "default_max_concurrent_connections")]
+    pub max_concurrent_connections: u32,
     /// When true, bind exclusively to a Tor v3 .onion hidden service — no TCP listener.
     /// When false (default), use TCP listener (Phase 4 compatible, safe for dev/test).
     /// PRIV-03: production deployments must set tor_mode = true.
@@ -33,6 +53,22 @@ pub struct CoordinatorSection {
 
 fn default_ban_file_path() -> String {
     "ban_list.jsonl".to_string()
+}
+
+fn default_rate_limit_info_per_min() -> u32 {
+    60
+}
+
+fn default_rate_limit_writes_per_min() -> u32 {
+    30
+}
+
+fn default_request_timeout_secs() -> u64 {
+    30
+}
+
+fn default_max_concurrent_connections() -> u32 {
+    256
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -117,6 +153,10 @@ impl CoordinatorConfig {
                 fee_rate_sat_per_vbyte: 2,
                 listen_addr: "127.0.0.1:8080".into(),
                 ban_file_path: "ban_list.jsonl".into(),
+                rate_limit_info_per_min: 60,
+                rate_limit_writes_per_min: 30,
+                request_timeout_secs: 30,
+                max_concurrent_connections: 256,
                 tor_mode: false,
             },
             discovery: DiscoveryConfig::default(),
