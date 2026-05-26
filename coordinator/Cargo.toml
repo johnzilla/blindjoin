@@ -35,6 +35,12 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { version = "0.6", features = ["limit", "timeout"] }
 tower_governor = "0.8"
+# Direct dep on governor so middleware.rs can name `NoOpMiddleware` / `QuantaInstant`
+# as type parameters in `RateLimitLayers` struct fields. This is already a transitive
+# dep of tower_governor 0.8 (which re-exports `governor::*` only via crate path,
+# not as `pub use`); pinning the same minor version keeps the dep graph flat.
+governor = "0.10"
+http = "1"
 base64 = "0.22"
 anyhow = { workspace = true }
 pkarr = { workspace = true }
