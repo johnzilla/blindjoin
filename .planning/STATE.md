@@ -4,9 +4,9 @@ milestone: v1.2
 milestone_name: Production Readiness
 current_phase: 08
 current_plan: 1
-status: verifying
-stopped_at: N/A
-last_updated: "2026-05-26T04:23:04.518Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 08 was final phase)
+last_updated: 2026-05-26T12:05:26.821Z
 last_activity: 2026-05-26
 progress:
   total_phases: 1
@@ -22,7 +22,7 @@ progress:
 
 Phase: 08 (public-endpoint-hardening) — READY FOR VERIFICATION
 Plan: 4 of 4 complete
-**Status:** Phase complete — ready for verification
+**Status:** Milestone complete
 **Current Phase:** 08
 **Last Activity:** 2026-05-26
 **Last Activity Description:** Plan 08-04 (integration test for rate-limit + timeout) completed; Phase 8 work product is now runtime-asserted via tests/integration/rate_limiting.rs (429 + retry-after + RATE_LIMITED envelope AND 408 timeout). Connection-cap end-to-end is deferred per A4 (TODO comment in test file).
@@ -30,7 +30,7 @@ Plan: 4 of 4 complete
 ## Progress
 
 **Phases Complete:** 1 of 1
-**Current Plan:** 4 of 4 (all complete)
+**Current Plan:** Not started
 
 ## Session Continuity
 
