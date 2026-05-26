@@ -4,6 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-04-09)
 - ✅ **v1.1 Security & Availability Hardening** — Phases 6-7 (shipped 2026-04-10)
+- **v1.2 Production Readiness** — Phase 8 (in progress)
 
 ## Phases
 
@@ -26,6 +27,10 @@
 
 </details>
 
+**v1.2 Production Readiness** (in progress)
+
+- [ ] **Phase 8: Public-endpoint hardening** — Rate limiting, timeouts, connection caps, and identity-aware throttling on the coordinator HTTP API (promoted from BACKLOG.md B-01)
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -37,6 +42,7 @@
 | 5. Tor & Release | v1.0 | 3/3 | Complete | 2026-04-09 |
 | 6. CI/CD Security Pipeline | v1.1 | 1/1 | Complete | 2026-04-10 |
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
+| 8. Public-endpoint hardening | v1.2 | 0/0 | In planning | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
