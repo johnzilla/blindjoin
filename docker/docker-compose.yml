@@ -47,6 +47,8 @@ services:
       BLINDJOIN__COORDINATOR__LISTEN_ADDR: "0.0.0.0:8080"
       # PKARR keypair is stored in the named volume at /app/keys
       BLINDJOIN__DISCOVERY__PKARR_KEY_FILE: "/app/keys/coordinator_pkarr.key"
+      # Ban list (BLAME-05) persists across coordinator restarts via /app/data volume.
+      BLINDJOIN__COORDINATOR__BAN_FILE_PATH: "/app/data/ban_list.jsonl"
       # Set coordinator_public_addr to the host's IP/domain for external discovery.
       # Default is local Docker bridge; suitable for local testing only.
       BLINDJOIN__DISCOVERY__COORDINATOR_PUBLIC_ADDR: "coordinator:8080"
@@ -54,6 +56,9 @@ services:
       # Named volume persists the PKARR keypair across container restarts.
       # Losing this volume means the coordinator gets a new DHT identity.
       - coordinator-keys:/app/keys
+      # Named volume persists the append-only ban file (BLAME-05) across restarts.
+      # Losing this volume drops all unexpired bans — non-fatal but reduces blame coverage.
+      - coordinator-data:/app/data
     ports:
       - "8080:8080"
     depends_on:
@@ -97,3 +102,5 @@ volumes:
   coordinator-keys:
     # Stores the coordinator's PKARR Ed25519 keypair.
     # IMPORTANT: do not delete this volume — it is the coordinator's DHT identity.
+  coordinator-data:
+    # Stores the append-only ban file (BLAME-05). Survives container restarts.
