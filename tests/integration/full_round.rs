@@ -31,13 +31,18 @@ fn build_input_reg_round_state() -> coordinator::round::state::RoundState {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: spawn coordinator server in-process and return its listen URL.
+// Helper: spawn coordinator server in-process and return its listen URL
+// plus a TempDir guard that owns the ban-file's parent directory.
 // ---------------------------------------------------------------------------
+/// Phase 8 WR-06: returns `(url, tempdir_guard)`. The caller MUST bind the
+/// guard to a local so the temp directory survives for the test's duration
+/// — `cargo test`'s parallel mode previously raced multiple tests on a
+/// hard-coded `ban_list.jsonl` path resolved against the test runner's cwd.
 async fn spawn_coordinator(
     rpc_url: String,
     rpc_user: String,
     rpc_pass: String,
-) -> String {
+) -> (String, tempfile::TempDir) {
     use coordinator::bitcoin::rpc::BitcoinRpc;
     use coordinator::config::{CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig};
 
@@ -47,6 +52,14 @@ async fn spawn_coordinator(
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let listen_addr = addr.to_string();
+
+    // WR-06: per-test temp dir so parallel tests cannot race the ban file.
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let ban_file_path = tmp
+        .path()
+        .join("ban_list.jsonl")
+        .to_string_lossy()
+        .into_owned();
 
     let cfg = Arc::new(CoordinatorConfig {
         network: NetworkConfig {
@@ -65,7 +78,7 @@ async fn spawn_coordinator(
             blame_ban_duration_secs: 60,
             fee_rate_sat_per_vbyte: 1,
             listen_addr: listen_addr.clone(),
-            ban_file_path: "ban_list.jsonl".into(),
+            ban_file_path,
             rate_limit_info_per_min: 60,
             rate_limit_writes_per_min: 30,
             request_timeout_secs: 30,
@@ -85,7 +98,7 @@ async fn spawn_coordinator(
         axum::serve(listener, app).await.unwrap();
     });
 
-    format!("http://{}", addr)
+    (format!("http://{}", addr), tmp)
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +281,9 @@ async fn full_round_three_clients() {
     let denomination: u64 = 100_000;
 
     // ----- Step 5: spawn coordinator in-process -----
-    let coordinator_url = spawn_coordinator(
+    // WR-06: keep `_tmp_dir` bound for the test's full duration so the
+    // ban-file's parent directory is not cleaned up early.
+    let (coordinator_url, _tmp_dir) = spawn_coordinator(
         setup.rpc_url.clone(),
         setup.rpc_user.clone(),
         setup.rpc_pass.clone(),
@@ -914,7 +929,8 @@ async fn adversarial_replay_token() {
     };
 
     let setup = fund_regtest(exe).await;
-    let coordinator_url = spawn_coordinator(
+    // WR-06: keep `_tmp_dir` bound for the test's full duration.
+    let (coordinator_url, _tmp_dir) = spawn_coordinator(
         setup.rpc_url.clone(),
         setup.rpc_user.clone(),
         setup.rpc_pass.clone(),
@@ -1040,7 +1056,8 @@ async fn adversarial_invalid_utxo() {
     };
 
     let setup = fund_regtest(exe).await;
-    let coordinator_url = spawn_coordinator(
+    // WR-06: keep `_tmp_dir` bound for the test's full duration.
+    let (coordinator_url, _tmp_dir) = spawn_coordinator(
         setup.rpc_url.clone(),
         setup.rpc_user.clone(),
         setup.rpc_pass.clone(),
@@ -1099,7 +1116,8 @@ async fn adversarial_wrong_denomination() {
     };
 
     let setup = fund_regtest(exe).await;
-    let coordinator_url = spawn_coordinator(
+    // WR-06: keep `_tmp_dir` bound for the test's full duration.
+    let (coordinator_url, _tmp_dir) = spawn_coordinator(
         setup.rpc_url.clone(),
         setup.rpc_user.clone(),
         setup.rpc_pass.clone(),
@@ -1281,6 +1299,14 @@ async fn coordinator_info_endpoint_fields() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
+    // WR-06: per-test temp dir for ban file so parallel tests cannot race.
+    let _tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let ban_file_path = _tmp_dir
+        .path()
+        .join("ban_list.jsonl")
+        .to_string_lossy()
+        .into_owned();
+
     let cfg = Arc::new(CoordinatorConfig {
         network: NetworkConfig {
             bitcoin_network: "regtest".into(),
@@ -1298,7 +1324,7 @@ async fn coordinator_info_endpoint_fields() {
             blame_ban_duration_secs: 60,
             fee_rate_sat_per_vbyte: 1,
             listen_addr: addr.to_string(),
-            ban_file_path: "ban_list.jsonl".into(),
+            ban_file_path,
             rate_limit_info_per_min: 60,
             rate_limit_writes_per_min: 30,
             request_timeout_secs: 30,
