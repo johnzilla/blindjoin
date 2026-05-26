@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 FROM runtime-base AS coordinator
 WORKDIR /app
-RUN mkdir -p /app/keys
+RUN mkdir -p /app/keys /app/data
 COPY --from=builder /app/target/release/coordinator /usr/local/bin/coordinator
 ENTRYPOINT ["/usr/local/bin/coordinator"]
 
