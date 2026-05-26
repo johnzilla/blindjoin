@@ -1,5 +1,11 @@
 name: CI
 
+# TODO(fix-verification-gap): bump actions/checkout from v4.3.1 (Node 20,
+# deprecated June 2026) to v6.x (Node 24). Latest tag is v6.0.2 as of
+# 2026-05-25. Deferred from this PR because v4→v6 is a major version
+# bump (per actions/checkout semver policy) and warrants a dedicated
+# verification pass that the new SHA does not change defaults we rely on.
+
 on:
   push:
     branches: [main]
