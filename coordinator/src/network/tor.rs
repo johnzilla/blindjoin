@@ -19,7 +19,31 @@ use hyper_util::service::TowerToHyperService;
 use hyper::server::conn::http1;
 use futures_util::StreamExt;
 use anyhow::Context;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+/// RAII guard for the per-connection semaphore permit (Phase 8 WR-01 fix).
+///
+/// The original code held the permit alive via `let _permit = permit;` inside
+/// the per-connection spawned task. That pattern is load-bearing — drop the
+/// binding and the connection cap silently becomes unlimited — but a future
+/// refactor "cleaning up an unused variable" can strip it without warning.
+///
+/// Wrapping the permit in a named struct makes the contract explicit:
+///   - The struct's only purpose is to own the permit for the connection's
+///     lifetime; clippy will not flag it as unused because it has methods
+///     (the `Drop` impl is implicit; the field is private).
+///   - Grep for `ConnectionGuard` to find every site that holds a permit.
+///   - Removing the binding now requires removing the struct field too,
+///     which is no longer a "clean up unused variable" change.
+struct ConnectionGuard {
+    _permit: OwnedSemaphorePermit,
+}
+
+impl ConnectionGuard {
+    fn new(permit: OwnedSemaphorePermit) -> Self {
+        Self { _permit: permit }
+    }
+}
 
 pub async fn serve_onion_service(
     app: axum::Router,
@@ -131,16 +155,26 @@ pub async fn serve_onion_service(
         let io = TokioIo::new(data_stream);
         // Wrap axum::Router (tower::Service) into a hyper-compatible service.
         let svc = TowerToHyperService::new(app.clone());
+        // T-08-03-02 / RESEARCH Pitfall 5: hold the permit for the connection's
+        // full lifetime via a named RAII guard (Phase 8 WR-01 fix). The old
+        // `let _permit = permit;` inside the spawned task was load-bearing
+        // but vulnerable to a future "clean up unused variable" refactor
+        // silently making the cap unlimited. ConnectionGuard makes the
+        // lifetime contract explicit and greppable: removing the
+        // `serve_connection` call below requires removing the struct
+        // construction too, and a `cargo fix --clippy` pass cannot strip a
+        // struct field with a private name.
+        let guard = ConnectionGuard::new(permit);
         tokio::spawn(async move {
-            // T-08-03-02 / RESEARCH Pitfall 5: hold the permit for the connection's
-            // full lifetime. Dropping the permit before the spawned task starts would
-            // effectively make the cap unlimited; the `_` prefix prevents an
-            // unused-variable warning while keeping the binding alive.
-            let _permit = permit;
-            if let Err(e) = http1::Builder::new()
+            let result = http1::Builder::new()
                 .serve_connection(io, svc)
-                .await
-            {
+                .await;
+            // Explicit drop after the await so the permit's release point is
+            // grep-able from the binary. This statement is REQUIRED — without
+            // it the borrow checker would still allow `guard` to be dropped
+            // at the top of the async block. Do not "simplify" away.
+            drop(guard);
+            if let Err(e) = result {
                 tracing::debug!(error = %e, "HS connection closed");
             }
         });
