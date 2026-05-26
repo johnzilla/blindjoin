@@ -108,6 +108,8 @@ mod tests {
     use crate::blind::rsa::RsaBlindSigner;
     use std::collections::HashMap;
 
+    // TODO(fix-verification-gap): migrate to production `start_round` path.
+    // See .planning/workstreams/fix-verification-gap/BACKDOOR-INVENTORY.md finding #1.
     fn make_input_reg_state() -> (RoundState, RsaBlindSigner) {
         let signer = RsaBlindSigner::generate().unwrap();
         let sk_der = signer.secret_key_der().unwrap();
