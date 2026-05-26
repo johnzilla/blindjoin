@@ -125,6 +125,10 @@ async fn run_bootstraps_round_into_input_reg() {
             fee_rate_sat_per_vbyte: 1,
             listen_addr,
             ban_file_path,
+            rate_limit_info_per_min: 60,
+            rate_limit_writes_per_min: 30,
+            request_timeout_secs: 30,
+            max_concurrent_connections: 256,
             tor_mode: false,
         },
         discovery: DiscoveryConfig {
