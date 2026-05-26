@@ -33,7 +33,8 @@ subtle = "2"
 config = { workspace = true }
 axum = { workspace = true }
 tower = { workspace = true }
-tower-http = { version = "0.6", features = ["limit"] }
+tower-http = { version = "0.6", features = ["limit", "timeout"] }
+tower_governor = "0.8"
 base64 = "0.22"
 anyhow = { workspace = true }
 pkarr = { workspace = true }
