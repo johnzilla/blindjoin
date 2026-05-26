@@ -276,6 +276,9 @@ mod tests {
         ).unwrap()
     }
 
+    // TODO(fix-verification-gap): direct phase mutation bypasses state-machine validator;
+    // placeholder RSA key masks future regressions. Migrate to production transition path.
+    // See .planning/workstreams/fix-verification-gap/BACKDOOR-INVENTORY.md finding #2.
     fn make_signing_state(utxo_str: &str) -> (RoundState, [u8; 32]) {
         let mut state = RoundState::new_idle();
         state.phase = Phase::Signing;
