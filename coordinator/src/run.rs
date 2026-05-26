@@ -286,8 +286,26 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         // in tor_mode = true. The clearnet path uses axum::serve which has its own
         // internal accept loop and is intentionally NOT capped per Phase 8 A4
         // resolution — clearnet is dev/test only per CONTEXT D-01.
+        //
+        // Phase 8 WR-04: convert the policy "production deployments must use
+        // tor_mode = true" from a warn-log into a refusal. Release builds
+        // (`cfg!(debug_assertions) == false`) bail unless the operator has
+        // explicitly acknowledged the risk via BLINDJOIN_ALLOW_CLEARNET=1.
+        // Debug builds still warn but proceed — tests and dev workflows that
+        // rely on clearnet remain unaffected.
+        let allow_clearnet = std::env::var("BLINDJOIN_ALLOW_CLEARNET")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+        if !cfg!(debug_assertions) && !allow_clearnet {
+            anyhow::bail!(
+                "tor_mode = false in a release build, but BLINDJOIN_ALLOW_CLEARNET is not set. \
+                 Clearnet mode is dev/test only — set tor_mode = true (recommended) or set \
+                 BLINDJOIN_ALLOW_CLEARNET=1 to explicitly acknowledge the risk.",
+            );
+        }
         tracing::warn!(
             max_concurrent_connections = cfg.coordinator.max_concurrent_connections,
+            allow_clearnet,
             "Clearnet mode: max_concurrent_connections is NOT enforced — clearnet is dev/test only. Production deployments must use tor_mode = true."
         );
         let app = api::build_router_with_ban_list(
