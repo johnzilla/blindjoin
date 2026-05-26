@@ -39,7 +39,7 @@ Items that are scoped but not scheduled. Each entry is detailed enough that a fu
 
 **Why deferred:** v1.0 / v1.1 prioritized a working CoinJoin loop over input-type breadth. P2WPKH coverage was sufficient for the demo story.
 
-**Why it matters:** [PROJECT.md:87](PROJECT.md:87) claims "Forward compatible with all address types" but the code enforces P2WPKH only. Any Taproot, P2SH-P2WPKH, or P2WSH input fails registration with `UnsupportedScriptType`. This is both a privacy reduction (smaller anon set) and a documentation-vs-code mismatch.
+**Why it matters:** [`.planning/PROJECT.md:87`](.planning/PROJECT.md:87) claims "Forward compatible with all address types (P2WPKH, P2TR)" but the code enforces P2WPKH only. Any Taproot, P2SH-P2WPKH, or P2WSH input fails registration with `UnsupportedScriptType`. This is both a privacy reduction (smaller anon set) and a documentation-vs-code mismatch.
 
 **Scope:**
 - Replace the custom `shared/src/bip322.rs` implementation with the `bip322` crate from the rust-bitcoin organization (already called out in `research/STACK.md` as the preferred choice — it wasn't adopted at the time because the crate was 0.0.x).

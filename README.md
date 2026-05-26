@@ -46,7 +46,7 @@ Requires Rust 1.89+ and cargo (the floor is set by `arti-client` 0.41).
 
 ```bash
 cargo build --workspace
-cargo test --workspace --lib   # unit tests (no bitcoind required)
+cargo test --workspace --all-targets   # unit + integration tests (integration tests skip gracefully without bitcoind)
 ```
 
 ## Run the Coordinator
@@ -127,13 +127,16 @@ Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `
 
 ## CI/CD
 
-Every pull request runs three independent CI jobs:
+Every pull request — and every push to `main` — runs four independent CI jobs:
 
 | Job | Command | Blocks merge? |
 |-----|---------|---------------|
-| `cargo test` | `cargo test --workspace --lib` | Yes |
+| `cargo test` | `cargo test --workspace --all-targets` | Yes |
 | `cargo clippy` | `cargo clippy --workspace --all-targets -- -D warnings` | Yes |
 | `cargo audit` | `cargo audit` | Yes |
+| `coordinator binary builds` | `cargo build --release --bin coordinator` | Yes |
+
+The `cargo test` step runs `--all-targets`, so integration tests under `tests/integration/` execute alongside unit tests. Tests that require a live bitcoind skip gracefully when one isn't available. The `coordinator binary builds` smoke job validates that the production binary links cleanly — it does not start the coordinator (that requires bitcoind).
 
 The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare accepted residual risks. Each ignored advisory carries a written rationale in that file; an ignore without a rationale is a code-review-blocking change.
 
