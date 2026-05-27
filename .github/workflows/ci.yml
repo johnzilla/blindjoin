@@ -92,22 +92,26 @@ jobs:
           # see Trust Model below); under `set -euo pipefail` that would
           # incorrectly fail the script even though achow101's sig is valid.
           #
-          # We rely solely on `--status-fd=1`'s machine-readable GOODSIG line
-          # and grep for achow101's 16-char long-key-id (last 16 chars of
-          # KEY_FP), which positively asserts achow101 signed this exact file
-          # — not just "any signer" we happen to trust.
+          # We match on the machine-readable `VALIDSIG` line from gpg's
+          # --status-fd output. VALIDSIG carries the FULL 40-char primary-key
+          # fingerprint as its second field, which we compare against KEY_FP
+          # directly — unambiguous and not dependent on long-key-id formatting.
+          # We always print gpg's status-fd output to the CI log so a future
+          # verify break is debuggable from the run history alone.
           #
           # Trust model: PR review of bumps to GUIX_SIGS_SHA / KEY_FP is the
           # remaining trust root. An attacker who controls a future guix.sigs
           # HEAD could in principle swap BOTH the key blob AND the KEY_FP
           # value in the same PR; reviewers must check that the new
           # fingerprint matches an externally-verified achow101 public key.
-          ACHOW_LONG_KEY_ID="${KEY_FP: -16}"   # last 16 chars of fingerprint
           curl -sL "${BASE}/SHA256SUMS" -o SHA256SUMS
           curl -sL "${BASE}/SHA256SUMS.asc" -o SHA256SUMS.asc
-          gpg --status-fd=1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null \
-            | grep -q "^\[GNUPG:\] GOODSIG ${ACHOW_LONG_KEY_ID} " \
-            || { echo "ERROR: SHA256SUMS.asc does not contain a GOODSIG from achow101 (${ACHOW_LONG_KEY_ID})"; exit 1; }
+          gpg --status-fd=1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null > /tmp/gpg-status.txt || true
+          echo "=== gpg --status-fd=1 output ==="
+          cat /tmp/gpg-status.txt
+          echo "================================"
+          grep -q "^\[GNUPG:\] VALIDSIG ${KEY_FP} " /tmp/gpg-status.txt \
+            || { echo "ERROR: SHA256SUMS.asc does not have a VALIDSIG from achow101 fingerprint ${KEY_FP}"; exit 1; }
 
           # 4. Fetch tarball, verify hash against signed sums.
           curl -sL "${BASE}/${TARBALL}" -o "${TARBALL}"
