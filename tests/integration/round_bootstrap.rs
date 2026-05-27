@@ -10,14 +10,20 @@
 //! `RoundStateInner` and never invoked the production startup path; this test
 //! does not.
 //!
-//! Requires bitcoind in PATH (or BITCOIND_EXE env var). Gracefully skips
-//! otherwise — matches the pattern in `full_round.rs`.
+//! Requires bitcoind discoverable by `corepc_node::exe_path()` (via PATH or
+//! BITCOIND_EXE env var). Behavior in CI: panics if env
+//! `BLINDJOIN_REQUIRE_BITCOIND=1` is set and bitcoind is missing (per Phase 9
+//! D-07). Behavior locally: gracefully skips when `BLINDJOIN_REQUIRE_BITCOIND`
+//! is unset. Routes via the shared `crate::require_bitcoind!()` macro and
+//! `crate::bootstrap_regtest_bitcoind()` helper in `tests/integration/mod.rs`.
 //!
 //! Threat-model compliance:
 //!   T-06-02: NO test-only backdoors. Calls `coordinator::run` directly.
 //!   T-06-03: Uses port 0 (OS assigns ephemeral port) to avoid conflicts.
 
 use std::time::Duration;
+
+use crate::{bootstrap_regtest_bitcoind, require_bitcoind, BitcoindGuard, RpcCreds};
 
 /// Reserve a free localhost port by binding to port 0, reading the port, then
 /// dropping the listener. There is a TOCTOU race where another process could
@@ -41,52 +47,22 @@ async fn run_bootstraps_round_into_input_reg() {
         CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
     };
 
-    // ----- Skip gracefully if bitcoind is unavailable -----
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "bitcoind not found ({}), skipping run_bootstraps_round_into_input_reg",
-                e
-            );
-            return;
-        }
-    };
+    // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
+    let _exe = require_bitcoind!();
 
     // ----- Spin up regtest bitcoind so startup_health_check passes -----
     // run() calls startup_health_check which requires reachable bitcoind.
-    // We mine 101 blocks so block_count > 0 (also required by the health check).
-    let (rpc_url, rpc_user, rpc_pass) = tokio::task::spawn_blocking(move || {
-        use bitcoin::Address;
-        use corepc_node::{Conf, Node};
-
-        let mut conf = Conf::default();
-        conf.network = "regtest";
-
-        let node = Node::with_conf(&exe, &conf).expect("start regtest bitcoind");
-        let cookie = node
-            .params
-            .get_cookie_values()
-            .expect("read cookie file")
-            .expect("parse cookie values");
-        let rpc_url = node.rpc_url();
-        let rpc_user = cookie.user.clone();
-        let rpc_pass = cookie.password.clone();
-
-        // Mine a single block so the health check's block_count > 0 assertion holds.
-        let mine_addr: Address = node.client.new_address().expect("get new address");
-        node.client
-            .generate_to_address(101, &mine_addr)
-            .expect("generate 101 blocks");
-
-        // Leak the node — OS reaps it at test exit.
-        let node_box = Box::new(node);
-        Box::leak(node_box);
-
-        (rpc_url, rpc_user, rpc_pass)
-    })
-    .await
-    .expect("regtest bootstrap spawn_blocking panicked");
+    // bootstrap_regtest_bitcoind mines 101 blocks so block_count > 0 (also
+    // required by the health check), and returns a BitcoindGuard whose Drop
+    // runs node.stop() + Node::Drop's process.kill() — replaces the historical
+    // leak-the-Node pattern (Phase 9 TEST-03 / TEST-04 closure).
+    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind().await;
+    let rpc_url = creds.url.clone();
+    let rpc_user = creds.user.clone();
+    let rpc_pass = creds.pass.clone();
+    // Hold the guard for the test's full duration; drops at end-of-scope so
+    // Drop::drop runs node.stop() before the test function returns.
+    let _bitcoind_guard = bitcoind_guard;
 
     // ----- Build a coordinator config wired for clearnet + free port -----
     let port = reserve_free_port().await;
