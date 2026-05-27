@@ -84,9 +84,23 @@ jobs:
             || { echo "ERROR: expected fingerprint ${KEY_FP} not found"; exit 1; }
 
           # 3. Fetch SHA256SUMS + signature, verify signature.
+          # Belt-and-suspenders: run plain `gpg --verify` (its non-zero exit
+          # under `set -euo pipefail` fails the script on a bad signature)
+          # AND parse `--status-fd=1` for an explicit GOODSIG line. The
+          # status-fd parse defends against the "key not certified" warning
+          # that gpg emits to stderr when there is no trust path — gpg can
+          # exit 0 with that warning under some configurations, so we assert
+          # GOODSIG positively rather than relying on exit code alone.
+          # PR review of bumps to GUIX_SIGS_SHA / KEY_FP is the remaining
+          # trust root, because an attacker who controls a future guix.sigs
+          # HEAD could in principle swap both the key blob AND the KEY_FP
+          # value in the same PR.
           curl -sL "${BASE}/SHA256SUMS" -o SHA256SUMS
           curl -sL "${BASE}/SHA256SUMS.asc" -o SHA256SUMS.asc
           gpg --verify SHA256SUMS.asc SHA256SUMS
+          gpg --status-fd=1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null \
+            | grep -q '^\[GNUPG:\] GOODSIG ' \
+            || { echo "ERROR: gpg verify did not produce a GOODSIG line"; exit 1; }
 
           # 4. Fetch tarball, verify hash against signed sums.
           curl -sL "${BASE}/${TARBALL}" -o "${TARBALL}"
