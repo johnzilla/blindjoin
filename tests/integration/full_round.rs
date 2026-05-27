@@ -1312,6 +1312,18 @@ async fn adversarial_tampered_psbt_rejected() {
 
 /// Verify /info response fields when coordinator is in Idle state.
 /// GET /info reads only in-memory round state — no bitcoind RPC calls needed.
+///
+/// **WR-04: deliberately unbindable bitcoind RPC target.**
+/// This test exercises the `/info` codepath without standing up a real
+/// bitcoind. `build_router` is invoked directly (not `coordinator::run`),
+/// so `startup_health_check` does not fire and no route this test hits
+/// touches the `BitcoinRpc` Arc. We still need to construct one to satisfy
+/// the router's type, so we point it at a sentinel host
+/// (`invalid-rpc-not-running.localhost:1`) that will fail DNS resolution
+/// AND TCP connect — that way if a future `/info` handler quietly grows
+/// an RPC dependency (e.g. reporting current block height), this test
+/// fails fast and obviously instead of silently touching whatever happens
+/// to be bound to `127.0.0.1:18443` on the CI runner.
 #[tokio::test]
 async fn coordinator_info_endpoint_fields() {
     use coordinator::api::build_router;
@@ -1330,12 +1342,16 @@ async fn coordinator_info_endpoint_fields() {
         .to_string_lossy()
         .into_owned();
 
+    // WR-04: sentinel URL — see test docstring. Any accidental RPC use
+    // fails with a connect/resolve error, not a silent connect to a
+    // co-tenant on the CI runner.
+    let sentinel_rpc_url = "http://invalid-rpc-not-running.localhost:1";
     let cfg = Arc::new(CoordinatorConfig {
         network: NetworkConfig {
             bitcoin_network: "regtest".into(),
-            bitcoin_rpc_url: "http://127.0.0.1:18443".into(),
-            bitcoin_rpc_user: "test".into(),
-            bitcoin_rpc_pass: "test".into(),
+            bitcoin_rpc_url: sentinel_rpc_url.into(),
+            bitcoin_rpc_user: String::new(),
+            bitcoin_rpc_pass: String::new(),
         },
         coordinator: CoordinatorSection {
             denomination_sats: 100_000,
@@ -1358,9 +1374,9 @@ async fn coordinator_info_endpoint_fields() {
     });
 
     let rpc = Arc::new(BitcoinRpc::new(
-        "http://127.0.0.1:18443".into(),
-        "test".into(),
-        "test".into(),
+        sentinel_rpc_url.into(),
+        String::new(),
+        String::new(),
     ));
     let round_state = Arc::new(RwLock::new(RoundState::new_idle()));
     let app = build_router(round_state, rpc, cfg.clone());
