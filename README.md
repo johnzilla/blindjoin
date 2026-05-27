@@ -78,24 +78,24 @@ When `tor_mode` is disabled (default), the coordinator listens on `0.0.0.0:8080`
 
 See `blindjoin.toml.example` for all options. All settings can be overridden with `BLINDJOIN_*` environment variables.
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `network.bitcoin_network` | signet | signet, testnet4, regtest, mainnet |
-| `network.bitcoin_rpc_url` | 127.0.0.1:38332 | Bitcoin Core RPC endpoint |
-| `coordinator.denomination_sats` | 1,000,000 | Fixed output amount (0.01 BTC) |
-| `coordinator.min_participants` | 3 | Minimum to start a round |
-| `coordinator.max_participants` | 20 | Maximum per round |
-| `coordinator.listen_addr` | 0.0.0.0:8080 | HTTP listen address (clearnet mode) |
-| `coordinator.tor_mode` | false | Run as Tor hidden service |
-| `coordinator.blame_ban_duration_secs` | 3600 | Ban duration for misbehaving UTXOs |
-| `coordinator.rate_limit_info_per_min` | 60 | Per-route limit for read endpoints (`/info`, `/round/tx`); 1..=60_000 |
-| `coordinator.rate_limit_writes_per_min` | 30 | Per-route limit for write endpoints (`/round/input`, `/round/output`, `/round/sign`); 1..=60_000 |
-| `coordinator.request_timeout_secs` | 30 | Uniform per-request handler deadline; clients see HTTP 408 on stall |
-| `coordinator.max_concurrent_connections` | 256 | Cap on simultaneous Tor hidden-service streams; excess connections park |
-| `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |
-| `discovery.heartbeat_interval_secs` | 300 | PKARR re-publish interval |
+| Setting | Default | Description | Startup-validated |
+|---------|---------|-------------|:-:|
+| `network.bitcoin_network` | signet | signet, testnet4, regtest, mainnet |  |
+| `network.bitcoin_rpc_url` | 127.0.0.1:38332 | Bitcoin Core RPC endpoint |  |
+| `coordinator.denomination_sats` | 1,000,000 | Fixed output amount (0.01 BTC) |  |
+| `coordinator.min_participants` | 3 | Minimum to start a round |  |
+| `coordinator.max_participants` | 20 | Maximum per round |  |
+| `coordinator.listen_addr` | 0.0.0.0:8080 | HTTP listen address (clearnet mode) |  |
+| `coordinator.tor_mode` | false | Run as Tor hidden service |  |
+| `coordinator.blame_ban_duration_secs` | 3600 | Ban duration for misbehaving UTXOs |  |
+| `coordinator.rate_limit_info_per_min` | 60 | Per-route limit for read endpoints (`/info`, `/round/tx`); 1..=60_000 | ✓ |
+| `coordinator.rate_limit_writes_per_min` | 30 | Per-route limit for write endpoints (`/round/input`, `/round/output`, `/round/sign`); 1..=60_000 | ✓ |
+| `coordinator.request_timeout_secs` | 30 | Uniform per-request handler deadline; clients see HTTP 408 on stall | ✓ |
+| `coordinator.max_concurrent_connections` | 256 | Cap on simultaneous Tor hidden-service streams; excess connections park | ✓ |
+| `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |  |
+| `discovery.heartbeat_interval_secs` | 300 | PKARR re-publish interval |  |
 
-The four v1.2 Phase 8 hardening knobs — `rate_limit_info_per_min`, `rate_limit_writes_per_min`, `request_timeout_secs`, and `max_concurrent_connections` — are validated at startup via `CoordinatorConfig::validate()`. Out-of-range values (e.g. `request_timeout_secs: 0`, `max_concurrent_connections` above the OS file-descriptor cap) are rejected with an actionable error before any subsystem reads them.
+**✓ Startup-validated** entries are checked by `CoordinatorConfig::validate()` at boot — out-of-range values (e.g. `request_timeout_secs: 0`, or `max_concurrent_connections` above the OS file-descriptor cap) cause the coordinator to refuse to start with an actionable error, rather than panicking later under load. The unmarked entries get type-level validation only (TOML/serde parses an integer as an integer, but no semantic bounds are enforced). The four marked entries are the v1.2 Phase 8 DoS-hardening knobs.
 
 ### API Endpoints
 
