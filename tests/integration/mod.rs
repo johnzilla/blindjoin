@@ -171,19 +171,41 @@ impl BitcoindGuard {
 impl Drop for BitcoindGuard {
     fn drop(&mut self) {
         if let Some(mut n) = self.node.take() {
-            // Best-effort graceful shutdown: send bitcoind's `stop` RPC and
-            // wait for the child to exit. Swallow any error — the fallback
-            // is `corepc_node::Node`'s own `Drop` (runs immediately after
-            // `n` falls out of scope), which calls `process.kill()` /
-            // SIGKILL unconditionally (verified at
-            // corepc-node-0.12.0/node/src/lib.rs:580).
+            // CR-01: Offload the synchronously-blocking `n.stop()` (which
+            // ultimately calls `std::process::Child::wait`) onto the tokio
+            // blocking pool so we do NOT stall a runtime worker thread for
+            // the duration of bitcoind shutdown. `#[tokio::test]` uses the
+            // current-thread runtime by default — blocking the worker
+            // freezes the entire executor.
+            //
+            // We cannot `.await` the join handle here (Drop is sync), so we
+            // detach. On test teardown the runtime shutdown waits for
+            // blocking-pool tasks to finish before the process exits,
+            // which is the desired behavior. `Node::Drop` runs
+            // `process.kill()` as belt-and-suspenders inside the closure
+            // when `n` falls out of scope on the blocking pool.
+            //
+            // Outside a tokio runtime context (no current handle, e.g. a
+            // sync helper that constructs a guard for cleanup), fall back
+            // to a direct blocking stop().
             //
             // Do NOT panic inside drop: a panic during an unwinding drop
             // would abort the test process and lose the original test
             // panic message.
-            let _ = n.stop();
-            // n drops here; Node::Drop runs process.kill() as
-            // belt-and-suspenders.
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => {
+                    handle.spawn_blocking(move || {
+                        let _ = n.stop();
+                        // n drops here on the blocking pool; Node::Drop
+                        // runs process.kill() as belt-and-suspenders.
+                    });
+                }
+                Err(_) => {
+                    let _ = n.stop();
+                    // n drops here; Node::Drop runs process.kill() as
+                    // belt-and-suspenders.
+                }
+            }
         }
     }
 }
