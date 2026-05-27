@@ -195,13 +195,29 @@ impl Drop for BitcoindGuard {
             match tokio::runtime::Handle::try_current() {
                 Ok(handle) => {
                     handle.spawn_blocking(move || {
-                        let _ = n.stop();
+                        // WR-01: surface graceful-stop failures via stderr
+                        // so a shutdown-hang flake leaves a triage trail.
+                        // We still fall through to Node::Drop's SIGKILL,
+                        // which the corepc-node Drop impl runs when `n`
+                        // exits scope on the blocking pool.
+                        if let Err(e) = n.stop() {
+                            eprintln!(
+                                "BitcoindGuard: graceful stop failed ({e}); \
+                                 relying on Node::Drop SIGKILL fallback"
+                            );
+                        }
                         // n drops here on the blocking pool; Node::Drop
                         // runs process.kill() as belt-and-suspenders.
                     });
                 }
                 Err(_) => {
-                    let _ = n.stop();
+                    // WR-01: same triage trail in the sync fallback path.
+                    if let Err(e) = n.stop() {
+                        eprintln!(
+                            "BitcoindGuard: graceful stop failed ({e}); \
+                             relying on Node::Drop SIGKILL fallback"
+                        );
+                    }
                     // n drops here; Node::Drop runs process.kill() as
                     // belt-and-suspenders.
                 }
