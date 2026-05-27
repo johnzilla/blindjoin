@@ -1,9 +1,21 @@
 ---
 phase: 09-ci-integration-test-reliability
 verified: 2026-05-26T00:00:00Z
-status: human_needed
-score: 17/17 must-haves verified
+status: passed
+score: 20/20 must-haves verified (17 static + 3 human UAT closed 2026-05-27)
 overrides_applied: 0
+uat_closure_evidence: |
+  UAT-1: PR #7 CI run https://github.com/johnzilla/blindjoin/actions/runs/26512029044
+         cargo test 3m49s, 9 passed / 0 failed / 6 ignored. VALIDSIG matched.
+         Required 2 fix commits (ea16787, 6d10d05) to harden multi-signer
+         PGP verify — the exact kind of finding live-CI UAT was designed for.
+  UAT-2: Local macOS arm64, brew bitcoind v31.0.0. Injected panic!("UAT-2")
+         in round_bootstrap.rs:67 after _bitcoind_guard binding. cargo test
+         exited in 8s wallclock (compile + 2.49s test run), log contained
+         `panicked at` line, NO hang. Panic reverted post-test.
+  UAT-3: Same host. Before: 0 bitcoind processes. Ran full suite (9 pass,
+         0 fail, 6 ignored, 7.51s). After (5s settling): 0 bitcoind
+         processes. BitcoindGuard::drop terminated all 4 spawned daemons.
 human_verification:
   - test: "Fresh-PR CI log shows at least one bitcoind-dependent integration test executing with a PASS verdict (SC1)"
     expected: "Push a no-op PR to a branch off main. The `cargo test` job in `.github/workflows/ci.yml` runs `cargo test --workspace --all-targets` with `BLINDJOIN_REQUIRE_BITCOIND=1` and `BITCOIND_EXE=$HOME/.local/bin/bitcoind` exported. The log should contain a PASS line for at least one of: `rate_limiting::info_endpoint_returns_429_when_flooded`, `rate_limiting::request_timeout_returns_408`, or `round_bootstrap::run_bootstraps_round_into_input_reg` — and zero `bitcoind not found (...), skipping (local-dev mode; ...)` notices. Six `full_round.rs` carve-out tests should appear in the `ignored` column without executing."
