@@ -4,7 +4,8 @@
 
 - ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-04-09)
 - ✅ **v1.1 Security & Availability Hardening** — Phases 6-7 (shipped 2026-04-10)
-- **v1.2 Production Readiness** — Phase 8 (in progress)
+- ✅ **v1.2 Production Readiness** — Phase 8 (shipped 2026-05-26)
+- **v1.3 Test Infrastructure & Operational Hardening** — Phases 9-10 (in progress, started 2026-05-26)
 
 ## Phases
 
@@ -27,19 +28,40 @@
 
 </details>
 
-**v1.2 Production Readiness** (in progress)
+<details>
+<summary>✅ v1.2 Production Readiness (Phase 8) — SHIPPED 2026-05-26</summary>
 
-- [x] **Phase 8: Public-endpoint hardening** — Rate limiting, timeouts, connection caps, and identity-aware throttling on the coordinator HTTP API (promoted from BACKLOG.md B-01) (completed 2026-05-26)
+- [x] Phase 8: Public-endpoint hardening (4/4 plans) — completed 2026-05-26
 
-**Goal:** The coordinator HTTP API resists volume-based denial-of-service when exposed publicly: `/round/input` and `/round/sign` cannot be flooded past global per-route rate limits (HTTP 429 + Retry-After); slow clients cannot tie up request slots indefinitely (per-route timeouts, HTTP 408); concurrent connection counts at the Tor listener are bounded; all limits are operator-tunable via `coordinator.toml`. Per-peer throttling is impossible on Tor by design (see CONTEXT D-01); sybil resistance is BIP-322 ownership proofs (unchanged), not rate limits.
+</details>
 
-**Plans:** 4 plans
+**v1.3 Test Infrastructure & Operational Hardening** (in progress)
 
-Plans:
-- [x] 08-01-PLAN.md — Config foundation: add 4 new CoordinatorSection fields (D-04) with serde defaults; bump Cargo.toml (tower_governor 0.8 + tower-http "timeout" feature); update existing test literals (wave 1) — completed 2026-05-26
-- [x] 08-02-PLAN.md — Middleware factory + per-route wiring: implement middleware.rs build_rate_limit_layers (GlobalKeyExtractor, JSON envelope) + build_timeout_layer; wire into api/mod.rs via ServiceBuilder (wave 2, depends on 08-01)
-- [x] 08-03-PLAN.md — Connection cap on Tor accept loop: tokio::sync::Semaphore in network/tor.rs:75-101; run.rs call-site update + clearnet uncapped warning (wave 2, depends on 08-01)
-- [x] 08-04-PLAN.md — Integration test: tests/integration/rate_limiting.rs proving 429 + Retry-After + JSON envelope end-to-end via coordinator::run (wave 3, depends on 08-02 + 08-03)
+- [ ] **Phase 9: CI integration-test reliability** — Pin bitcoind in CI, eliminate the leaked-process stdout-hang, document the canonical invocation pattern so the integration suite actually runs end-to-end on every PR
+- [ ] **Phase 10: full_round.rs decision + execution** — Repair-or-retire the 15-test full_round suite against the pinned bitcoind, with explicit corepc-node version pinning everywhere a typed Client is used
+
+## Phase Details
+
+### Phase 9: CI integration-test reliability
+**Goal**: Integration tests that depend on bitcoind run end-to-end in CI on every PR — no silent graceful-skips, no leaked child processes blocking stdout, and a documented invocation pattern future contributors can copy-paste
+**Depends on**: Phase 8 (v1.2 shipped — the public-endpoint hardening that surfaced this rot is in production)
+**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05
+**Success Criteria** (what must be TRUE):
+  1. A fresh PR's CI log shows at least one bitcoind-dependent integration test executing with a PASS verdict (not a SKIPPED line) — pinned bitcoind is available on the runner via a cached install
+  2. Running `cargo test --test integration` locally writes test output to a log file and the suite process exits within a bounded time even when an individual test panics — no leaked bitcoind blocks the cargo pipe
+  3. When the integration suite completes (pass, fail, or panic), no orphan `bitcoind` processes remain in the process tree — `corepc-node` fixtures release their spawned daemons on test end
+  4. `CONTRIBUTING.md` contains a section titled "Running integration tests" with a copy-pasteable command, an explanation of where output lands, and how to interpret pass/fail/skip — a new contributor can run the suite without rediscovering the pipe-buffering pitfall
+**Plans**: TBD
+
+### Phase 10: full_round.rs decision + execution
+**Goal**: With the CI suite now actually running, the `full_round.rs` integration file is either fully green against the pinned bitcoind or explicitly retired with rationale in TODO.md — and any test in the workspace that touches corepc-node's typed Client pins an explicit version feature
+**Depends on**: Phase 9 (CI must actually run the suite before "passes in CI" is a meaningful success bar; explicit version pinning is naturally exercised by whatever repair path is taken)
+**Requirements**: REPAIR-01, REPAIR-02
+**Success Criteria** (what must be TRUE):
+  1. `cargo test --test integration full_round::` either runs all 15 tests to completion against the pinned bitcoind with a PASS verdict on every one, OR `tests/integration/full_round.rs` is deleted from the repo and the TODO.md "Resolved" section references the retirement decision with rationale
+  2. `grep -r "corepc-node" --include='Cargo.toml'` shows every dependency declaration with an explicit `features = ["NN_M"]` entry — no test in the workspace silently depends on the corepc-node `0_17_2` (Bitcoin Core 0.17.2) default feature
+  3. CI's integration-test job remains green on a PR that touches `tests/integration/full_round.rs` (or, if retired, on a PR that proves the retirement landed cleanly with no orphan references to the deleted module)
+**Plans**: TBD
 
 ## Progress
 
@@ -52,7 +74,9 @@ Plans:
 | 5. Tor & Release | v1.0 | 3/3 | Complete | 2026-04-09 |
 | 6. CI/CD Security Pipeline | v1.1 | 1/1 | Complete | 2026-04-10 |
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
-| 8. Public-endpoint hardening | v1.2 | 4/4 | Complete   | 2026-05-26 |
+| 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
+| 9. CI integration-test reliability | v1.3 | 0/0 | Not started | — |
+| 10. full_round.rs decision + execution | v1.3 | 0/0 | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`

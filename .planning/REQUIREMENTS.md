@@ -43,14 +43,12 @@ Requirements for the **Test Infrastructure & Operational Hardening** milestone. 
 
 ## Traceability
 
-Phase mapping will be populated by the roadmapper agent in the next workflow step.
-
 | REQ-ID | Phase | Plan | Status |
 |--------|-------|------|--------|
-| TEST-01 | TBD | TBD | active |
-| TEST-02 | TBD | TBD | active |
-| TEST-03 | TBD | TBD | active |
-| TEST-04 | TBD | TBD | active |
-| TEST-05 | TBD | TBD | active |
-| REPAIR-01 | TBD | TBD | active |
-| REPAIR-02 | TBD | TBD | active |
+| TEST-01 | Phase 9 | TBD | active |
+| TEST-02 | Phase 9 | TBD | active |
+| TEST-03 | Phase 9 | TBD | active |
+| TEST-04 | Phase 9 | TBD | active |
+| TEST-05 | Phase 9 | TBD | active |
+| REPAIR-01 | Phase 10 | TBD | active |
+| REPAIR-02 | Phase 10 | TBD | active |
