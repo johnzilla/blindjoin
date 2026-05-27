@@ -1,31 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Production Readiness
-current_phase: 08
-current_plan: 1
-status: milestone_complete
-stopped_at: Milestone complete (Phase 08 was final phase)
-last_updated: 2026-05-26T13:45:00.000Z
-last_activity: 2026-05-26
+milestone: v1.3
+milestone_name: Test Infrastructure & Operational Hardening
+status: planning
+last_updated: "2026-05-27T00:55:25.722Z"
+last_activity: 2026-05-27
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 08 (public-endpoint-hardening) — READY FOR VERIFICATION
-Plan: 4 of 4 complete
-**Status:** Milestone complete
-**Current Phase:** 08
-**Last Activity:** 2026-05-26
-**Last Activity Description:** Completed quick task 260526-d7m: CI hygiene — bumped rand 0.8.5 → 0.8.6 (closes 3 Dependabot alerts on RUSTSEC-2026-0097) and added FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true at workflow level on ci.yml/release.yml/docker.yml (silences the June 2026 Node 20 deprecation).
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-27 — Milestone v1.3 started
 
 ## Progress
 
@@ -55,4 +50,3 @@ Plan: 4 of 4 complete
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260526-d7m | CI hygiene: bump rand 0.8.5→0.8.6 (RUSTSEC-2026-0097) and force Node 24 runtime for JS actions in CI workflows | 2026-05-26 | (pending) | [260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos](./quick/260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos/) |
-

@@ -12,9 +12,9 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 ## Current State
 
-Phase 8 (Public-endpoint hardening) shipped 2026-05-26 — coordinator HTTP API now resists volume DoS via per-route rate limits (HTTP 429 + Retry-After, RATE_LIMITED JSON envelope), uniform request timeouts (HTTP 408), and Tor accept-loop connection cap (tokio::sync::Semaphore + ConnectionGuard). 4 operator-tunable knobs in `coordinator.toml`; release builds refuse clearnet without `BLINDJOIN_ALLOW_CLEARNET=1`.
+v1.2 Production Readiness shipped (1 phase, Phase 8 "Public-endpoint hardening"). v1.3 Test Infrastructure & Operational Hardening started 2026-05-26 — focused on making CI catch integration regressions automatically. Phase 8 delivered DoS resistance on the coordinator HTTP API: per-route rate limits (HTTP 429 + Retry-After, RATE_LIMITED JSON envelope), uniform request timeouts (HTTP 408), and Tor accept-loop connection cap (tokio::sync::Semaphore + ConnectionGuard). 4 operator-tunable knobs in `coordinator.toml`; release builds refuse clearnet without `BLINDJOIN_ALLOW_CLEARNET=1`.
 
-Shipped v1.1 Security & Availability Hardening (5,918 LOC Rust, 7 phases total across 2 milestones); v1.2 Production Readiness in progress (Phase 8 complete).
+Shipped v1.1 Security & Availability Hardening (5,918 LOC Rust, 8 phases total across 3 milestones to date); v1.3 in progress.
 Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio, tower_governor 0.8, tower-http 0.6.
 Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
 PKARR DHT discovery live. Docker Compose stack operational.
@@ -54,7 +54,19 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 
 ### Active
 
-(No active requirements — runtime-CI sign-off of Phase 8 HTTP 429/408 tests pending bitcoind availability; remaining milestone phases to be defined)
+## Current Milestone: v1.3 Test Infrastructure & Operational Hardening
+
+**Goal:** Move the project from "tests compile" to "tests actually run end-to-end in CI" so integration regressions are caught on every PR — not surfaced months later when someone runs them locally for the first time.
+
+**Target features:**
+- CI installs bitcoind and the integration suite actually executes (no more silent graceful-skips)
+- Cargo-test stdout-hang pattern eliminated (no more leaked-bitcoind pipe blocks; output streams to file)
+- `full_round.rs` either repaired (corepc-node v30 client API port) or retired (delete if unit coverage suffices)
+- Tor-mode integration harness for connection-cap test (closes Phase 8 HUMAN-UAT item 3)
+
+**Key context:** Phase 8 surfaced multiple structural problems with the test infrastructure that had been silently rotting — tests that always graceful-skipped in CI, `cargo test` stdout pipes blocked behind leaked bitcoind processes, hardcoded test WIFs that were never valid, RPC schema drift in `full_round.rs`. The milestone exists to stop the fire-fighting cycle by making the test feedback loop trustworthy. Scope is deliberately narrow: no new product features, no protocol changes; just durable test infrastructure.
+
+(Requirements list will be populated in the next workflow step.)
 
 ### Out of Scope
 
@@ -125,4 +137,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-26 after Phase 8 (Public-endpoint hardening)*
+*Last updated: 2026-05-26 — v1.3 Test Infrastructure & Operational Hardening started*
