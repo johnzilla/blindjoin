@@ -62,7 +62,8 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - CI installs bitcoind and the integration suite actually executes (no more silent graceful-skips)
 - Cargo-test stdout-hang pattern eliminated (no more leaked-bitcoind pipe blocks; output streams to file)
 - `full_round.rs` either repaired (corepc-node v30 client API port) or retired (delete if unit coverage suffices)
-- Tor-mode integration harness for connection-cap test (closes Phase 8 HUMAN-UAT item 3)
+
+(Tor-mode integration harness deferred to v1.4+ — see REQUIREMENTS.md "Future Requirements" for the deferred Phase 8 HUMAN-UAT item 3 closure.)
 
 **Key context:** Phase 8 surfaced multiple structural problems with the test infrastructure that had been silently rotting — tests that always graceful-skipped in CI, `cargo test` stdout pipes blocked behind leaked bitcoind processes, hardcoded test WIFs that were never valid, RPC schema drift in `full_round.rs`. The milestone exists to stop the fire-fighting cycle by making the test feedback loop trustworthy. Scope is deliberately narrow: no new product features, no protocol changes; just durable test infrastructure.
 
