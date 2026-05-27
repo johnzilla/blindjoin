@@ -107,9 +107,31 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | GET | `/round/tx` | Retrieve unsigned PSBT for verification |
 | POST | `/round/sign` | Submit partial signature |
 
-Errors return structured JSON: `{"error": {"code": "UTXO_SPENT", "message": "...", "round_id": "..."}}`.
+Errors return a structured JSON envelope:
 
-**Rate limiting and timeouts.** All endpoints are rate-limited per route — reads default to 60 req/min, writes to 30 req/min. When a route is flooded, the coordinator returns **HTTP 429** with a `Retry-After` header and the same JSON envelope (`code: "RATE_LIMITED"`). Handlers that stall past `request_timeout_secs` return **HTTP 408**. Clients SHOULD back off according to `Retry-After` and retry on a fresh Tor circuit. Per-peer throttling is intentionally impossible on Tor (`GlobalKeyExtractor` — all Tor connections look identical to the coordinator); sybil resistance comes from BIP-322 ownership proofs and the per-round denomination, not from per-IP rate limits.
+```json
+{
+  "error": {
+    "code": "UTXO_SPENT",
+    "message": "Referenced UTXO is already spent on-chain",
+    "round_id": "abc123..."
+  }
+}
+```
+
+**Rate limiting and timeouts.** All endpoints are rate-limited per route — reads default to 60 req/min, writes to 30 req/min. When a route is flooded, the coordinator returns **HTTP 429** with a `Retry-After` header and the same JSON envelope, with `code: "RATE_LIMITED"`:
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Rate limit exceeded for this endpoint",
+    "round_id": "..."
+  }
+}
+```
+
+Handlers that stall past `request_timeout_secs` return **HTTP 408**. Clients SHOULD back off according to `Retry-After` and retry on a fresh Tor circuit. Per-peer throttling is intentionally impossible on Tor (`GlobalKeyExtractor` — all Tor connections look identical to the coordinator); sybil resistance comes from BIP-322 ownership proofs and the per-round denomination, not from per-IP rate limits.
 
 ## Run the Client
 
