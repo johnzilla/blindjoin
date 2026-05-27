@@ -59,7 +59,10 @@ hyper-util = { version = "0.1", features = ["tokio", "service"] }
 futures-util = "0.3"
 
 [dev-dependencies]
-corepc-node = "0.10"
+# Note: corepc-node defaults to Bitcoin Core 0.17.2 RPC schema (from 2018) —
+# we explicitly enable the 30_2 feature so the test harness uses modern
+# Bitcoin Core RPC types compatible with v30+ daemons (incl. v31 from brew).
+corepc-node = { version = "0.12", features = ["30_2"] }
 client = { path = "../client" }
 shared = { path = "../shared" }
 reqwest = { workspace = true }

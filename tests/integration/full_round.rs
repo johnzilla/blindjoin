@@ -188,9 +188,9 @@ async fn full_round_three_clients() {
 
         // Hardcoded regtest WIF keys — REGTEST ONLY, zero monetary value.
         let test_wifs = [
-            "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-            "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-            "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+            "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+            "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+            "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
         ];
         let denomination: u64 = 100_000;
         let fund_sats: u64 = denomination + 50_000; // covers denomination + fee margin
@@ -293,9 +293,9 @@ async fn full_round_three_clients() {
 
     // ----- Step 6: run 3 concurrent client tasks -----
     let test_wifs = [
-        "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-        "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-        "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
     ];
 
     let handles: Vec<_> = test_wifs
@@ -569,9 +569,9 @@ async fn blame_non_signer_timeout() {
         let rpc_pass = cookie.password.clone();
 
         let test_wifs = [
-            "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-            "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-            "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+            "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+            "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+            "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
         ];
         let denomination: u64 = 100_000;
         let fund_sats: u64 = denomination + 50_000;
@@ -632,9 +632,9 @@ async fn blame_non_signer_timeout() {
     wait_for_coordinator(&coordinator_url).await;
 
     let test_wifs = [
-        "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-        "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-        "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
     ];
 
     // ----- All 3 clients register inputs + outputs; only 2 sign -----
@@ -754,9 +754,9 @@ async fn fund_regtest(exe: String) -> FundedSetup {
         let rpc_pass = cookie.password.clone();
 
         let test_wifs = [
-            "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-            "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-            "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+            "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+            "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+            "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
         ];
         let denomination: u64 = 100_000;
         let fund_sats: u64 = denomination + 50_000;
@@ -938,9 +938,9 @@ async fn adversarial_replay_token() {
     wait_for_coordinator(&coordinator_url).await;
 
     let test_wifs = [
-        "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-        "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-        "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
     ];
 
     // All 3 clients register inputs so round advances to output_reg
@@ -1125,9 +1125,9 @@ async fn adversarial_wrong_denomination() {
     wait_for_coordinator(&coordinator_url).await;
 
     let test_wifs = [
-        "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-        "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-        "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
     ];
 
     // All 3 clients register inputs to advance to output_reg
@@ -1439,9 +1439,9 @@ async fn round_restart_and_completion_after_blame() {
     wait_for_coordinator(&coordinator_url).await;
 
     let test_wifs = [
-        "cNJFgo1driFnPcBdBX8BrJrpxchBW2gSBicFB6Qz4JHaFKkLYVvQ",
-        "cMa6jLZEigizHJkuFQ4RJ6D8nPRSKyEMDsKBvpEkTqGmtXsKxsgU",
-        "cMkJRaXzKsRFvuQUbNPVMjXkHeHHTkQTEOWaabQJDRrXDmDx1RCe",
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
     ];
 
     let non_signer_utxo = setup.utxos[0].0.clone();
