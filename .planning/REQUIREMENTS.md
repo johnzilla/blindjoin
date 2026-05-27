@@ -11,8 +11,8 @@ Requirements for the **Test Infrastructure & Operational Hardening** milestone. 
 
 - [x] **TEST-01**: CI installs a pinned `bitcoind` binary (cached between runs) so integration tests can spawn it without per-job download cost
 - [x] **TEST-02**: Integration tests that require bitcoind actually execute in CI on every PR — no silent graceful-skips. The CI test count includes them.
-- [ ] **TEST-03**: `cargo test` for integration tests produces output that streams to a log file (no buffering pipes) and the suite exits cleanly even if individual tests panic, without blocking on leaked child processes
-- [ ] **TEST-04**: `corepc-node` test fixtures release their spawned `bitcoind` on test completion (no `Box::leak` side effect keeping the daemon alive across test boundaries)
+- [x] **TEST-03**: `cargo test` for integration tests produces output that streams to a log file (no buffering pipes) and the suite exits cleanly even if individual tests panic, without blocking on leaked child processes
+- [x] **TEST-04**: `corepc-node` test fixtures release their spawned `bitcoind` on test completion (no `Box::leak` side effect keeping the daemon alive across test boundaries)
 - [ ] **TEST-05**: `CONTRIBUTING.md` documents the canonical integration-test invocation pattern (which command, where output goes, how to interpret pass/fail), so future contributors don't repeat today's pipe-buffering fight
 
 ### Test Repair (REPAIR)

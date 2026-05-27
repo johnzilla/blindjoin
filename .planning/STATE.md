@@ -4,14 +4,14 @@ milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
 current_plan: 1
 status: executing
-stopped_at: Phase 9 context gathered
-last_updated: "2026-05-27T02:27:41.582Z"
+stopped_at: Completed 09-02-PLAN.md (BitcoindGuard + macro substrate)
+last_updated: "2026-05-27T02:37:47.540Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -20,7 +20,7 @@ progress:
 ## Current Position
 
 Phase: 09 (ci-integration-test-reliability) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-05-27
 
@@ -31,7 +31,7 @@ Last activity: 2026-05-27
 
 ## Session Continuity
 
-**Stopped At:** Phase 9 context gathered
+**Stopped At:** Completed 09-02-PLAN.md (BitcoindGuard + macro substrate)
 **Resume File:** None
 
 ## Decisions
@@ -45,6 +45,8 @@ Last activity: 2026-05-27
 - [Phase ?]: 09-01 Plan: re-verified actions/cache@v4 SHA at execution time (0057852bfaa89a56745cba8c7296529d2fc39830 — matches CONTEXT.md/RESEARCH.md, no drift)
 - [Phase ?]: 09-01 Plan: pinned bitcoin-core/guix.sigs commit 893b44f5fb1ed2abcdd79feb1c54723e3ccf5b59 (main HEAD on 2026-05-26) for the achow101 PGP key fetch in the CI install step
 - [Phase ?]: 09-01 Plan: CI Run tests command kept verbatim — cargo test --workspace --all-targets, no --include-ignored — so the 6 Phase-10 carve-out tests list as ignored without executing (per amended D-10)
+- [Phase 09-02]: bootstrap_regtest_bitcoind body uses require_bitcoind_inner() directly (not the require_bitcoind!() macro) — macro's None=>return expansion is a type error inside a function returning (BitcoindGuard, RpcCreds); tests invoke macro themselves before calling bootstrap — Rule 3 auto-fix; preserves all public-surface contracts for downstream plans 09-03/09-04
+- [Phase 09-02]: view_stdout=false set explicitly in bootstrap_regtest_bitcoind despite being corepc-node 0.12 default — Discoverable via grep + robust against a future Conf default flip silently re-introducing the pipe-hang root cause
 
 ## Performance Metrics
 
@@ -52,6 +54,7 @@ Last activity: 2026-05-27
 |------------|----------|-------|-------|-----------|
 | 08-04 | ~5min | 2 | 2 | 2026-05-26 |
 | Phase 09 P01 | 20min | 3 tasks | 2 files |
+| Phase 09 P02 | 6min | 2 tasks | 1 files |
 
 ### Quick Tasks Completed
 

@@ -59,7 +59,7 @@ Plans:
 **Wave 1**
 
 - [x] 09-01-PLAN.md — Provision pinned bitcoind v30.2 in CI (BLINDJOIN_REQUIRE_BITCOIND env, .bitcoind-version pin, actions/cache + PGP-verified install, BITCOIND_EXE export)
-- [ ] 09-02-PLAN.md — Add shared test fixtures to tests/integration/mod.rs (require_bitcoind! macro, BitcoindGuard RAII, RpcCreds, bootstrap_regtest_bitcoind helper)
+- [x] 09-02-PLAN.md — Add shared test fixtures to tests/integration/mod.rs (require_bitcoind! macro, BitcoindGuard RAII, RpcCreds, bootstrap_regtest_bitcoind helper)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -95,7 +95,7 @@ Plans:
 | 6. CI/CD Security Pipeline | v1.1 | 1/1 | Complete | 2026-04-10 |
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
 | 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
-| 9. CI integration-test reliability | v1.3 | 1/5 | In Progress|  |
+| 9. CI integration-test reliability | v1.3 | 2/5 | In Progress|  |
 | 10. full_round.rs decision + execution | v1.3 | 0/0 | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
