@@ -1,19 +1,29 @@
 ---
 phase: 08-public-endpoint-hardening
 verified: 2026-05-26T00:00:00Z
-status: human_needed
+status: passed
+status_history:
+  - status: human_needed
+    at: 2026-05-26T00:00:00Z
+    note: "Initial verification — 11/11 must-haves passed statically, 3 runtime items required bitcoind to fully prove."
+  - status: passed
+    at: 2026-05-26T20:30:00Z
+    note: "Items 1 and 2 resolved by local runtime test against bitcoind v31.0.0 (see 08-HUMAN-UAT.md `result: passed` for both). Item 3 (Tor connection-cap) is `result: deferred` by design per Plan 04 A4 — clearnet harness cannot drive Tor-only semaphore; tracked in TODO.md as a future-milestone item, not an outstanding obligation on Phase 8."
 score: 11/11 must-haves verified
 overrides_applied: 0
 human_verification:
   - test: "Runtime proof of HTTP 429 + Retry-After + RATE_LIMITED JSON envelope on /info under flood"
-    expected: "With bitcoind in PATH, `cargo test --test integration rate_limiting::info_endpoint_returns_429_when_flooded -- --nocapture --include-ignored` runs end-to-end and emits `info_endpoint_returns_429_when_flooded PASSED: 429 + retry-after + JSON envelope (code=RATE_LIMITED) observed`. In this verification environment bitcoind is absent and the test graceful-skipped — the assertion code is wired correctly but the runtime behavior was not exercised here."
-    why_human: "Requires bitcoind binary on PATH or via $BITCOIND_EXE. Verifier confirmed compile, registration, and graceful-skip path. End-to-end execution must occur in a CI/local environment with bitcoind installed."
+    expected: "With bitcoind in PATH, `cargo test --test integration rate_limiting::info_endpoint_returns_429_when_flooded -- --nocapture --include-ignored` runs end-to-end and emits `info_endpoint_returns_429_when_flooded PASSED: 429 + retry-after + JSON envelope (code=RATE_LIMITED) observed`."
+    result: passed
+    evidence: "Ran locally 2026-05-26 against bitcoind v31.0.0 (Homebrew). Test output matched expected. See 08-HUMAN-UAT.md item 1 for full evidence."
   - test: "Runtime proof of HTTP 408 REQUEST_TIMEOUT on slow-body request"
-    expected: "With bitcoind in PATH, `cargo test --test integration rate_limiting::request_timeout_returns_408 -- --nocapture --include-ignored` runs end-to-end and emits `request_timeout_returns_408 PASSED: HTTP 408 REQUEST_TIMEOUT observed within 5s of a request that paused mid-body for 3s against request_timeout_secs=1`. WR-02 fix means the test also asserts time-to-first-byte < 1750 ms (proves the layer fires near the deadline, not after the body completes)."
-    why_human: "Requires bitcoind binary on PATH or via $BITCOIND_EXE. Verifier confirmed compile, registration, and graceful-skip path. End-to-end execution must occur in a CI/local environment with bitcoind installed."
+    expected: "With bitcoind in PATH, `cargo test --test integration rate_limiting::request_timeout_returns_408 -- --nocapture --include-ignored` runs end-to-end and emits `request_timeout_returns_408 PASSED: HTTP 408 REQUEST_TIMEOUT observed within 5s ...`. WR-02 time-to-first-byte < 1750 ms assertion exercised."
+    result: passed
+    evidence: "Same run as item 1. See 08-HUMAN-UAT.md item 2."
   - test: "Tor connection-cap runtime behavior (N+1 streams park beyond max_concurrent_connections)"
-    expected: "An attacker opening 257 simultaneous .onion streams sees only 256 served; the 257th parks until an earlier connection finishes. Plan 04 explicitly defers this assertion to a future-phase Tor-mode harness (TODO(Phase-8 Q3, A4) in tests/integration/rate_limiting.rs:70-74)."
-    why_human: "Clearnet test infra cannot drive the Tor-only semaphore. Coverage stands via Plan 03 grep audits and the in-source ConnectionGuard contract. Real end-to-end proof requires a future Tor-mode integration harness."
+    expected: "An attacker opening 257 simultaneous .onion streams sees only 256 served; the 257th parks until an earlier connection finishes."
+    result: deferred
+    why_deferred: "Plan 04 A4: clearnet test infra fundamentally cannot drive the Tor-only semaphore. Static coverage stands via Plan 03 grep audits + ConnectionGuard RAII contract. End-to-end runtime proof requires a Tor-mode integration harness — captured as a future-milestone follow-up in TODO.md."
 ---
 
 # Phase 08: public-endpoint-hardening Verification Report
@@ -21,8 +31,8 @@ human_verification:
 **Phase Goal:** The coordinator HTTP API resists volume-based denial-of-service when exposed publicly: `/round/input` and `/round/sign` cannot be flooded past global per-route rate limits (HTTP 429 + Retry-After); slow clients cannot tie up request slots indefinitely (per-route timeouts, HTTP 408); concurrent connection counts at the Tor listener are bounded; all limits are operator-tunable via `coordinator.toml`. Per-peer throttling is impossible on Tor by design (see CONTEXT D-01); sybil resistance is BIP-322 ownership proofs (unchanged), not rate limits.
 
 **Verified:** 2026-05-26
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Status:** passed (originally human_needed; advanced after local runtime proof landed)
+**Re-verification:** Yes — runtime evidence for items 1 and 2 added 2026-05-26T20:30Z
 
 ## Goal Achievement
 
