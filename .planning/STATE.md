@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
-current_plan: Not started
+current_plan: 1
 status: executing
 stopped_at: Phase 9 context gathered
-last_updated: "2026-05-27T02:01:47.553Z"
-last_activity: 2026-05-27 -- Phase 09 planning complete
+last_updated: "2026-05-27T02:27:41.582Z"
+last_activity: 2026-05-27
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -19,20 +19,20 @@ progress:
 
 ## Current Position
 
-Phase: 9 — CI integration-test reliability (not yet planned)
-Plan: —
+Phase: 09 (ci-integration-test-reliability) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-05-27 -- Phase 09 planning complete
+Last activity: 2026-05-27
 
 ## Progress
 
 **Phases Complete:** 0 of 2
-**Current Plan:** Not started
+**Current Plan:** 1
 
 ## Session Continuity
 
 **Stopped At:** Phase 9 context gathered
-**Resume File:** .planning/phases/09-ci-integration-test-reliability/09-CONTEXT.md
+**Resume File:** None
 
 ## Decisions
 
@@ -42,12 +42,16 @@ Last activity: 2026-05-27 -- Phase 09 planning complete
 - 08-04 Plan: connection-cap (max_concurrent_connections) end-to-end runtime test DEFERRED per A4 (clearnet test infra cannot exercise the tor-only semaphore). Documented inline with a TODO(Phase-8 Q3, A4) comment. Coverage stands via Plan 03's grep audits.
 - 08-04 Plan: neither test attaches #[ignore]. The verify command still uses --include-ignored for CI forward-compatibility (if a future change needs to mark a test ignored).
 - 08-04 Plan: three-condition 429 assertion (status + retry-after header + JSON envelope code RATE_LIMITED) — proves the full response envelope shape, not just the status code.
+- [Phase ?]: 09-01 Plan: re-verified actions/cache@v4 SHA at execution time (0057852bfaa89a56745cba8c7296529d2fc39830 — matches CONTEXT.md/RESEARCH.md, no drift)
+- [Phase ?]: 09-01 Plan: pinned bitcoin-core/guix.sigs commit 893b44f5fb1ed2abcdd79feb1c54723e3ccf5b59 (main HEAD on 2026-05-26) for the achow101 PGP key fetch in the CI install step
+- [Phase ?]: 09-01 Plan: CI Run tests command kept verbatim — cargo test --workspace --all-targets, no --include-ignored — so the 6 Phase-10 carve-out tests list as ignored without executing (per amended D-10)
 
 ## Performance Metrics
 
 | Phase-Plan | Duration | Tasks | Files | Completed |
 |------------|----------|-------|-------|-----------|
 | 08-04 | ~5min | 2 | 2 | 2026-05-26 |
+| Phase 09 P01 | 20min | 3 tasks | 2 files |
 
 ### Quick Tasks Completed
 
