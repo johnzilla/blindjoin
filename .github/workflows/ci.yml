@@ -83,24 +83,31 @@ jobs:
           gpg --list-keys --with-colons | grep -q "${KEY_FP}" \
             || { echo "ERROR: expected fingerprint ${KEY_FP} not found"; exit 1; }
 
-          # 3. Fetch SHA256SUMS + signature, verify signature.
-          # Belt-and-suspenders: run plain `gpg --verify` (its non-zero exit
-          # under `set -euo pipefail` fails the script on a bad signature)
-          # AND parse `--status-fd=1` for an explicit GOODSIG line. The
-          # status-fd parse defends against the "key not certified" warning
-          # that gpg emits to stderr when there is no trust path — gpg can
-          # exit 0 with that warning under some configurations, so we assert
-          # GOODSIG positively rather than relying on exit code alone.
-          # PR review of bumps to GUIX_SIGS_SHA / KEY_FP is the remaining
-          # trust root, because an attacker who controls a future guix.sigs
-          # HEAD could in principle swap both the key blob AND the KEY_FP
-          # value in the same PR.
+          # 3. Fetch SHA256SUMS + signature, verify achow101's signature.
+          # SHA256SUMS.asc is a multi-signature file — Bitcoin Core releases
+          # are signed by ~10 different guix builders. We only import achow101's
+          # key and only require achow101's signature to be GOOD. A plain
+          # `gpg --verify` would exit non-zero because gpg can't check the
+          # other ~9 signatures' keys (which we deliberately don't import —
+          # see Trust Model below); under `set -euo pipefail` that would
+          # incorrectly fail the script even though achow101's sig is valid.
+          #
+          # We rely solely on `--status-fd=1`'s machine-readable GOODSIG line
+          # and grep for achow101's 16-char long-key-id (last 16 chars of
+          # KEY_FP), which positively asserts achow101 signed this exact file
+          # — not just "any signer" we happen to trust.
+          #
+          # Trust model: PR review of bumps to GUIX_SIGS_SHA / KEY_FP is the
+          # remaining trust root. An attacker who controls a future guix.sigs
+          # HEAD could in principle swap BOTH the key blob AND the KEY_FP
+          # value in the same PR; reviewers must check that the new
+          # fingerprint matches an externally-verified achow101 public key.
+          ACHOW_LONG_KEY_ID="${KEY_FP: -16}"   # last 16 chars of fingerprint
           curl -sL "${BASE}/SHA256SUMS" -o SHA256SUMS
           curl -sL "${BASE}/SHA256SUMS.asc" -o SHA256SUMS.asc
-          gpg --verify SHA256SUMS.asc SHA256SUMS
           gpg --status-fd=1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null \
-            | grep -q '^\[GNUPG:\] GOODSIG ' \
-            || { echo "ERROR: gpg verify did not produce a GOODSIG line"; exit 1; }
+            | grep -q "^\[GNUPG:\] GOODSIG ${ACHOW_LONG_KEY_ID} " \
+            || { echo "ERROR: SHA256SUMS.asc does not contain a GOODSIG from achow101 (${ACHOW_LONG_KEY_ID})"; exit 1; }
 
           # 4. Fetch tarball, verify hash against signed sums.
           curl -sL "${BASE}/${TARBALL}" -o "${TARBALL}"
