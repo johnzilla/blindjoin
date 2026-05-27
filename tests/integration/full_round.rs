@@ -14,6 +14,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+// Phase 9 plan 09-03 migration: shared regtest fixtures from
+// `tests/integration/mod.rs`. Each bitcoind-dependent test below uses
+// `require_bitcoind!()` for the graceful local-dev skip, then
+// `bootstrap_regtest_bitcoind()` to bring up the daemon, holding the
+// returned `BitcoindGuard` for the test's full duration. This replaces
+// the historical leak-the-Node pattern (3 callsites previously in this
+// file) with deterministic RAII shutdown.
+use crate::{bootstrap_regtest_bitcoind, require_bitcoind, BitcoindGuard, RpcCreds};
+
 // ---------------------------------------------------------------------------
 // Helper: initialise a round state in InputReg with a fresh RSA key.
 // ---------------------------------------------------------------------------
@@ -153,38 +162,38 @@ struct FundedSetup {
 /// 8. Verify the transaction has 3 outputs of 100_000 sats
 #[tokio::test]
 async fn full_round_three_clients() {
-    // ----- Step 1: skip if bitcoind not available -----
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("bitcoind not found ({}), skipping full_round_three_clients", e);
-            return;
-        }
-    };
+    // ----- Step 1: skip gracefully if bitcoind missing (local-dev), panic in CI -----
+    // require_bitcoind!() routes the skip path through `return` from this fn.
+    // We discard the exe path: bootstrap_regtest_bitcoind() resolves it internally.
+    let _exe = require_bitcoind!();
 
-    // ----- Steps 2-4: all synchronous bitcoind work in one spawn_blocking -----
-    // corepc-node's Client is not Clone, so we do all sync work here and
-    // then leak the node to keep bitcoind alive for the coordinator's RPC calls.
+    // ----- Step 2: bring up regtest bitcoind via the shared fixture -----
+    // The returned guard owns the Node and shuts it down deterministically on
+    // drop (RPC `stop` + Node::Drop SIGKILL fallback). It MUST stay in scope
+    // for the test's full duration — we wrap it in Arc so we can pass a clone
+    // into spawn_blocking for the funding work while still holding it outside.
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind().await;
+    let bitcoind_guard = Arc::new(bitcoind_guard);
+
+    // ----- Steps 3-4: synchronous funding via the guarded Node -----
+    // corepc-node's Client is not Clone and Node methods take &self, so we do
+    // all sync RPC work in a single spawn_blocking. The Arc<BitcoindGuard>
+    // clone gives us the &Node inside the closure; the outer Arc binding
+    // keeps bitcoind alive for the rest of the test. We also move `creds`
+    // into the closure to build the FundedSetup — its RPC URL/user/pass
+    // remain valid as long as bitcoind_guard is alive.
+    let guard_for_setup = Arc::clone(&bitcoind_guard);
+    let RpcCreds {
+        url: rpc_url,
+        user: rpc_user,
+        pass: rpc_pass,
+    } = creds;
     let setup: FundedSetup = tokio::task::spawn_blocking(move || {
         use bitcoin::{
             secp256k1::Secp256k1, Address, Amount, CompressedPublicKey, Network, PrivateKey,
         };
-        use corepc_node::{Conf, Node};
 
-        let mut conf = Conf::default();
-        conf.network = "regtest";
-
-        let node = Node::with_conf(&exe, &conf).expect("start regtest bitcoind");
-
-        // Extract RPC credentials from cookie file
-        let cookie = node
-            .params
-            .get_cookie_values()
-            .expect("read cookie file")
-            .expect("parse cookie values");
-        let rpc_url = node.rpc_url();
-        let rpc_user = cookie.user.clone();
-        let rpc_pass = cookie.password.clone();
+        let node = guard_for_setup.node();
 
         // Hardcoded regtest WIF keys — REGTEST ONLY, zero monetary value.
         let test_wifs = [
@@ -210,11 +219,10 @@ async fn full_round_three_clients() {
             })
             .collect();
 
-        // Mine 101 blocks to mature coinbase UTXOs
+        // bootstrap_regtest_bitcoind already mined 101 blocks (matured the
+        // coinbase). Mine 1 extra so send_to_address has a fresh coinbase
+        // available (the 101st block's coinbase becomes spendable at height 102).
         let mine_addr: Address = node.client.new_address().expect("get new address");
-        node.client
-            .generate_to_address(101, &mine_addr)
-            .expect("generate 101 blocks");
 
         // Fund each test address
         let mut funding_txids: Vec<String> = Vec::new();
@@ -263,11 +271,6 @@ async fn full_round_three_clients() {
 
         assert_eq!(utxos_vec.len(), 3, "Must have 3 funded UTXOs");
 
-        // Leak the node so bitcoind stays alive for the coordinator's RPC calls.
-        // This is acceptable in a test — OS reaps the process at test exit.
-        let node_box = Box::new(node);
-        Box::leak(node_box);
-
         FundedSetup {
             rpc_url,
             rpc_user,
@@ -277,6 +280,11 @@ async fn full_round_three_clients() {
     })
     .await
     .expect("setup spawn_blocking panicked");
+
+    // Keep the bitcoind_guard alive for the rest of the test. Even though the
+    // Arc clone above was moved into spawn_blocking, the outer Arc binding
+    // (created at let bitcoind_guard = Arc::new(...) above) still holds.
+    let _bitcoind_guard = bitcoind_guard;
 
     let denomination: u64 = 100_000;
 
@@ -541,32 +549,26 @@ async fn spawn_coordinator_with_blame(
 /// Skips gracefully if bitcoind is not available.
 #[tokio::test]
 async fn blame_non_signer_timeout() {
-    // Skip if bitcoind not available
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("bitcoind not found ({}), skipping blame_non_signer_timeout", e);
-            return;
-        }
-    };
+    // Skip gracefully if bitcoind missing (local-dev); panic in CI.
+    let _exe = require_bitcoind!();
 
-    // ----- Fund 3 UTXOs in regtest -----
+    // Shared regtest bootstrap (mines 101 blocks, returns RAII guard + creds).
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind().await;
+    let bitcoind_guard = Arc::new(bitcoind_guard);
+
+    // ----- Fund 3 UTXOs via the guarded Node -----
+    let guard_for_setup = Arc::clone(&bitcoind_guard);
+    let RpcCreds {
+        url: rpc_url,
+        user: rpc_user,
+        pass: rpc_pass,
+    } = creds;
     let setup: FundedSetup = tokio::task::spawn_blocking(move || {
         use bitcoin::{
             secp256k1::Secp256k1, Address, Amount, CompressedPublicKey, Network, PrivateKey,
         };
-        use corepc_node::{Conf, Node};
 
-        let mut conf = Conf::default();
-        conf.network = "regtest";
-
-        let node = Node::with_conf(&exe, &conf).expect("start regtest bitcoind");
-
-        let cookie = node.params.get_cookie_values()
-            .expect("read cookie file").expect("parse cookie values");
-        let rpc_url = node.rpc_url();
-        let rpc_user = cookie.user.clone();
-        let rpc_pass = cookie.password.clone();
+        let node = guard_for_setup.node();
 
         let test_wifs = [
             "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
@@ -585,8 +587,9 @@ async fn blame_non_signer_timeout() {
             Address::p2wpkh(&cpk, Network::Regtest)
         }).collect();
 
+        // bootstrap_regtest_bitcoind already mined 101 blocks; we only need
+        // a fresh mining address for the post-funding confirmation block.
         let mine_addr: Address = node.client.new_address().expect("get new address");
-        node.client.generate_to_address(101, &mine_addr).expect("generate 101 blocks");
 
         let mut funding_txids: Vec<String> = Vec::new();
         for addr in &utxo_addresses {
@@ -612,9 +615,6 @@ async fn blame_non_signer_timeout() {
 
         assert_eq!(utxos_vec.len(), 3);
 
-        let node_box = Box::new(node);
-        Box::leak(node_box);
-
         FundedSetup {
             rpc_url,
             rpc_user,
@@ -622,6 +622,10 @@ async fn blame_non_signer_timeout() {
             utxos: [utxos_vec[0].clone(), utxos_vec[1].clone(), utxos_vec[2].clone()],
         }
     }).await.expect("setup spawn_blocking panicked");
+
+    // Hold bitcoind_guard for the rest of the test — bitcoind must remain
+    // alive while the coordinator drives RPC calls below.
+    let _bitcoind_guard = bitcoind_guard;
 
     // ----- Spawn coordinator (min_participants=2, signing timeout=2s) -----
     let (coordinator_url, ban_list) = spawn_coordinator_with_blame(
@@ -732,26 +736,36 @@ async fn blame_non_signer_timeout() {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: fund 3 UTXOs on regtest, return FundedSetup.
+// Helper: bring up regtest bitcoind via the shared fixture, fund 3 UTXOs,
+// and return both the RAII BitcoindGuard and the FundedSetup.
+//
+// **Caller contract:** the returned BitcoindGuard MUST be held for the full
+// duration of the test. Dropping it (end-of-scope, `return`, panic unwind)
+// terminates the daemon; subsequent RPC calls against `FundedSetup`'s URL
+// will fail. The 5 callers (4 adversarial tests + round_restart_and_completion
+// _after_blame) bind it as `let (bitcoind_guard, setup) = fund_regtest().await;`
+// and let scope drop it at end-of-test.
+//
 // Reused by adversarial and restart tests.
 // ---------------------------------------------------------------------------
-async fn fund_regtest(exe: String) -> FundedSetup {
-    tokio::task::spawn_blocking(move || {
+async fn fund_regtest() -> (BitcoindGuard, FundedSetup) {
+    // Shared bootstrap: brings up bitcoind, sets stdio to /dev/null,
+    // passes -printtoconsole=0, mines 101 blocks. Returns the guard.
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind().await;
+    let bitcoind_guard = Arc::new(bitcoind_guard);
+
+    let guard_for_setup = Arc::clone(&bitcoind_guard);
+    let RpcCreds {
+        url: rpc_url,
+        user: rpc_user,
+        pass: rpc_pass,
+    } = creds;
+    let setup: FundedSetup = tokio::task::spawn_blocking(move || {
         use bitcoin::{
             secp256k1::Secp256k1, Address, Amount, CompressedPublicKey, Network, PrivateKey,
         };
-        use corepc_node::{Conf, Node};
 
-        let mut conf = Conf::default();
-        conf.network = "regtest";
-
-        let node = Node::with_conf(&exe, &conf).expect("start regtest bitcoind");
-
-        let cookie = node.params.get_cookie_values()
-            .expect("read cookie file").expect("parse cookie values");
-        let rpc_url = node.rpc_url();
-        let rpc_user = cookie.user.clone();
-        let rpc_pass = cookie.password.clone();
+        let node = guard_for_setup.node();
 
         let test_wifs = [
             "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
@@ -770,8 +784,9 @@ async fn fund_regtest(exe: String) -> FundedSetup {
             Address::p2wpkh(&cpk, Network::Regtest)
         }).collect();
 
+        // bootstrap_regtest_bitcoind already mined 101 blocks; we only need
+        // a fresh mining address for the post-funding confirmation block.
         let mine_addr: Address = node.client.new_address().expect("get new address");
-        node.client.generate_to_address(101, &mine_addr).expect("generate 101 blocks");
 
         let mut funding_txids: Vec<String> = Vec::new();
         for addr in &utxo_addresses {
@@ -796,8 +811,6 @@ async fn fund_regtest(exe: String) -> FundedSetup {
             }).collect();
 
         assert_eq!(utxos_vec.len(), 3);
-        let node_box = Box::new(node);
-        Box::leak(node_box);
 
         FundedSetup {
             rpc_url,
@@ -805,7 +818,20 @@ async fn fund_regtest(exe: String) -> FundedSetup {
             rpc_pass,
             utxos: [utxos_vec[0].clone(), utxos_vec[1].clone(), utxos_vec[2].clone()],
         }
-    }).await.expect("fund_regtest spawn_blocking panicked")
+    }).await.expect("fund_regtest spawn_blocking panicked");
+
+    // Unwrap the Arc — we always created it fresh in this function, so we
+    // are the sole owner once the spawn_blocking closure has returned and
+    // its `guard_for_setup` clone has dropped. The caller receives the
+    // bare BitcoindGuard and is responsible for keeping it in scope.
+    let bitcoind_guard = Arc::try_unwrap(bitcoind_guard).unwrap_or_else(|_| {
+        panic!(
+            "fund_regtest: BitcoindGuard Arc still has outstanding clones — \
+             this is a bug; the spawn_blocking closure should have dropped its clone"
+        )
+    });
+
+    (bitcoind_guard, setup)
 }
 
 // ---------------------------------------------------------------------------
@@ -920,22 +946,18 @@ async fn spawn_coordinator_with_blame_and_restart(
 /// Skips gracefully if bitcoind is not available.
 #[tokio::test]
 async fn adversarial_replay_token() {
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("bitcoind not found ({}), skipping adversarial_replay_token", e);
-            return;
-        }
-    };
+    let _exe = require_bitcoind!();
 
-    let setup = fund_regtest(exe).await;
-    // WR-06: keep `_tmp_dir` bound for the test's full duration.
+    let (bitcoind_guard, setup) = fund_regtest().await;
+    // WR-06: keep `_tmp_dir` bound for the test's full duration. The
+    // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
         setup.rpc_url.clone(),
         setup.rpc_user.clone(),
         setup.rpc_pass.clone(),
     ).await;
     wait_for_coordinator(&coordinator_url).await;
+    let _bitcoind_guard = bitcoind_guard;
 
     let test_wifs = [
         "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
@@ -1047,22 +1069,18 @@ async fn adversarial_replay_token() {
 /// Requires bitcoind (RPC validation). Skips gracefully if unavailable.
 #[tokio::test]
 async fn adversarial_invalid_utxo() {
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("bitcoind not found ({}), skipping adversarial_invalid_utxo", e);
-            return;
-        }
-    };
+    let _exe = require_bitcoind!();
 
-    let setup = fund_regtest(exe).await;
-    // WR-06: keep `_tmp_dir` bound for the test's full duration.
+    let (bitcoind_guard, setup) = fund_regtest().await;
+    // WR-06: keep `_tmp_dir` bound for the test's full duration. The
+    // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
         setup.rpc_url.clone(),
         setup.rpc_user.clone(),
         setup.rpc_pass.clone(),
     ).await;
     wait_for_coordinator(&coordinator_url).await;
+    let _bitcoind_guard = bitcoind_guard;
 
     // Send POST /round/input with a fabricated non-existent outpoint
     // We need a plausible-looking InputRegRequest with a fake txid:0
@@ -1107,22 +1125,18 @@ async fn adversarial_invalid_utxo() {
 /// Requires bitcoind (input registration validates UTXOs). Skips gracefully if unavailable.
 #[tokio::test]
 async fn adversarial_wrong_denomination() {
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("bitcoind not found ({}), skipping adversarial_wrong_denomination", e);
-            return;
-        }
-    };
+    let _exe = require_bitcoind!();
 
-    let setup = fund_regtest(exe).await;
-    // WR-06: keep `_tmp_dir` bound for the test's full duration.
+    let (bitcoind_guard, setup) = fund_regtest().await;
+    // WR-06: keep `_tmp_dir` bound for the test's full duration. The
+    // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
         setup.rpc_url.clone(),
         setup.rpc_user.clone(),
         setup.rpc_pass.clone(),
     ).await;
     wait_for_coordinator(&coordinator_url).await;
+    let _bitcoind_guard = bitcoind_guard;
 
     let test_wifs = [
         "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
@@ -1419,15 +1433,9 @@ async fn coordinator_info_endpoint_fields() {
 /// Skips gracefully if bitcoind is not available.
 #[tokio::test]
 async fn round_restart_and_completion_after_blame() {
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("bitcoind not found ({}), skipping round_restart_and_completion_after_blame", e);
-            return;
-        }
-    };
+    let _exe = require_bitcoind!();
 
-    let setup = fund_regtest(exe).await;
+    let (bitcoind_guard, setup) = fund_regtest().await;
     let denomination: u64 = 100_000;
 
     // Spawn coordinator with blame + auto-restart (min_participants=2, signing_timeout=2s)
@@ -1437,6 +1445,8 @@ async fn round_restart_and_completion_after_blame() {
         setup.rpc_pass.clone(),
     ).await;
     wait_for_coordinator(&coordinator_url).await;
+    // Hold bitcoind_guard for the full test duration; dropping ends the daemon.
+    let _bitcoind_guard = bitcoind_guard;
 
     let test_wifs = [
         "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
