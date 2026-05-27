@@ -367,6 +367,14 @@ async fn full_round_three_clients() {
 
     // ----- Step 7: wait for broadcast, then check mempool -----
     // Coordinator broadcasts after all 3 signatures are collected.
+    // TODO(Phase-10): replace bare sleep with poll-until-deadline to
+    // reduce flake; tracked in REVIEW.md WR-05. The same pattern recurs
+    // at lines ~704, ~1519, ~1627 and should be migrated together to a
+    // shared `wait_for(predicate, deadline)` helper (compare
+    // `wait_for_coordinator` at lines 116-135 and the deadline loop in
+    // `round_bootstrap.rs`). All four sites currently sit behind
+    // `#[ignore]` so the flake risk is masked until Phase 10 lifts the
+    // ignores in lockstep with the RPC-schema unignore.
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     let rpc_url = setup.rpc_url.clone();
