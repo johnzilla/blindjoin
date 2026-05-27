@@ -165,15 +165,16 @@ struct FundedSetup {
 async fn full_round_three_clients() {
     // ----- Step 1: skip gracefully if bitcoind missing (local-dev), panic in CI -----
     // require_bitcoind!() routes the skip path through `return` from this fn.
-    // We discard the exe path: bootstrap_regtest_bitcoind() resolves it internally.
-    let _exe = require_bitcoind!();
+    // We forward the resolved exe to bootstrap_regtest_bitcoind so the fixture
+    // does not re-resolve (WR-03: single source of truth per test invocation).
+    let exe = require_bitcoind!();
 
     // ----- Step 2: bring up regtest bitcoind via the shared fixture -----
     // The returned guard owns the Node and shuts it down deterministically on
     // drop (RPC `stop` + Node::Drop SIGKILL fallback). It MUST stay in scope
     // for the test's full duration — we wrap it in Arc so we can pass a clone
     // into spawn_blocking for the funding work while still holding it outside.
-    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind().await;
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
     let bitcoind_guard = Arc::new(bitcoind_guard);
 
     // ----- Steps 3-4: synchronous funding via the guarded Node -----
@@ -552,10 +553,10 @@ async fn spawn_coordinator_with_blame(
 #[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn blame_non_signer_timeout() {
     // Skip gracefully if bitcoind missing (local-dev); panic in CI.
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
     // Shared regtest bootstrap (mines 101 blocks, returns RAII guard + creds).
-    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind().await;
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
     let bitcoind_guard = Arc::new(bitcoind_guard);
 
     // ----- Fund 3 UTXOs via the guarded Node -----
@@ -745,15 +746,18 @@ async fn blame_non_signer_timeout() {
 // duration of the test. Dropping it (end-of-scope, `return`, panic unwind)
 // terminates the daemon; subsequent RPC calls against `FundedSetup`'s URL
 // will fail. The 5 callers (4 adversarial tests + round_restart_and_completion
-// _after_blame) bind it as `let (bitcoind_guard, setup) = fund_regtest().await;`
-// and let scope drop it at end-of-test.
+// _after_blame) bind it as
+// `let (bitcoind_guard, setup) = fund_regtest(exe).await;` and let scope
+// drop it at end-of-test. The `exe` parameter forwards the path returned
+// by `require_bitcoind!()` so the shared fixture does not re-resolve it
+// (WR-03: single source of truth per test invocation).
 //
 // Reused by adversarial and restart tests.
 // ---------------------------------------------------------------------------
-async fn fund_regtest() -> (BitcoindGuard, FundedSetup) {
+async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
     // Shared bootstrap: brings up bitcoind, sets stdio to /dev/null,
     // passes -printtoconsole=0, mines 101 blocks. Returns the guard.
-    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind().await;
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
     let bitcoind_guard = Arc::new(bitcoind_guard);
 
     let guard_for_setup = Arc::clone(&bitcoind_guard);
@@ -949,9 +953,9 @@ async fn spawn_coordinator_with_blame_and_restart(
 #[tokio::test]
 #[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn adversarial_replay_token() {
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest().await;
+    let (bitcoind_guard, setup) = fund_regtest(exe).await;
     // WR-06: keep `_tmp_dir` bound for the test's full duration. The
     // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
@@ -1073,9 +1077,9 @@ async fn adversarial_replay_token() {
 #[tokio::test]
 #[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn adversarial_invalid_utxo() {
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest().await;
+    let (bitcoind_guard, setup) = fund_regtest(exe).await;
     // WR-06: keep `_tmp_dir` bound for the test's full duration. The
     // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
@@ -1130,9 +1134,9 @@ async fn adversarial_invalid_utxo() {
 #[tokio::test]
 #[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn adversarial_wrong_denomination() {
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest().await;
+    let (bitcoind_guard, setup) = fund_regtest(exe).await;
     // WR-06: keep `_tmp_dir` bound for the test's full duration. The
     // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
@@ -1439,9 +1443,9 @@ async fn coordinator_info_endpoint_fields() {
 #[tokio::test]
 #[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn round_restart_and_completion_after_blame() {
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest().await;
+    let (bitcoind_guard, setup) = fund_regtest(exe).await;
     let denomination: u64 = 100_000;
 
     // Spawn coordinator with blame + auto-restart (min_participants=2, signing_timeout=2s)

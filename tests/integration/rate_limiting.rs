@@ -137,13 +137,13 @@ async fn info_endpoint_returns_429_when_flooded() {
     };
 
     // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
     // ----- Spin up regtest bitcoind so coordinator::run's startup_health_check passes -----
     // Shared fixtures (09-02): bootstrap_regtest_bitcoind returns a BitcoindGuard
     // whose Drop calls node.stop() + process.kill() — replaces the historical
     // leak-the-Node pattern (Phase 9 TEST-03 / TEST-04 closure).
-    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind().await;
+    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind(exe).await;
     let rpc_url = creds.url.clone();
     let rpc_user = creds.user.clone();
     let rpc_pass = creds.pass.clone();
@@ -322,12 +322,12 @@ async fn request_timeout_returns_408() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
     // ----- Spin up regtest bitcoind -----
     // Shared fixtures (09-02): see info_endpoint_returns_429_when_flooded above
     // for the rationale on the BitcoindGuard hold pattern.
-    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind().await;
+    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind(exe).await;
     let rpc_url = creds.url.clone();
     let rpc_user = creds.user.clone();
     let rpc_pass = creds.pass.clone();

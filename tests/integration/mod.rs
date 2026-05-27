@@ -241,23 +241,25 @@ impl Drop for BitcoindGuard {
 /// breaking subsequent RPC calls. The credentials in the returned
 /// [`RpcCreds`] remain valid only while the guard is alive.
 ///
-/// **Skip contract — call `require_bitcoind!()` first if you want a graceful
-/// local-dev skip.** This helper uses [`require_bitcoind_inner`] internally
-/// (NOT the `require_bitcoind!()` macro): the macro's `None => return`
+/// **Skip contract — call `require_bitcoind!()` first and forward the
+/// resolved `exe` string.** This helper takes the bitcoind executable path
+/// as a parameter rather than re-resolving it: the macro's `None => return`
 /// expansion only works in a function returning `()`, and this helper
-/// returns `(BitcoindGuard, RpcCreds)`. To preserve the macro's skip path,
-/// tests typically write:
+/// returns `(BitcoindGuard, RpcCreds)`. Forwarding the macro's return
+/// value also collapses the two-source-of-truth divergence (WR-03):
+/// previously this helper called `require_bitcoind_inner()` a SECOND time
+/// and panicked with its own message if it disagreed with the macro,
+/// which produced two operator-facing panic strings that could drift.
+///
+/// Canonical caller shape:
 /// ```ignore
 /// #[tokio::test]
 /// async fn my_test() {
-///     let _exe = require_bitcoind!();              // skip if missing
-///     let (guard, creds) = bootstrap_regtest_bitcoind().await;
+///     let exe = require_bitcoind!();                       // skip if missing
+///     let (guard, creds) = bootstrap_regtest_bitcoind(exe).await;
 ///     // ... use creds; hold guard for the test's duration ...
 /// }
 /// ```
-/// If the macro is omitted and bitcoind is unavailable, this helper
-/// panics with the same triage message
-/// `require_bitcoind_inner` would have produced — both env vars named.
 ///
 /// **Stdio handling (D-15, amended):** Sets `Conf::view_stdout = false`
 /// (Stdio::null — the default, but set explicitly so a future Conf
@@ -266,21 +268,7 @@ impl Drop for BitcoindGuard {
 /// defense-in-depth. Bitcoind's child stdio never inherits cargo's pipe,
 /// which is the load-bearing fix for the integration-suite hang documented
 /// in TODO.md.
-pub async fn bootstrap_regtest_bitcoind() -> (BitcoindGuard, RpcCreds) {
-    // Resolve exe without the `require_bitcoind!()` macro: the macro
-    // expands to `None => return`, which is a type error in a function
-    // whose return type is `(BitcoindGuard, RpcCreds)` (not `()`).
-    // Tests that want the skip semantic invoke the macro themselves
-    // before calling this helper — see the doc comment above for the
-    // canonical pattern.
-    let exe = require_bitcoind_inner().unwrap_or_else(|| {
-        panic!(
-            "bitcoind required but not found by bootstrap_regtest_bitcoind. \
-             Set BLINDJOIN_REQUIRE_BITCOIND=1 + a valid BITCOIND_EXE, or call \
-             require_bitcoind!() before this helper to skip gracefully in local-dev."
-        )
-    });
-
+pub async fn bootstrap_regtest_bitcoind(exe: String) -> (BitcoindGuard, RpcCreds) {
     // corepc_node::Node::with_conf is synchronous; tokio::task::spawn_blocking
     // bridges it onto the async runtime. The returned Node is Send (its
     // fields — Child, Client (jsonrpc::Client), DataDir, ConnectParams —

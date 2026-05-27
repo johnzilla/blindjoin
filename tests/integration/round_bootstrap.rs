@@ -48,7 +48,7 @@ async fn run_bootstraps_round_into_input_reg() {
     };
 
     // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
-    let _exe = require_bitcoind!();
+    let exe = require_bitcoind!();
 
     // ----- Spin up regtest bitcoind so startup_health_check passes -----
     // run() calls startup_health_check which requires reachable bitcoind.
@@ -56,7 +56,7 @@ async fn run_bootstraps_round_into_input_reg() {
     // required by the health check), and returns a BitcoindGuard whose Drop
     // runs node.stop() + Node::Drop's process.kill() — replaces the historical
     // leak-the-Node pattern (Phase 9 TEST-03 / TEST-04 closure).
-    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind().await;
+    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind(exe).await;
     let rpc_url = creds.url.clone();
     let rpc_user = creds.user.clone();
     let rpc_pass = creds.pass.clone();
