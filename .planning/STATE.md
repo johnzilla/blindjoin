@@ -4,14 +4,14 @@ milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
 current_plan: 1
 status: executing
-stopped_at: Completed 09-02-PLAN.md (BitcoindGuard + macro substrate)
-last_updated: "2026-05-27T02:37:47.540Z"
+stopped_at: "Completed 09-03-PLAN.md (full_round.rs migrated to shared fixtures + 6 #[ignore] markers)"
+last_updated: "2026-05-27T02:48:27.758Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 2
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -20,7 +20,7 @@ progress:
 ## Current Position
 
 Phase: 09 (ci-integration-test-reliability) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-05-27
 
@@ -31,7 +31,7 @@ Last activity: 2026-05-27
 
 ## Session Continuity
 
-**Stopped At:** Completed 09-02-PLAN.md (BitcoindGuard + macro substrate)
+**Stopped At:** Completed 09-03-PLAN.md (full_round.rs migrated to shared fixtures + 6 #[ignore] markers)
 **Resume File:** None
 
 ## Decisions
@@ -47,6 +47,9 @@ Last activity: 2026-05-27
 - [Phase ?]: 09-01 Plan: CI Run tests command kept verbatim — cargo test --workspace --all-targets, no --include-ignored — so the 6 Phase-10 carve-out tests list as ignored without executing (per amended D-10)
 - [Phase 09-02]: bootstrap_regtest_bitcoind body uses require_bitcoind_inner() directly (not the require_bitcoind!() macro) — macro's None=>return expansion is a type error inside a function returning (BitcoindGuard, RpcCreds); tests invoke macro themselves before calling bootstrap — Rule 3 auto-fix; preserves all public-surface contracts for downstream plans 09-03/09-04
 - [Phase 09-02]: view_stdout=false set explicitly in bootstrap_regtest_bitcoind despite being corepc-node 0.12 default — Discoverable via grep + robust against a future Conf default flip silently re-introducing the pipe-hang root cause
+- [Phase ?]: [Phase 09-03]: Arc<BitcoindGuard> pattern for sharing daemon ownership across spawn_blocking boundary; fund_regtest returns bare BitcoindGuard via Arc::try_unwrap (plan action(b) sub-option ii)
+- [Phase ?]: [Phase 09-03]: fund_regtest caller updates lifted from Task 2 into Task 1 (Rule 3 auto-fix) — Task 1's compile criterion cannot be satisfied without updating callers in tandem with the signature change; Task 2 keeps metadata-only #[ignore] scope
+- [Phase ?]: [Phase 09-03]: require_bitcoind! macro requires explicit 'use crate::require_bitcoind;' import despite #[macro_export] (Rule 3) — Plan 09-04 must do the same in rate_limiting.rs / round_bootstrap.rs
 
 ## Performance Metrics
 
@@ -55,6 +58,7 @@ Last activity: 2026-05-27
 | 08-04 | ~5min | 2 | 2 | 2026-05-26 |
 | Phase 09 P01 | 20min | 3 tasks | 2 files |
 | Phase 09 P02 | 6min | 2 tasks | 1 files |
+| Phase 09 P03 | 6min | 2 tasks | 1 files |
 
 ### Quick Tasks Completed
 

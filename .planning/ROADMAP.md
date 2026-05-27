@@ -63,7 +63,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 09-03-PLAN.md — Migrate tests/integration/full_round.rs to shared helpers (3 Box::leak removed, 6 skip blocks removed, 6 #[ignore = TODO(Phase-10)] markers added)
+- [x] 09-03-PLAN.md — Migrate tests/integration/full_round.rs to shared helpers (3 Box::leak removed, 6 skip blocks removed, 6 #[ignore = TODO(Phase-10)] markers added)
 - [ ] 09-04-PLAN.md — Migrate tests/integration/rate_limiting.rs + round_bootstrap.rs to shared helpers (1 Box::leak removed, file-private bootstrap deleted, 3 skip blocks removed)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -95,7 +95,7 @@ Plans:
 | 6. CI/CD Security Pipeline | v1.1 | 1/1 | Complete | 2026-04-10 |
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
 | 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
-| 9. CI integration-test reliability | v1.3 | 2/5 | In Progress|  |
+| 9. CI integration-test reliability | v1.3 | 3/5 | In Progress|  |
 | 10. full_round.rs decision + execution | v1.3 | 0/0 | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
