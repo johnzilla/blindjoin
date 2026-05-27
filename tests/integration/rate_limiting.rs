@@ -75,6 +75,8 @@
 
 use std::time::Duration;
 
+use crate::{bootstrap_regtest_bitcoind, require_bitcoind, BitcoindGuard, RpcCreds};
+
 /// Reserve a free localhost port by binding to port 0, reading the port, then
 /// dropping the listener. TOCTOU race exists if another process binds the same
 /// port between `drop(listener)` and `coordinator::run` re-binding — acceptable
@@ -87,44 +89,6 @@ async fn reserve_free_port() -> u16 {
     let port = listener.local_addr().expect("local_addr").port();
     drop(listener);
     port
-}
-
-/// Spin up a regtest bitcoind via corepc_node, mine 101 blocks, and return its
-/// RPC URL + cookie credentials. Leaks the `Node` so bitcoind stays alive for
-/// the test's duration (OS reaps at process exit). Mirrors
-/// `round_bootstrap.rs:59-89` verbatim.
-async fn bootstrap_regtest_bitcoind(exe: String) -> (String, String, String) {
-    tokio::task::spawn_blocking(move || {
-        use bitcoin::Address;
-        use corepc_node::{Conf, Node};
-
-        let mut conf = Conf::default();
-        conf.network = "regtest";
-
-        let node = Node::with_conf(&exe, &conf).expect("start regtest bitcoind");
-        let cookie = node
-            .params
-            .get_cookie_values()
-            .expect("read cookie file")
-            .expect("parse cookie values");
-        let rpc_url = node.rpc_url();
-        let rpc_user = cookie.user.clone();
-        let rpc_pass = cookie.password.clone();
-
-        // Mine 101 blocks so the health check's block_count > 0 assertion holds.
-        let mine_addr: Address = node.client.new_address().expect("get new address");
-        node.client
-            .generate_to_address(101, &mine_addr)
-            .expect("generate 101 blocks");
-
-        // Leak the node — OS reaps it at test exit.
-        let node_box = Box::new(node);
-        Box::leak(node_box);
-
-        (rpc_url, rpc_user, rpc_pass)
-    })
-    .await
-    .expect("regtest bootstrap spawn_blocking panicked")
 }
 
 /// Poll `/info` against `coordinator_url` until the HTTP server is up and
@@ -172,20 +136,20 @@ async fn info_endpoint_returns_429_when_flooded() {
         CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
     };
 
-    // ----- Skip gracefully if bitcoind is unavailable -----
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "bitcoind not found ({}), skipping info_endpoint_returns_429_when_flooded",
-                e
-            );
-            return;
-        }
-    };
+    // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
+    let _exe = require_bitcoind!();
 
     // ----- Spin up regtest bitcoind so coordinator::run's startup_health_check passes -----
-    let (rpc_url, rpc_user, rpc_pass) = bootstrap_regtest_bitcoind(exe).await;
+    // Shared fixtures (09-02): bootstrap_regtest_bitcoind returns a BitcoindGuard
+    // whose Drop calls node.stop() + process.kill() — replaces the historical
+    // leak-the-Node pattern (Phase 9 TEST-03 / TEST-04 closure).
+    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind().await;
+    let rpc_url = creds.url.clone();
+    let rpc_user = creds.user.clone();
+    let rpc_pass = creds.pass.clone();
+    // Hold the guard for the test's full duration; drops at end-of-scope so
+    // Drop::drop runs node.stop() before the test function returns.
+    let _bitcoind_guard = bitcoind_guard;
 
     // ----- Build a coordinator config wired for clearnet + free port + TIGHT rate-limit -----
     let port = reserve_free_port().await;
@@ -357,20 +321,19 @@ async fn request_timeout_returns_408() {
     };
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    // ----- Skip gracefully if bitcoind is unavailable -----
-    let exe = match corepc_node::exe_path() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "bitcoind not found ({}), skipping request_timeout_returns_408",
-                e
-            );
-            return;
-        }
-    };
+    // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
+    let _exe = require_bitcoind!();
 
     // ----- Spin up regtest bitcoind -----
-    let (rpc_url, rpc_user, rpc_pass) = bootstrap_regtest_bitcoind(exe).await;
+    // Shared fixtures (09-02): see info_endpoint_returns_429_when_flooded above
+    // for the rationale on the BitcoindGuard hold pattern.
+    let (bitcoind_guard, creds): (BitcoindGuard, RpcCreds) = bootstrap_regtest_bitcoind().await;
+    let rpc_url = creds.url.clone();
+    let rpc_user = creds.user.clone();
+    let rpc_pass = creds.pass.clone();
+    // Hold the guard for the test's full duration; drops at end-of-scope so
+    // Drop::drop runs node.stop() before the test function returns.
+    let _bitcoind_guard = bitcoind_guard;
 
     // ----- Build coordinator config with TIGHT timeout, LOOSE rate-limits -----
     let port = reserve_free_port().await;
