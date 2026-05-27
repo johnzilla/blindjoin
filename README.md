@@ -95,7 +95,7 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |
 | `discovery.heartbeat_interval_secs` | 300 | PKARR re-publish interval |
 
-All four hardening knobs are validated at startup — out-of-range values are rejected with an actionable error before any subsystem reads them.
+The four v1.2 Phase 8 hardening knobs — `rate_limit_info_per_min`, `rate_limit_writes_per_min`, `request_timeout_secs`, and `max_concurrent_connections` — are validated at startup via `CoordinatorConfig::validate()`. Out-of-range values (e.g. `request_timeout_secs: 0`, `max_concurrent_connections` above the OS file-descriptor cap) are rejected with an actionable error before any subsystem reads them.
 
 ### API Endpoints
 
