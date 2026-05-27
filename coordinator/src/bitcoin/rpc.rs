@@ -44,7 +44,7 @@ impl BitcoinRpc {
 
     async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         let body = json!({
-            "jsonrpc": "1.1",
+            "jsonrpc": "2.0",
             "id": "blindjoin",
             "method": method,
             "params": params,
