@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
 current_plan: 1
-status: executing
+status: verifying
 stopped_at: "Completed 09-04-PLAN.md (rate_limiting.rs + round_bootstrap.rs migrated to shared fixtures; whole-repo Box::leak count = 0)"
-last_updated: "2026-05-27T02:55:38.849Z"
+last_updated: "2026-05-27T03:00:24.332Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 2
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
-  percent: 0
+  completed_plans: 5
+  percent: 50
 ---
 
 # Project State
@@ -21,7 +21,7 @@ progress:
 
 Phase: 09 (ci-integration-test-reliability) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-27
 
 ## Progress
@@ -53,6 +53,8 @@ Last activity: 2026-05-27
 - [Phase ?]: [Phase 09-04]: Both rate_limiting.rs and round_bootstrap.rs use the bare 5-line destructure (no Arc<BitcoindGuard>) — neither file has an internal funding step that drives node.client.* after bootstrap, so the simpler shape from 09-03's non-funding tests is sufficient
 - [Phase ?]: [Phase 09-04]: Applied 09-03 Deviation 2 lesson pre-emptively — explicit 'use crate::require_bitcoind;' in both files' import lines, avoiding a re-discovery Rule-3 fix. Plan executed with zero deviations.
 - [Phase ?]: [Phase 09-04]: Local-bitcoind PASS check executed (not deferred to CI) — all 3 migrated tests pass against /opt/homebrew/bin/bitcoind: round_bootstrap (1/0), rate_limiting (2/0). Whole-repo Box::leak count in tests/integration/ is 0 after this plan.
+- [Phase ?]: [Phase 09-05]: CONTRIBUTING.md uses prescribed grep-target panic-message form; load-bearing substring matches cargo output byte-for-byte
+- [Phase ?]: [Phase 09-05]: D-17 scope discipline held — CONTRIBUTING.md contains only Local-prerequisites + Running-integration-tests + Interpreting-output sections; no PR/commit/code-style sections added; README.md remains marketing surface, CONTRIBUTING.md is the local-dev manual
 
 ## Performance Metrics
 
@@ -63,6 +65,7 @@ Last activity: 2026-05-27
 | Phase 09 P02 | 6min | 2 tasks | 1 files |
 | Phase 09 P03 | 6min | 2 tasks | 1 files |
 | Phase Phase 09 PP04 | 3min | 2 tasks tasks | 2 files files |
+| Phase Phase 09 PP05 | 1min | 1 task tasks | 1 file files |
 
 ### Quick Tasks Completed
 

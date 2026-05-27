@@ -37,7 +37,7 @@
 
 **v1.3 Test Infrastructure & Operational Hardening** (in progress)
 
-- [ ] **Phase 9: CI integration-test reliability** — Pin bitcoind in CI, eliminate the leaked-process stdout-hang, document the canonical invocation pattern so the integration suite actually runs end-to-end on every PR
+- [x] **Phase 9: CI integration-test reliability** — Pin bitcoind in CI, eliminate the leaked-process stdout-hang, document the canonical invocation pattern so the integration suite actually runs end-to-end on every PR (completed 2026-05-27)
 - [ ] **Phase 10: full_round.rs decision + execution** — Repair-or-retire the 15-test full_round suite against the pinned bitcoind, with explicit corepc-node version pinning everywhere a typed Client is used
 
 ## Phase Details
@@ -68,7 +68,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 09-05-PLAN.md — Create CONTRIBUTING.md (Running integration tests + Local prerequisites + Interpreting output reference card per D-17..D-21)
+- [x] 09-05-PLAN.md — Create CONTRIBUTING.md (Running integration tests + Local prerequisites + Interpreting output reference card per D-17..D-21)
 
 ### Phase 10: full_round.rs decision + execution
 
@@ -95,7 +95,7 @@ Plans:
 | 6. CI/CD Security Pipeline | v1.1 | 1/1 | Complete | 2026-04-10 |
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
 | 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
-| 9. CI integration-test reliability | v1.3 | 4/5 | In Progress|  |
+| 9. CI integration-test reliability | v1.3 | 5/5 | Complete   | 2026-05-27 |
 | 10. full_round.rs decision + execution | v1.3 | 0/0 | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
