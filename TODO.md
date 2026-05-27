@@ -2,6 +2,78 @@
 
 ## Resolved 2026-05-26
 
+- [x] **Phase 8 HUMAN-UAT items 1 & 2 closed by local runtime proof.** Ran
+  `cargo test --test integration rate_limiting:: -- --include-ignored` against
+  `bitcoind v31.0.0` (Homebrew). Both tests passed:
+  `info_endpoint_returns_429_when_flooded` and `request_timeout_returns_408`.
+  Item 3 (Tor connection-cap) remains deferred per Plan 04 A4 — see follow-up
+  below.
+
+  Getting there required two unrelated fixes that landed atomically:
+
+  1. **Production bugfix in `coordinator/src/bitcoin/rpc.rs`:** JSON-RPC envelope
+     bumped from `"1.1"` → `"2.0"`. Bitcoin Core 31 returns `-32600 JSON-RPC
+     version not supported` for 1.1 requests; Bitcoin Core 27 (docker image) and
+     all releases since ~v22 accept 2.0. This was a latent bug — the coordinator
+     would have failed at startup against any modern bitcoind, but our docker
+     stack runs v27 which still accepted 1.1.
+
+  2. **Test harness bump:** `corepc-node` 0.10 → 0.12 with `features = ["30_2"]`.
+     Defaults are silly — corepc-node 0.12 still defaults to a Bitcoin Core
+     0.17.2 (2018) RPC schema unless an explicit version feature is enabled.
+     Without the feature, the test harness `createwallet` RPC against bitcoind
+     v31 hangs with "Could not create or load wallet".
+
+  3. **Test fix in `tests/integration/full_round.rs`:** the hardcoded test WIFs
+     had invalid Base58 checksums and would `panic!` on `PrivateKey::from_wif`.
+     Replaced with deterministic valid regtest WIFs generated via
+     `sha256("blindjoin-test-key-{A,B,C}")` → WIF encode.
+
+- [ ] **Integration test harness reliability (FOLLOW-UP — not yet started).**
+  This session exposed structural problems with our integration suite that need
+  resolving before they bite again. None of these block Phase 8 ship; all need
+  their own focused work:
+
+  - **CI never actually runs the integration tests.** `cargo test --all-targets`
+    in `.github/workflows/ci.yml` runs the integration suite, but bitcoind is not
+    installed on the runners, so every bitcoind-dependent test silently
+    graceful-skips. This means `full_round.rs` (15 tests, ~1100 lines, the
+    biggest integration surface) has been compiling but never actually running
+    end-to-end in CI for a long time. Fix: install Bitcoin Core in the CI job
+    (or pin a regtest-compatible binary in a cache) so the suite actually runs
+    on every PR.
+
+  - **`cargo test` output hangs behind leaked bitcoind processes.** `corepc-node`
+    intentionally `Box::leak`s the `bitcoind` `Node` so the daemon survives test
+    panics (helpful for cleanup-safe assertions). Side effect: bitcoind inherits
+    cargo's stdout/stderr, never closes them, so `cargo test | tail -25` (or any
+    pipe) blocks indefinitely on EOF even after the test result line has been
+    written. Fix: drop the leak in the test setup (explicit `node.stop()` in a
+    drop guard), OR run tests with `cargo test --test-threads=1 2>&1 | tee
+    /tmp/test.log` and watch the file, OR add a `cargo-nextest`-based wrapper
+    that timeouts cleanly. Project-wide: stop using `| tail` on `cargo test` —
+    redirect to a file and grep it.
+
+  - **`full_round.rs` is broken at the RPC-schema layer.** After fixing WIFs in
+    this session, the next layer of bitrot surfaces: `Could not find funded UTXO
+    for txid=...` panics in `fund_regtest`. Almost certainly because corepc-node
+    0.12's `listunspent` / `getrawtransaction` response shapes differ from the
+    v28 shapes the test was written against (descriptor wallets, different field
+    names, etc.). 6 tests fail this way: `full_round_three_clients`,
+    `round_restart_and_completion_after_blame`, `adversarial_invalid_utxo`,
+    `adversarial_replay_token`, `adversarial_wrong_denomination`,
+    `blame_non_signer_timeout`. Fix options: (a) port the test to corepc-node
+    0.12's v30 client API directly, (b) replace `corepc_node::Client` calls with
+    direct `reqwest` JSON-RPC against bitcoind, (c) delete the suite if the
+    cost-to-keep exceeds value. Recommend (a) — these tests cover real
+    multi-client CoinJoin flows that aren't otherwise exercised.
+
+  - **Tor connection-cap runtime test still deferred (Phase 8 HUMAN-UAT #3).**
+    Plan 04 A4: clearnet harness cannot drive the Tor-only semaphore. Needs a
+    dedicated Tor-mode integration harness (arti + flooding client, ≥257
+    concurrent .onion streams). Likely a future-milestone item; static coverage
+    via Plan 03 grep audits stands for now.
+
 - [x] **CI hygiene: full RUSTSEC-2026-0097 closure + Node 24 opt-in (quick
   task 260526-d7m + follow-up).** Bumped all three transitively-resolved rand
   tracks to their patched versions: `rand` 0.8.5 → 0.8.6 (closed initial 3
