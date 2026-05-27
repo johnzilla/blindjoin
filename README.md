@@ -20,6 +20,7 @@ The blind signature scheme (RFC 9474) makes it cryptographically impossible for 
 - **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.
 - **[Protocol specification (draft)](docs/PROTOCOL.md)** — BIP-style normative spec of the coordinator–client wire protocol. Work-in-progress; review and issue feedback welcome.
 - **[Technical design](blindjoin-technical-spec.md)** — architectural background and design rationale.
+- **[Contributing](CONTRIBUTING.md)** — local prerequisites + how to run the integration test suite (where output lands, how to interpret pass/fail/skip/ignored).
 
 ## Quick Start (Docker)
 
@@ -46,8 +47,10 @@ Requires Rust 1.89+ and cargo (the floor is set by `arti-client` 0.41).
 
 ```bash
 cargo build --workspace
-cargo test --workspace --all-targets   # unit + integration tests (integration tests skip gracefully without bitcoind)
+cargo test --workspace --all-targets   # unit + integration tests
 ```
+
+Integration tests that require a live `bitcoind` graceful-skip locally when one isn't on `BITCOIND_EXE` / `PATH`. Under `BLINDJOIN_REQUIRE_BITCOIND=1` (which CI sets) they panic-on-miss instead — see [CONTRIBUTING.md](CONTRIBUTING.md) for the canonical local invocation.
 
 ## Run the Coordinator
 
@@ -147,7 +150,7 @@ Every pull request — and every push to `main` — runs four independent CI job
 | `cargo audit` | `cargo audit` | Yes |
 | `coordinator binary builds` | `cargo build --release --bin coordinator` | Yes |
 
-The `cargo test` step runs `--all-targets`, so integration tests under `tests/integration/` execute alongside unit tests. Tests that require a live bitcoind skip gracefully when one isn't available. The `coordinator binary builds` smoke job validates that the production binary links cleanly — it does not start the coordinator (that requires bitcoind).
+The `cargo test` step runs `--all-targets`, so integration tests under `tests/integration/` execute alongside unit tests. **As of v1.3 Phase 9, CI provisions a pinned Bitcoin Core v30.2 binary** (cached via `actions/cache`, integrity-verified against achow101's release signature pulled from a SHA-pinned `guix.sigs` commit, then sha256-checked against the signed `SHA256SUMS`). The version pin lives in [`.bitcoind-version`](.bitcoind-version) — a single-line bump is all it takes to roll forward. With bitcoind available, CI sets `BLINDJOIN_REQUIRE_BITCOIND=1` so any missing bitcoind in CI fails fast rather than silently graceful-skipping. The `coordinator binary builds` smoke job validates that the production binary links cleanly — it does not start the coordinator (that requires bitcoind).
 
 The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare accepted residual risks. Each ignored advisory carries a written rationale in that file; an ignore without a rationale is a code-review-blocking change.
 
@@ -196,13 +199,16 @@ blindjoin/
     PROTOCOL.md           # BIP-style wire-protocol spec (draft; Milestone 1)
     branch-protection.md  # GitHub branch protection setup guide
   tests/
-    integration/     # End-to-end CoinJoin round tests (skip gracefully w/o bitcoind)
+    integration/     # End-to-end CoinJoin round tests
+      mod.rs         # Shared: require_bitcoind!() macro, BitcoindGuard RAII, bootstrap_regtest_bitcoind()
   .cargo/
     audit.toml       # Declared residual risks (each ignore documented inline)
   .github/workflows/
-    ci.yml           # PR-triggered test, clippy --all-targets, audit gates
+    ci.yml           # PR-triggered test, clippy --all-targets, audit gates + pinned-bitcoind install
     release.yml      # Cross-compiled binary releases (gated on test+clippy)
     docker.yml       # Multi-arch Docker image publishing (gated on test+clippy)
+  .bitcoind-version  # Pinned Bitcoin Core version used by CI's integration test job
+  CONTRIBUTING.md    # Local prerequisites + how to run integration tests
   TODO.md            # Open and recently-resolved tech-debt items
 ```
 
@@ -225,7 +231,9 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 60/min, writes 30/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. All four knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP), so the coordinator deliberately uses `GlobalKeyExtractor`; sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
 
-**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. The `cargo audit` CI step blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. The `cargo clippy --all-targets` CI step blocks merge on any lint, including in integration-test code.
+**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. The `cargo audit` CI step blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. The `cargo clippy --all-targets` CI step blocks merge on any lint, including in integration-test code. As of v1.3 Phase 9, CI's `bitcoind` install verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, pulled from a SHA-pinned `guix.sigs` commit) before extracting it — the install will fail closed on a substituted binary or a stale key.
+
+**Test infrastructure (v1.3 Phase 9):** Integration tests under `tests/integration/` no longer silently graceful-skip in CI — under `BLINDJOIN_REQUIRE_BITCOIND=1` (workflow-level env), tests that can't find bitcoind PANIC, surfacing the misconfiguration immediately. The historical `Box::leak(node)` pattern that blocked cargo's stdout pipe behind orphan bitcoind processes is replaced with a `BitcoindGuard` RAII type whose `Drop::drop` runs `node.stop()` via `tokio::spawn_blocking`. Six known-broken tests in `full_round.rs` carry `#[ignore = "TODO(Phase-10)..."]` markers — Phase 10 will repair or retire them. See [CONTRIBUTING.md](CONTRIBUTING.md) for local invocation.
 
 ## Key Dependencies
 
