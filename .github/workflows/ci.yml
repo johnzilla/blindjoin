@@ -12,6 +12,9 @@ env:
   # See: actions/checkout v6.0.2 still declares `using: node20` — upgrading
   # the action SHA is tracked separately (see TODO at top of ci.yml).
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Phase 9: when set, integration tests that fail to find bitcoind PANIC
+  # instead of graceful-skipping. CI sets this; local-dev does not.
+  BLINDJOIN_REQUIRE_BITCOIND: "1"
 
 on:
   push:
