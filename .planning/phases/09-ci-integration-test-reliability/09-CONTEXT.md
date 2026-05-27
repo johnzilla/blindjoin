@@ -34,7 +34,7 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 
 - **D-02 (pin location):** A new `.bitcoind-version` plain-text file at repo root holds the version string (e.g. `30.0`). Single source of truth — CI reads it, `CONTRIBUTING.md` references it, future bumps are a single-line PR.
 
-- **D-03 (version target):** `30.0` (latest Bitcoin Core 30.x). Matches the `corepc-node = { version = "0.12", features = ["30_2"] }` RPC-schema declaration at `coordinator/Cargo.toml:65`. RPC-compatible with brew's `bitcoind v31.0.0` (verified during Phase 8 close, per TODO.md).
+- **D-03 (version target):** `30.2` (Bitcoin Core 30.2, released 2026-01-10). **Amended from initial `30.0` per research.** v30.0 was withdrawn from `bitcoincore.org` (HTTP 404) over a wallet-migration data-loss bug; v30.2 is the rollback fix. The feature-name `30_2` in `corepc-node = { version = "0.12", features = ["30_2"] }` (`coordinator/Cargo.toml:65`) literally matches v30.2 better than v30.0. RPC-compatible with brew's `bitcoind v31.0.0` (verified during Phase 8 close, per TODO.md). Pin lives in `.bitcoind-version` as `30.2`.
 
 - **D-04 (integrity verification):** `SHA256SUMS` + signed manifest. Workflow downloads `SHA256SUMS` and `SHA256SUMS.asc` alongside the tarball, verifies the `.asc` signature against a pinned Bitcoin Core release-signer PGP key (Andrew Chow's guix-signer key is the conventional choice — planner picks the exact fingerprint), then checks the tarball's hash against the verified `SHA256SUMS`. Matches the Phase 6 supply-chain bar (SHA-pin everything, no untrusted blobs).
 
@@ -50,7 +50,7 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 
 - **D-09 (CI env-var placement):** Workflow-level `env:` block in `.github/workflows/ci.yml`, alongside the existing `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"`. Applies uniformly to every job; future jobs that run the same tests inherit it.
 
-- **D-10 (Phase-10 carve-out):** The 6 currently-failing tests in `full_round.rs` (`full_round_three_clients`, `round_restart_and_completion_after_blame`, `adversarial_invalid_utxo`, `adversarial_replay_token`, `adversarial_wrong_denomination`, `blame_non_signer_timeout` — see TODO.md "Resolved 2026-05-26 / Integration test harness reliability" follow-up) carry `#[ignore]` markers with `// TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction` comments. Phase 9 CI runs `cargo test --test integration -- --include-ignored` so the markers are surfaced (one line per ignored test in the output) but don't fail the build. Phase 10 removes the markers as it repairs them.
+- **D-10 (Phase-10 carve-out):** The 6 currently-failing tests in `full_round.rs` (`full_round_three_clients`, `round_restart_and_completion_after_blame`, `adversarial_invalid_utxo`, `adversarial_replay_token`, `adversarial_wrong_denomination`, `blame_non_signer_timeout` — see TODO.md "Resolved 2026-05-26 / Integration test harness reliability" follow-up) carry `#[ignore]` markers with `// TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction` comments. Phase 9 CI runs `cargo test --test integration` **without `--include-ignored`** (**amended per research** — the flag would *execute* the broken tests and red the build; default cargo already emits a one-line `ignored` entry per `#[ignore]` test in its output, satisfying the visibility intent without execution). Phase 10 removes the markers as it repairs them, and its repairs are exercised by re-running with the flag locally.
 
 ### Box::leak replacement
 
@@ -62,18 +62,18 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 
 - **D-14 (bootstrap consolidation):** `bootstrap_regtest_bitcoind()` becomes a shared helper returning `(BitcoindGuard, RpcCreds { url, user, pass })`. Today's near-duplicate `Node::with_conf` + mine-101-blocks + cookie-extraction logic in `full_round.rs`, `rate_limiting.rs`, and `round_bootstrap.rs` collapses to a single implementation. Tests still own their post-bootstrap funding/key-derivation logic; only the daemon-bring-up is consolidated.
 
-- **D-15 (stdio handling):** Pass `-printtoconsole=0` via `Conf::args` and redirect bitcoind's child stdout/stderr to a per-test temp log (`$TMPDIR/blindjoin-test-<pid>-bitcoind.log`). Belt-and-suspenders: even if shutdown is slow, the child never holds cargo's stdout pipe. Log path is captured in test failure output for postmortem.
+- **D-15 (stdio handling):** Set `Conf::view_stdout = false` (child stdio → `Stdio::null()`) **and** pass `-printtoconsole=0` via `Conf::args`. **Amended from initial "per-test temp log" per research:** `corepc-node 0.12::Conf` only exposes `view_stdout: bool` (inherit vs null) — no `Stdio::from(File)` path is available without bypassing the corepc-node spawn helper. `view_stdout=false` (Stdio::null) achieves D-15's actual goal — the child never holds cargo's stdout pipe, eliminating the pipe-hang root cause. Postmortem context remains available via bitcoind's on-disk `debug.log` inside its data-dir (`Node` exposes the datadir path). Belt-and-suspenders: even if shutdown is slow, /dev/null can't block.
 
 ### CONTRIBUTING.md invocation
 
-- **D-16 (canonical command):** Plain `cargo test` with explicit redirect — no wrapper script, no cargo-nextest:
+- **D-16 (canonical command):** Plain `cargo test` with explicit redirect — no wrapper script, no cargo-nextest (**amended per D-10 research:** drop `--include-ignored`):
   ```
   BLINDJOIN_REQUIRE_BITCOIND=1 \
     BITCOIND_EXE=$(brew --prefix)/bin/bitcoind \
-    cargo test --test integration -- --include-ignored 2>&1 \
+    cargo test --test integration 2>&1 \
     | tee target/integration-test.log
   ```
-  Self-contained one-liner. The pipe is now safe because BitcoindGuard (D-11) kills bitcoind on drop and child stdio is redirected (D-15).
+  Self-contained one-liner. The pipe is now safe because BitcoindGuard (D-11) kills bitcoind on drop and child stdio is routed to /dev/null (D-15). CONTRIBUTING.md additionally documents `cargo test --test integration -- --include-ignored` as the **local-only** invocation Phase-10 contributors use when iterating on the 6 carve-out tests.
 
 - **D-17 (file scope):** Narrow — CONTRIBUTING.md as a new file scoped to integration testing and local-dev prerequisites only. Sections: "Local prerequisites" (brew install bitcoin, rust toolchain), "Running integration tests" (the canonical command + log location + single-test example + pass/fail/skip table), "Interpreting output". Anything broader (PR style, commit conventions) is scope creep for this phase.
 
@@ -83,10 +83,10 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 
 - **D-20 (log location):** `target/integration-test.log`. Lives under cargo's already-gitignored build dir; auto-cleaned by `cargo clean`; no new `.gitignore` entry needed.
 
-- **D-21 (pass/fail/skip table):** 3-line reference card mapping output strings to verdicts:
-  - `test result: ok. N passed; 0 failed` → green.
+- **D-21 (pass/fail/skip table):** Reference card mapping output strings to verdicts (**amended per D-10 research** — adds an `ignored` row explaining the Phase-10 carve-out lines):
+  - `test result: ok. N passed; 0 failed; M ignored` → green. The `M ignored` count is expected: those are the Phase-10 carve-out tests with `#[ignore]` markers.
   - `test result: FAILED. N failed` → red.
-  - `panicked at 'bitcoind required but not found'` → BLINDJOIN_REQUIRE_BITCOIND set but BITCOIND_EXE missing/wrong; check local install.
+  - `panicked at 'bitcoind required but not found'` → `BLINDJOIN_REQUIRE_BITCOIND` set but `BITCOIND_EXE` missing/wrong; check local install.
 
 ### Claude's Discretion
 
@@ -110,7 +110,7 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 - [`.planning/STATE.md`](../../STATE.md) §"Decisions" — v1.3 phase-shape rationale (why Phase 9 bundles all 5 TEST-* requirements).
 
 ### Code to modify
-- [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) — Add bitcoind install step to `test:` job, add workflow-level `BLINDJOIN_REQUIRE_BITCOIND=1` env var, change test invocation to `cargo test --test integration -- --include-ignored`.
+- [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) — Add bitcoind install step to `test:` job, add workflow-level `BLINDJOIN_REQUIRE_BITCOIND=1` env var. Test invocation stays `cargo test --test integration` (CI does **not** pass `--include-ignored` — per amended D-10).
 - [`tests/integration/mod.rs`](../../../tests/integration/mod.rs) — Home for new `require_bitcoind()`, `BitcoindGuard`, `bootstrap_regtest_bitcoind()` helpers.
 - [`tests/integration/full_round.rs`](../../../tests/integration/full_round.rs) — Lines 156–163, 540–550, 920–930, 1050–1060, 1110–1120, 1420–1430 (skip blocks → `require_bitcoind()`); lines 167–279, 561–620, 745–805 (bootstrap inlines → `bootstrap_regtest_bitcoind()` calls); lines 268–269, 615–616, 799–800 (`Box::leak` → guard return). Add `#[ignore]` + `// TODO(Phase-10)` to the 6 known-broken tests per D-10.
 - [`tests/integration/rate_limiting.rs`](../../../tests/integration/rate_limiting.rs) — Lines 92–125 bootstrap; line 122 `Box::leak`; lines 175–185 skip block.
@@ -122,7 +122,7 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 - [`coordinator/src/run.rs`](../../../coordinator/src/run.rs) — Integration-test entrypoint introduced in Phase 8's bootstrap fix; not modified here.
 
 ### Files to create
-- `.bitcoind-version` (repo root) — Plain text: `30.0`. Single source of truth per D-02.
+- `.bitcoind-version` (repo root) — Plain text: `30.2`. Single source of truth per D-02 (**version amended from 30.0 per research**).
 - `CONTRIBUTING.md` (repo root) — Per D-17 / D-18 / D-19 / D-20 / D-21.
 
 ### Operator-side / project context
@@ -130,9 +130,11 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 - [`.planning/BACKLOG.md`](../../BACKLOG.md) — No Phase-9 entry; the work was pulled directly from Phase 8's HUMAN-UAT close.
 
 ### Crate / external doc references (consulted during research)
-- `corepc-node` 0.12 — `Node`, `Conf`, `exe_path()`, `Client::stop()`. (https://docs.rs/corepc-node/0.12)
-- `actions/cache` v4 — cache-key syntax for content-addressed caching of the bitcoind tarball.
-- Bitcoin Core release page — `https://bitcoincore.org/bin/bitcoin-core-30.0/` for tarball + SHA256SUMS + SHA256SUMS.asc filenames.
+- `09-RESEARCH.md` — Phase 9 research findings, including the 3 amendments above and external sources (PGP fingerprint, corepc-node 0.12 source review, actions/cache v4 SHA pin).
+- `corepc-node` 0.12 — `Node` (stop/Drop), `Conf` (view_stdout, args), `exe_path()`. (https://docs.rs/corepc-node/0.12)
+- `actions/cache` v4.3.0 — Pin to release-SHA per Phase 6 supply-chain rule.
+- Bitcoin Core 30.2 release page — `https://bitcoincore.org/bin/bitcoin-core-30.2/` for tarball + `SHA256SUMS` + `SHA256SUMS.asc` filenames.
+- Bitcoin Core release-signer (achow101) PGP fingerprint: `152812300785C96444D3334D17565732E08E5E41` — verified present in v30.2 attestation directory; key blob lives at `https://raw.githubusercontent.com/bitcoin-core/guix.sigs/main/builder-keys/achow101.gpg` (planner picks a SHA-pinned commit of `bitcoin-core/guix.sigs` rather than `main` per supply-chain rule).
 
 </canonical_refs>
 
@@ -168,6 +170,12 @@ CI on every PR actually executes the bitcoind-dependent integration suite end-to
 - "Bottom of stack" framing: D-15 (stdio redirect) is defense in depth in case D-11 (RAII guard) doesn't fully terminate bitcoind. The user accepted both rather than picking one — the pipe-hang has burned us once, belt-and-suspenders is the right posture.
 - The Phase-10 carve-out (D-10) is explicit: Phase 9 ships with `#[ignore]` markers visible in CI output so the carve-out is *advertised*, not hidden. Phase 10's first task is removing those markers as it repairs the underlying tests.
 - The "Phase 9 must ship green CI" constraint shaped multiple decisions: D-10 (carve out broken tests), D-15 (defense-in-depth stdio), D-21 (clear failure-mode reference card so a misconfigured local run isn't mistaken for a code bug).
+
+### Research-driven amendments (2026-05-27, post-discuss)
+
+- **D-03 `30.0` → `30.2`** — Bitcoin Core v30.0 was withdrawn from `bitcoincore.org` (HTTP 404 verified) over a wallet-migration data-loss bug; v30.2 is the rollback fix and also matches the `30_2` feature-name in `corepc-node` better than v30.0 did. User confirmed substitution.
+- **D-15 `per-test temp log` → `view_stdout: false` (Stdio::null)`** — `corepc-node 0.12::Conf` only exposes a boolean `view_stdout` (inherit vs null); no `Stdio::from(File)` is available without bypassing the spawn helper. /dev/null still achieves the load-bearing goal (child doesn't hold cargo's stdout pipe). Postmortem context remains available via bitcoind's on-disk `debug.log` inside its data-dir. User confirmed substitution.
+- **D-10 + D-16 + D-21 `--include-ignored` dropped** — `cargo test ... -- --include-ignored` *runs* ignored tests; the 6 carve-out tests would have failed CI. Default `cargo test --test integration` already emits a per-test `ignored` line, satisfying the "carve-out is advertised" intent. User confirmed dropping the flag.
 
 </specifics>
 
