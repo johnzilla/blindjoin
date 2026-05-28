@@ -135,3 +135,13 @@ Plans:
 Plans:
 - [x] 12-01-PLAN.md — wallet repair (Option A: trust_witness_utxo: true with D-08 block comment) — complete, bisect-clean
 - [ ] 12-02-PLAN.md — six-test unmute cycle (Plan 11-02 carry-forward verbatim) — HALTED at D-11 canonical-first gate; 5th orthogonal blocker: HTTP 400 from /round/sign (client sends raw DER bytes; coordinator expects bitcoin::Witness consensus encoding); Phase 13 absorbs per D-12
+
+### Phase 13: client/src/wallet.rs wire-format fix + Plan 12-02 unmute cycle re-execution
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 12
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 13 to break down)
