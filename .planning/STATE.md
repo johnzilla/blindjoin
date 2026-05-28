@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
-current_plan: 2
-status: blocked
-stopped_at: Plan 10-02 Tasks 1+2 complete; Task 3 blocked
-last_updated: "2026-05-28T01:52:00Z"
+current_plan: 2 (partial — 2/3 tasks complete; 1 task blocked)
+status: Plan 10-02 Task 3 blocked on Plan 10-01 helper bug; user decision required
+stopped_at: "Plan 10-02 Tasks 1+2 complete; Task 3 blocked on tests/integration/mod.rs::fund_regtest line 481 RPC -5 against bitcoind v31"
+last_updated: "2026-05-28T02:18:36.736Z"
 last_activity: 2026-05-28
 progress:
-  total_phases: 2
-  completed_phases: 1
+  total_phases: 3
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 6
-  percent: 85
+  completed_plans: 7
+  percent: 67
 ---
 
 # Project State
@@ -82,3 +82,9 @@ Last activity: 2026-05-28
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260526-d7m | CI hygiene: bump rand 0.8.5→0.8.6 (RUSTSEC-2026-0097) and force Node 24 runtime for JS actions in CI workflows | 2026-05-26 | (pending) | [260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos](./quick/260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos/) |
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 11 added: coordinator RSA pubkey encoding + full_round.rs unmute completion

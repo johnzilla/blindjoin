@@ -108,3 +108,13 @@ Plans:
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
+
+### Phase 11: coordinator RSA pubkey encoding + full_round.rs unmute completion
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 10
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 11 to break down)
