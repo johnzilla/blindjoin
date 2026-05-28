@@ -458,17 +458,20 @@ pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
             funding_txids.push(txid_result.0.clone());
         }
 
-        // Mine 1 confirmation block.
-        node.client
-            .generate_to_address(1, &mine_addr)
-            .expect("generate confirmation block");
-
         // Wallet-agnostic vout discovery: read each funding tx directly
         // via get_raw_transaction_verbose, find the output whose
         // scriptPubKey matches the intended recipient address. Works for
         // both legacy and descriptor wallets (10-RESEARCH.md Pattern 1 /
         // Example 4). Does NOT depend on wallet ownership of the
         // recipient address.
+        //
+        // ORDERING: this lookup MUST run BEFORE the confirmation-block
+        // mine_addr generate_to_address call below. Bitcoin Core v30+
+        // without `-txindex=1` cannot resolve a txid via
+        // get_raw_transaction once the tx is buried in a block; the
+        // mempool-resident form still resolves by txid alone. Reading
+        // here while the funding txs are still in the mempool keeps the
+        // helper wallet-agnostic AND txindex-agnostic.
         let utxos_vec: Vec<(String, u64)> = funding_txids
             .iter()
             .zip(utxo_addresses.iter())
@@ -505,6 +508,13 @@ pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
             .collect();
 
         assert_eq!(utxos_vec.len(), 3, "must have 3 funded UTXOs");
+
+        // Mine 1 confirmation block AFTER the vout reads above. The
+        // FundedSetup outpoints are now confirmed UTXOs ready for the
+        // coinjoin round.
+        node.client
+            .generate_to_address(1, &mine_addr)
+            .expect("generate confirmation block");
 
         let setup = FundedSetup {
             rpc_url,
