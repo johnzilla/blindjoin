@@ -49,9 +49,12 @@ impl BdkClientWallet {
         };
 
         let bdk_net = bdk_network(network);
-        // wpkh(WIF) is a valid single-key descriptor. Both external and internal use the same key.
+        // wpkh(WIF) is a single-key descriptor with no change keychain. bdk_wallet 2.3
+        // rejects Wallet::create(d, d) with "External and internal descriptors are the
+        // same" — use Wallet::create_single(d) instead, which is bdk's purpose-built
+        // API for keychain-less wallets (added in 2.x for exactly this case).
         let descriptor = format!("wpkh({})", wif);
-        let inner = Wallet::create(descriptor.clone(), descriptor)
+        let inner = Wallet::create_single(descriptor)
             .network(bdk_net)
             .create_wallet_no_persist()
             .map_err(|e| anyhow!("Failed to create bdk wallet from WIF: {e}"))?;
