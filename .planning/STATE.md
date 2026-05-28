@@ -4,8 +4,8 @@ milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
 current_plan: 2 (partial — 2/3 tasks complete; 1 task blocked)
 status: Plan 10-02 Task 3 blocked on Plan 10-01 helper bug; user decision required
-stopped_at: "Plan 10-02 Tasks 1+2 complete; Task 3 blocked on tests/integration/mod.rs::fund_regtest line 481 RPC -5 against bitcoind v31"
-last_updated: "2026-05-28T02:18:36.736Z"
+stopped_at: Phase 11 context gathered
+last_updated: "2026-05-28T02:33:45.455Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 3
@@ -31,8 +31,8 @@ Last activity: 2026-05-28
 
 ## Session Continuity
 
-**Stopped At:** Plan 10-02 Tasks 1+2 complete; Task 3 blocked on tests/integration/mod.rs::fund_regtest line 481 RPC -5 against bitcoind v31
-**Resume File:** `.planning/phases/10-full-round-rs-decision-execution/10-02-SUMMARY.md` — read the "CHECKPOINT REACHED" section for unblock options
+**Stopped At:** Phase 11 context gathered
+**Resume File:** .planning/phases/11-coordinator-rsa-pubkey-encoding-full-round-rs-unmute-complet/11-CONTEXT.md
 
 ## Blockers
 
