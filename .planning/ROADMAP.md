@@ -104,7 +104,7 @@ Plans:
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
 | 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
 | 9. CI integration-test reliability | v1.3 | 5/5 | Complete   | 2026-05-27 |
-| 10. full_round.rs decision + execution | v1.3 | 1/2 | In Progress|  |
+| 10. full_round.rs decision + execution | v1.3 | 1/2 (10-02 partial: Tasks 1+2 of 3 — Task 3 blocked) | In Progress (blocked) |  |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
