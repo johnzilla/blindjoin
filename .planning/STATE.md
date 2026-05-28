@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
-current_plan: Not started
+current_plan: 1
 status: executing
-stopped_at: Phase 10 context gathered
-last_updated: "2026-05-28T01:26:53.058Z"
-last_activity: 2026-05-28 -- Phase 10 planning complete
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-05-28T01:37:32.306Z"
+last_activity: 2026-05-28
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 50
 ---
 
@@ -19,20 +19,20 @@ progress:
 
 ## Current Position
 
-Phase: 10
-Plan: 5 of 5
+Phase: 10 (full-round-rs-decision-execution) — EXECUTING
+Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-05-28 -- Phase 10 planning complete
+Last activity: 2026-05-28
 
 ## Progress
 
 **Phases Complete:** 0 of 2
-**Current Plan:** Not started
+**Current Plan:** 1
 
 ## Session Continuity
 
-**Stopped At:** Phase 10 context gathered
-**Resume File:** .planning/phases/10-full-round-rs-decision-execution/10-CONTEXT.md
+**Stopped At:** Completed 10-01-PLAN.md
+**Resume File:** 
 
 ## Decisions
 
@@ -55,6 +55,10 @@ Last activity: 2026-05-28 -- Phase 10 planning complete
 - [Phase ?]: [Phase 09-04]: Local-bitcoind PASS check executed (not deferred to CI) — all 3 migrated tests pass against /opt/homebrew/bin/bitcoind: round_bootstrap (1/0), rate_limiting (2/0). Whole-repo Box::leak count in tests/integration/ is 0 after this plan.
 - [Phase ?]: [Phase 09-05]: CONTRIBUTING.md uses prescribed grep-target panic-message form; load-bearing substring matches cargo output byte-for-byte
 - [Phase ?]: [Phase 09-05]: D-17 scope discipline held — CONTRIBUTING.md contains only Local-prerequisites + Running-integration-tests + Interpreting-output sections; no PR/commit/code-style sections added; README.md remains marketing surface, CONTRIBUTING.md is the local-dev manual
+- [Phase ?]: [Phase 10-01]: ScriptPubKey.address Option<String> direct path compiled on first attempt; hex-decode+from_script fallback not needed at corepc-node 0.12 features=30_2
+- [Phase ?]: [Phase 10-01]: Both inline funding bodies in full_round.rs (full_round_three_clients at line 193 + blame_non_signer_timeout at line 577) collapsed to crate::fund_regtest; the second body contained the previously-overlooked list_unspent call at line 613 that would have blocked Plan 10-02's REPAIR-01 unmute cycle
+- [Phase ?]: [Phase 10-01]: Bare BitcoindGuard moved through fund_regtest's spawn_blocking; Arc<BitcoindGuard> + Arc::try_unwrap plumbing eliminated at all 6 sites (IN-02 cleanup applied opportunistically while touching the code)
+- [Phase ?]: [Phase 10-01]: #[allow(unused_imports)] on full_round.rs use-line — plan acceptance requires both unqualified imports AND path-qualified crate::fund_regtest callsites; the allow reconciles the dual-spec design
 
 ## Performance Metrics
 
@@ -66,6 +70,7 @@ Last activity: 2026-05-28 -- Phase 10 planning complete
 | Phase 09 P03 | 6min | 2 tasks | 1 files |
 | Phase Phase 09 PP04 | 3min | 2 tasks tasks | 2 files files |
 | Phase Phase 09 PP05 | 1min | 1 task tasks | 1 file files |
+| Phase 10 P01 | 5min | 2 tasks | 2 files |
 
 ### Quick Tasks Completed
 

@@ -85,7 +85,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 10-01-PLAN.md — Promote fund_regtest + FundedSetup to tests/integration/mod.rs with wallet-agnostic vout discovery via get_raw_transaction_verbose (D-04 Plan 10-01, D-05, D-06)
+- [x] 10-01-PLAN.md — Promote fund_regtest + FundedSetup to tests/integration/mod.rs with wallet-agnostic vout discovery via get_raw_transaction_verbose (D-04 Plan 10-01, D-05, D-06)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -104,7 +104,7 @@ Plans:
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
 | 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
 | 9. CI integration-test reliability | v1.3 | 5/5 | Complete   | 2026-05-27 |
-| 10. full_round.rs decision + execution | v1.3 | 0/2 | Not started | — |
+| 10. full_round.rs decision + execution | v1.3 | 1/2 | In Progress|  |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`

@@ -17,7 +17,7 @@ Requirements for the **Test Infrastructure & Operational Hardening** milestone. 
 
 ### Test Repair (REPAIR)
 
-- [ ] **REPAIR-01**: `tests/integration/full_round.rs` is either repaired (all 15 tests pass against the pinned bitcoind version, including the 6 currently failing on `listunspent`/RPC schema drift) **OR** explicitly retired with rationale captured in TODO.md and the file deleted from the repo
+- [x] **REPAIR-01**: `tests/integration/full_round.rs` is either repaired (all 15 tests pass against the pinned bitcoind version, including the 6 currently failing on `listunspent`/RPC schema drift) **OR** explicitly retired with rationale captured in TODO.md and the file deleted from the repo
 - [ ] **REPAIR-02**: Any test that uses `corepc-node`'s typed `Client` API enables the appropriate version feature explicitly (e.g. `features = ["30_2"]`), never relies on the silent `0_17_2` default
 
 ## Future Requirements
