@@ -124,4 +124,40 @@ mod tests {
                    <BlindMessage as AsRef<[u8]>>::as_ref(&b3.blind_message),
             "Blinding the same message twice must produce different blinded forms (randomized)");
     }
+
+    /// SPKI handshake roundtrip (D-03): proves the coordinator emit path
+    /// `public_key_spki_der()` and the client decode path `BjPublicKey::from_spki`
+    /// are symmetric inverses, AND that `SHA-256(public_key_spki_der())` equals
+    /// the D-02 hash commitment `public_key_hash()`. Catches future format drift
+    /// in either direction (blind-rsa-signatures bumps, coordinator emit changes,
+    /// client decode changes) without requiring bitcoind.
+    #[test]
+    fn spki_handshake_round_trip() {
+        use sha2::{Sha256, Digest};
+
+        let signer = RsaBlindSigner::generate().unwrap();
+
+        // 1+2. Emit via the production path the coordinator publishes on /info.
+        let spki = signer.public_key_spki_der().unwrap();
+
+        // 3. D-02 commitment: SHA-256(SPKI bytes) MUST equal public_key_hash().
+        let hash_via_emit: [u8; 32] = Sha256::digest(&spki).into();
+        assert_eq!(
+            hash_via_emit,
+            signer.public_key_hash(),
+            "SHA-256(public_key_spki_der()) must equal public_key_hash()"
+        );
+
+        // 4. Re-parse via the production client decode path (mirrors client/src/round/input.rs:40).
+        let pk_reparsed = BjPublicKey::from_spki(&spki).unwrap();
+
+        // 5. Re-parsed key blinds a message the original signer can blind-sign,
+        //    finalize, and verify — proves the parser produced the same key,
+        //    not a different-but-valid one.
+        let msg = test_message();
+        let blinding_result = pk_reparsed.blind(&mut DefaultRng, &msg).unwrap();
+        let blind_sig = signer.blind_sign(&blinding_result.blind_message).unwrap();
+        let sig = pk_reparsed.finalize(&blind_sig, &blinding_result, &msg).unwrap();
+        pk_reparsed.verify(&sig, blinding_result.msg_randomizer, &msg).unwrap();
+    }
 }

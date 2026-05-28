@@ -37,7 +37,7 @@ pub async fn register_input(
         return Err(anyhow!("RSA public key hash mismatch — coordinator key commitment violated"));
     }
 
-    let pk = BjPublicKey::from_der(&pk_der)
+    let pk = BjPublicKey::from_spki(&pk_der)
         .map_err(|e| anyhow!("Failed to parse coordinator RSA public key: {e}"))?;
 
     // 2. Compute blind token message M = compute_blind_token_message(output_script, denomination)
