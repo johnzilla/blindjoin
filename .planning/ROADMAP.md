@@ -81,7 +81,15 @@ Plans:
   2. `grep -r "corepc-node" --include='Cargo.toml'` shows every dependency declaration with an explicit `features = ["NN_M"]` entry — no test in the workspace silently depends on the corepc-node `0_17_2` (Bitcoin Core 0.17.2) default feature
   3. CI's integration-test job remains green on a PR that touches `tests/integration/full_round.rs` (or, if retired, on a PR that proves the retirement landed cleanly with no orphan references to the deleted module)
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+**Wave 1**
+
+- [ ] 10-01-PLAN.md — Promote fund_regtest + FundedSetup to tests/integration/mod.rs with wallet-agnostic vout discovery via get_raw_transaction_verbose (D-04 Plan 10-01, D-05, D-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 10-02-PLAN.md — Unmute 6 carve-out tests (D-07 per-test gate), replace 4 WR-05 bare sleeps with poll-until-deadline (D-02), add corepc-node feature pin check CI job (D-08/D-09), correct "15 tests" → "8 tests" in ROADMAP/REQUIREMENTS (D-03)
 
 ## Progress
 
@@ -96,7 +104,7 @@ Plans:
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
 | 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
 | 9. CI integration-test reliability | v1.3 | 5/5 | Complete   | 2026-05-27 |
-| 10. full_round.rs decision + execution | v1.3 | 0/0 | Not started | — |
+| 10. full_round.rs decision + execution | v1.3 | 0/2 | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
