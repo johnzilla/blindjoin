@@ -114,12 +114,12 @@ Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
 **Goal:** Close out Phase 10 Task 3 by repairing the coordinator↔client RSA-pubkey handshake (one-line `from_der` → `from_spki` swap at client/src/round/input.rs:40, plus a SPKI roundtrip unit test in coordinator/src/blind/rsa.rs) and completing the 6-test unmute cycle in tests/integration/full_round.rs — driving all 8 full_round tests to PASS locally against pinned brew bitcoind v31 in canonical-first then file order, one bisectable commit per unmute. REPAIR-01 closes locally on green suite; REPAIR-02 closes on PR observation of the corepc-node feature-pin CI gate (already landed at 4026f50).
 **Requirements**: REPAIR-01 (closes when Phase 11 lands locally green per D-10), REPAIR-02 (closes on PR observation per D-11 — not self-attested in-phase)
 **Depends on:** Phase 10
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — RSA decode repair (client/src/round/input.rs:40: from_der → from_spki) + SPKI roundtrip unit test (coordinator/src/blind/rsa.rs::spki_handshake_round_trip); two atomic commits per CD-2
+- [x] 11-01-PLAN.md — RSA decode repair (client/src/round/input.rs:40: from_der → from_spki) + SPKI roundtrip unit test (coordinator/src/blind/rsa.rs::spki_handshake_round_trip); two atomic commits per CD-2
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
