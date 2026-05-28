@@ -17,11 +17,22 @@ use tokio::sync::RwLock;
 // Phase 9 plan 09-03 migration: shared regtest fixtures from
 // `tests/integration/mod.rs`. Each bitcoind-dependent test below uses
 // `require_bitcoind!()` for the graceful local-dev skip, then
-// `bootstrap_regtest_bitcoind()` to bring up the daemon, holding the
-// returned `BitcoindGuard` for the test's full duration. This replaces
-// the historical leak-the-Node pattern (3 callsites previously in this
-// file) with deterministic RAII shutdown.
-use crate::{bootstrap_regtest_bitcoind, require_bitcoind, BitcoindGuard, RpcCreds};
+// `crate::fund_regtest()` to bring up the daemon and fund 3 P2WPKH
+// UTXOs, holding the returned `BitcoindGuard` for the test's full
+// duration. This replaces the historical leak-the-Node pattern with
+// deterministic RAII shutdown.
+//
+// Plan 10-01 D-06 promotion: `fund_regtest` + `FundedSetup` moved from
+// file-private to `crate::*`. Callsites invoke `crate::fund_regtest`
+// for grep-ability; the `use crate::{...}` line below names the same
+// items so the dependency contract is explicit at the top of the file.
+// `bootstrap_regtest_bitcoind`, `BitcoindGuard`, `FundedSetup`, and
+// `RpcCreds` are no longer referenced unqualified in this file (the
+// Plan 10-01 collapse to `crate::fund_regtest` removed their last
+// unqualified uses), but stay in the import list so the file's
+// dependency surface remains self-documenting alongside the call sites.
+#[allow(unused_imports)]
+use crate::{bootstrap_regtest_bitcoind, fund_regtest, require_bitcoind, BitcoindGuard, FundedSetup, RpcCreds};
 
 // ---------------------------------------------------------------------------
 // Helper: initialise a round state in InputReg with a fresh RSA key.
@@ -135,17 +146,6 @@ async fn wait_for_coordinator(coordinator_url: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Data gathered from the synchronous bitcoind setup phase.
-// ---------------------------------------------------------------------------
-struct FundedSetup {
-    rpc_url: String,
-    rpc_user: String,
-    rpc_pass: String,
-    /// (outpoint "txid:vout", value_sats) for each participant
-    utxos: [(String, u64); 3],
-}
-
-// ---------------------------------------------------------------------------
 // Main integration test: full 3-client CoinJoin round on regtest.
 // ---------------------------------------------------------------------------
 
@@ -169,123 +169,13 @@ async fn full_round_three_clients() {
     // does not re-resolve (WR-03: single source of truth per test invocation).
     let exe = require_bitcoind!();
 
-    // ----- Step 2: bring up regtest bitcoind via the shared fixture -----
-    // The returned guard owns the Node and shuts it down deterministically on
-    // drop (RPC `stop` + Node::Drop SIGKILL fallback). It MUST stay in scope
-    // for the test's full duration — we wrap it in Arc so we can pass a clone
-    // into spawn_blocking for the funding work while still holding it outside.
-    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
-    let bitcoind_guard = Arc::new(bitcoind_guard);
-
-    // ----- Steps 3-4: synchronous funding via the guarded Node -----
-    // corepc-node's Client is not Clone and Node methods take &self, so we do
-    // all sync RPC work in a single spawn_blocking. The Arc<BitcoindGuard>
-    // clone gives us the &Node inside the closure; the outer Arc binding
-    // keeps bitcoind alive for the rest of the test. We also move `creds`
-    // into the closure to build the FundedSetup — its RPC URL/user/pass
-    // remain valid as long as bitcoind_guard is alive.
-    let guard_for_setup = Arc::clone(&bitcoind_guard);
-    let RpcCreds {
-        url: rpc_url,
-        user: rpc_user,
-        pass: rpc_pass,
-    } = creds;
-    let setup: FundedSetup = tokio::task::spawn_blocking(move || {
-        use bitcoin::{
-            secp256k1::Secp256k1, Address, Amount, CompressedPublicKey, Network, PrivateKey,
-        };
-
-        let node = guard_for_setup.node();
-
-        // Hardcoded regtest WIF keys — REGTEST ONLY, zero monetary value.
-        let test_wifs = [
-            "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
-            "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
-            "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
-        ];
-        let denomination: u64 = 100_000;
-        let fund_sats: u64 = denomination + 50_000; // covers denomination + fee margin
-        let fund_btc = Amount::from_sat(fund_sats);
-
-        let secp = Secp256k1::new();
-
-        // Derive P2WPKH addresses for each test key (regtest)
-        let utxo_addresses: Vec<Address> = test_wifs
-            .iter()
-            .map(|wif| {
-                let sk = PrivateKey::from_wif(wif).unwrap();
-                let raw_pk =
-                    bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &sk.inner);
-                let cpk = CompressedPublicKey(raw_pk);
-                Address::p2wpkh(&cpk, Network::Regtest)
-            })
-            .collect();
-
-        // bootstrap_regtest_bitcoind already mined 101 blocks (matured the
-        // coinbase). Mine 1 extra so send_to_address has a fresh coinbase
-        // available (the 101st block's coinbase becomes spendable at height 102).
-        let mine_addr: Address = node.client.new_address().expect("get new address");
-
-        // Fund each test address
-        let mut funding_txids: Vec<String> = Vec::new();
-        for addr in &utxo_addresses {
-            let txid_result = node
-                .client
-                .send_to_address(addr, fund_btc)
-                .expect("send_to_address");
-            // SendToAddress is a newtype: SendToAddress(pub String)
-            funding_txids.push(txid_result.0.clone());
-        }
-
-        // Mine 1 confirmation block
-        node.client
-            .generate_to_address(1, &mine_addr)
-            .expect("generate confirmation block");
-
-        // Locate each funded UTXO via list_unspent
-        // ListUnspent wraps Vec<ListUnspentItem> where fields are plain Strings/f64
-        let unspent_result = node.client.list_unspent().expect("list_unspent");
-        let unspent_items = &unspent_result.0;
-
-        let addr_strs: Vec<String> = utxo_addresses.iter().map(|a| a.to_string()).collect();
-
-        let utxos_vec: Vec<(String, u64)> = funding_txids
-            .iter()
-            .zip(addr_strs.iter())
-            .map(|(txid_str, addr_str)| {
-                let entry = unspent_items
-                    .iter()
-                    .find(|u| {
-                        u.txid == *txid_str && u.address == *addr_str
-                    })
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Could not find funded UTXO for txid={} addr={}",
-                            txid_str, addr_str
-                        )
-                    });
-                let outpoint = format!("{}:{}", entry.txid, entry.vout);
-                // entry.amount is in BTC (f64); convert to sats
-                let value_sats = (entry.amount * 100_000_000.0).round() as u64;
-                (outpoint, value_sats)
-            })
-            .collect();
-
-        assert_eq!(utxos_vec.len(), 3, "Must have 3 funded UTXOs");
-
-        FundedSetup {
-            rpc_url,
-            rpc_user,
-            rpc_pass,
-            utxos: [utxos_vec[0].clone(), utxos_vec[1].clone(), utxos_vec[2].clone()],
-        }
-    })
-    .await
-    .expect("setup spawn_blocking panicked");
-
-    // Keep the bitcoind_guard alive for the rest of the test. Even though the
-    // Arc clone above was moved into spawn_blocking, the outer Arc binding
-    // (created at let bitcoind_guard = Arc::new(...) above) still holds.
+    // ----- Steps 2-4: bring up regtest bitcoind + fund 3 UTXOs via the
+    // shared fixture. The returned guard owns the Node and shuts it down
+    // deterministically on drop (RPC `stop` + Node::Drop SIGKILL fallback).
+    // It MUST stay in scope for the test's full duration. `crate::fund_regtest`
+    // composes `bootstrap_regtest_bitcoind` + the wallet-agnostic vout
+    // discovery (10-01 D-06 promotion — single locus for funded regtest setup).
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
     let _bitcoind_guard = bitcoind_guard;
 
     let denomination: u64 = 100_000;
@@ -563,77 +453,12 @@ async fn blame_non_signer_timeout() {
     // Skip gracefully if bitcoind missing (local-dev); panic in CI.
     let exe = require_bitcoind!();
 
-    // Shared regtest bootstrap (mines 101 blocks, returns RAII guard + creds).
-    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
-    let bitcoind_guard = Arc::new(bitcoind_guard);
-
-    // ----- Fund 3 UTXOs via the guarded Node -----
-    let guard_for_setup = Arc::clone(&bitcoind_guard);
-    let RpcCreds {
-        url: rpc_url,
-        user: rpc_user,
-        pass: rpc_pass,
-    } = creds;
-    let setup: FundedSetup = tokio::task::spawn_blocking(move || {
-        use bitcoin::{
-            secp256k1::Secp256k1, Address, Amount, CompressedPublicKey, Network, PrivateKey,
-        };
-
-        let node = guard_for_setup.node();
-
-        let test_wifs = [
-            "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
-            "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
-            "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
-        ];
-        let denomination: u64 = 100_000;
-        let fund_sats: u64 = denomination + 50_000;
-        let fund_btc = Amount::from_sat(fund_sats);
-
-        let secp = Secp256k1::new();
-        let utxo_addresses: Vec<Address> = test_wifs.iter().map(|wif| {
-            let sk = PrivateKey::from_wif(wif).unwrap();
-            let raw_pk = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &sk.inner);
-            let cpk = CompressedPublicKey(raw_pk);
-            Address::p2wpkh(&cpk, Network::Regtest)
-        }).collect();
-
-        // bootstrap_regtest_bitcoind already mined 101 blocks; we only need
-        // a fresh mining address for the post-funding confirmation block.
-        let mine_addr: Address = node.client.new_address().expect("get new address");
-
-        let mut funding_txids: Vec<String> = Vec::new();
-        for addr in &utxo_addresses {
-            let txid_result = node.client.send_to_address(addr, fund_btc)
-                .expect("send_to_address");
-            funding_txids.push(txid_result.0.clone());
-        }
-        node.client.generate_to_address(1, &mine_addr).expect("confirmation block");
-
-        let unspent_result = node.client.list_unspent().expect("list_unspent");
-        let unspent_items = &unspent_result.0;
-        let addr_strs: Vec<String> = utxo_addresses.iter().map(|a| a.to_string()).collect();
-
-        let utxos_vec: Vec<(String, u64)> = funding_txids.iter().zip(addr_strs.iter())
-            .map(|(txid_str, addr_str)| {
-                let entry = unspent_items.iter()
-                    .find(|u| u.txid == *txid_str && u.address == *addr_str)
-                    .unwrap_or_else(|| panic!("Could not find UTXO txid={} addr={}", txid_str, addr_str));
-                let outpoint = format!("{}:{}", entry.txid, entry.vout);
-                let value_sats = (entry.amount * 100_000_000.0).round() as u64;
-                (outpoint, value_sats)
-            }).collect();
-
-        assert_eq!(utxos_vec.len(), 3);
-
-        FundedSetup {
-            rpc_url,
-            rpc_user,
-            rpc_pass,
-            utxos: [utxos_vec[0].clone(), utxos_vec[1].clone(), utxos_vec[2].clone()],
-        }
-    }).await.expect("setup spawn_blocking panicked");
-
+    // Shared regtest bring-up + fund 3 UTXOs (10-01 D-06 promotion —
+    // wallet-agnostic vout discovery via get_raw_transaction_verbose;
+    // replaces the broken descriptor-wallet-incompatible
+    // wallet-ownership scan; see tests/integration/mod.rs::fund_regtest
+    // doc block for the v30 schema rationale).
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
     // Hold bitcoind_guard for the rest of the test — bitcoind must remain
     // alive while the coordinator drives RPC calls below.
     let _bitcoind_guard = bitcoind_guard;
@@ -744,108 +569,6 @@ async fn blame_non_signer_timeout() {
         "blame_non_signer_timeout PASSED: round returned to idle, non-signer banned (utxo={})",
         non_signer_utxo
     );
-}
-
-// ---------------------------------------------------------------------------
-// Helper: bring up regtest bitcoind via the shared fixture, fund 3 UTXOs,
-// and return both the RAII BitcoindGuard and the FundedSetup.
-//
-// **Caller contract:** the returned BitcoindGuard MUST be held for the full
-// duration of the test. Dropping it (end-of-scope, `return`, panic unwind)
-// terminates the daemon; subsequent RPC calls against `FundedSetup`'s URL
-// will fail. The 5 callers (4 adversarial tests + round_restart_and_completion
-// _after_blame) bind it as
-// `let (bitcoind_guard, setup) = fund_regtest(exe).await;` and let scope
-// drop it at end-of-test. The `exe` parameter forwards the path returned
-// by `require_bitcoind!()` so the shared fixture does not re-resolve it
-// (WR-03: single source of truth per test invocation).
-//
-// Reused by adversarial and restart tests.
-// ---------------------------------------------------------------------------
-async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
-    // Shared bootstrap: brings up bitcoind, sets stdio to /dev/null,
-    // passes -printtoconsole=0, mines 101 blocks. Returns the guard.
-    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
-    let bitcoind_guard = Arc::new(bitcoind_guard);
-
-    let guard_for_setup = Arc::clone(&bitcoind_guard);
-    let RpcCreds {
-        url: rpc_url,
-        user: rpc_user,
-        pass: rpc_pass,
-    } = creds;
-    let setup: FundedSetup = tokio::task::spawn_blocking(move || {
-        use bitcoin::{
-            secp256k1::Secp256k1, Address, Amount, CompressedPublicKey, Network, PrivateKey,
-        };
-
-        let node = guard_for_setup.node();
-
-        let test_wifs = [
-            "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
-            "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
-            "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
-        ];
-        let denomination: u64 = 100_000;
-        let fund_sats: u64 = denomination + 50_000;
-        let fund_btc = Amount::from_sat(fund_sats);
-
-        let secp = Secp256k1::new();
-        let utxo_addresses: Vec<Address> = test_wifs.iter().map(|wif| {
-            let sk = PrivateKey::from_wif(wif).unwrap();
-            let raw_pk = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &sk.inner);
-            let cpk = CompressedPublicKey(raw_pk);
-            Address::p2wpkh(&cpk, Network::Regtest)
-        }).collect();
-
-        // bootstrap_regtest_bitcoind already mined 101 blocks; we only need
-        // a fresh mining address for the post-funding confirmation block.
-        let mine_addr: Address = node.client.new_address().expect("get new address");
-
-        let mut funding_txids: Vec<String> = Vec::new();
-        for addr in &utxo_addresses {
-            let txid_result = node.client.send_to_address(addr, fund_btc)
-                .expect("send_to_address");
-            funding_txids.push(txid_result.0.clone());
-        }
-        node.client.generate_to_address(1, &mine_addr).expect("confirmation block");
-
-        let unspent_result = node.client.list_unspent().expect("list_unspent");
-        let unspent_items = &unspent_result.0;
-        let addr_strs: Vec<String> = utxo_addresses.iter().map(|a| a.to_string()).collect();
-
-        let utxos_vec: Vec<(String, u64)> = funding_txids.iter().zip(addr_strs.iter())
-            .map(|(txid_str, addr_str)| {
-                let entry = unspent_items.iter()
-                    .find(|u| u.txid == *txid_str && u.address == *addr_str)
-                    .unwrap_or_else(|| panic!("Could not find UTXO txid={} addr={}", txid_str, addr_str));
-                let outpoint = format!("{}:{}", entry.txid, entry.vout);
-                let value_sats = (entry.amount * 100_000_000.0).round() as u64;
-                (outpoint, value_sats)
-            }).collect();
-
-        assert_eq!(utxos_vec.len(), 3);
-
-        FundedSetup {
-            rpc_url,
-            rpc_user,
-            rpc_pass,
-            utxos: [utxos_vec[0].clone(), utxos_vec[1].clone(), utxos_vec[2].clone()],
-        }
-    }).await.expect("fund_regtest spawn_blocking panicked");
-
-    // Unwrap the Arc — we always created it fresh in this function, so we
-    // are the sole owner once the spawn_blocking closure has returned and
-    // its `guard_for_setup` clone has dropped. The caller receives the
-    // bare BitcoindGuard and is responsible for keeping it in scope.
-    let bitcoind_guard = Arc::try_unwrap(bitcoind_guard).unwrap_or_else(|_| {
-        panic!(
-            "fund_regtest: BitcoindGuard Arc still has outstanding clones — \
-             this is a bug; the spawn_blocking closure should have dropped its clone"
-        )
-    });
-
-    (bitcoind_guard, setup)
 }
 
 // ---------------------------------------------------------------------------
@@ -963,7 +686,7 @@ async fn spawn_coordinator_with_blame_and_restart(
 async fn adversarial_replay_token() {
     let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest(exe).await;
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
     // WR-06: keep `_tmp_dir` bound for the test's full duration. The
     // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
@@ -1087,7 +810,7 @@ async fn adversarial_replay_token() {
 async fn adversarial_invalid_utxo() {
     let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest(exe).await;
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
     // WR-06: keep `_tmp_dir` bound for the test's full duration. The
     // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
@@ -1144,7 +867,7 @@ async fn adversarial_invalid_utxo() {
 async fn adversarial_wrong_denomination() {
     let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest(exe).await;
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
     // WR-06: keep `_tmp_dir` bound for the test's full duration. The
     // bitcoind_guard (RAII) keeps the daemon alive — drop = shutdown.
     let (coordinator_url, _tmp_dir) = spawn_coordinator(
@@ -1469,7 +1192,7 @@ async fn coordinator_info_endpoint_fields() {
 async fn round_restart_and_completion_after_blame() {
     let exe = require_bitcoind!();
 
-    let (bitcoind_guard, setup) = fund_regtest(exe).await;
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
     let denomination: u64 = 100_000;
 
     // Spawn coordinator with blame + auto-restart (min_participants=2, signing_timeout=2s)
