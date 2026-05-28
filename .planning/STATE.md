@@ -4,15 +4,15 @@ milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
 current_plan: 2 (partial — 2/3 tasks complete; 1 task blocked)
 status: executing
-stopped_at: Phase 11 context gathered
-last_updated: "2026-05-28T03:15:57.594Z"
+stopped_at: Phase 12 context gathered
+last_updated: "2026-05-28T19:36:29.186Z"
 last_activity: 2026-05-28 -- Phase 11 planning complete
 progress:
-  total_phases: 3
-  completed_phases: 2
+  total_phases: 4
+  completed_phases: 3
   total_plans: 9
-  completed_plans: 7
-  percent: 67
+  completed_plans: 9
+  percent: 75
 ---
 
 # Project State
@@ -31,8 +31,8 @@ Last activity: 2026-05-28 -- Phase 11 planning complete
 
 ## Session Continuity
 
-**Stopped At:** Phase 11 context gathered
-**Resume File:** .planning/phases/11-coordinator-rsa-pubkey-encoding-full-round-rs-unmute-complet/11-CONTEXT.md
+**Stopped At:** Phase 12 context gathered
+**Resume File:** .planning/phases/12-repair-client-src-wallet-rs-260-bdk-wallet-2-3-signoptions-r/12-CONTEXT.md
 
 ## Blockers
 
