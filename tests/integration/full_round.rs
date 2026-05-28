@@ -257,32 +257,43 @@ async fn full_round_three_clients() {
 
     // ----- Step 7: wait for broadcast, then check mempool -----
     // Coordinator broadcasts after all 3 signatures are collected.
-    // TODO(Phase-10): replace bare sleep with poll-until-deadline to
-    // reduce flake; tracked in REVIEW.md WR-05. The same pattern recurs
-    // at lines ~704, ~1519, ~1627 and should be migrated together to a
-    // shared `wait_for(predicate, deadline)` helper (compare
-    // `wait_for_coordinator` at lines 116-135 and the deadline loop in
-    // `round_bootstrap.rs`). All four sites currently sit behind
-    // `#[ignore]` so the flake risk is masked until Phase 10 lifts the
-    // ignores in lockstep with the RPC-schema unignore.
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // WR-05 (Plan 10-02): poll-until-deadline replaces the previous bare
+    // 2s sleep. Predicate: mempool contains at least one txid. Deadline:
+    // 10s (5x original sleep budget) — sized per 10-RESEARCH.md Pitfall 4.
+    // 100ms poll cadence matches round_bootstrap.rs:141. Each iteration
+    // re-clones the rpc creds into the spawn_blocking closure because
+    // spawn_blocking takes 'static + Send and the loop owns the originals.
+    let mempool_txids: Vec<String> = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let rpc_url_c = setup.rpc_url.clone();
+            let rpc_user_c = setup.rpc_user.clone();
+            let rpc_pass_c = setup.rpc_pass.clone();
+            let txids: Vec<String> = tokio::task::spawn_blocking(move || {
+                use corepc_node::client::client_sync::Auth;
+                let auth = Auth::UserPass(rpc_user_c, rpc_pass_c);
+                let client = corepc_node::Client::new_with_auth(&rpc_url_c, auth)
+                    .expect("create rpc client for mempool check");
+                // GetRawMempool(Vec<String>) — txids as hex strings
+                client.get_raw_mempool().expect("get_raw_mempool").0
+            })
+            .await
+            .expect("mempool check spawn_blocking");
 
-    let rpc_url = setup.rpc_url.clone();
-    let rpc_user = setup.rpc_user.clone();
-    let rpc_pass = setup.rpc_pass.clone();
-
-    let mempool_txids: Vec<String> = tokio::task::spawn_blocking(move || {
-        use corepc_node::client::client_sync::Auth;
-        // Create a new client using the same credentials (not clone of node.client)
-        let auth = Auth::UserPass(rpc_user, rpc_pass);
-        // corepc_node::Client is the version-specific client (e.g., v28::Client)
-        let client = corepc_node::Client::new_with_auth(&rpc_url, auth)
-            .expect("create rpc client for mempool check");
-        // GetRawMempool(Vec<String>) — txids as hex strings
-        client.get_raw_mempool().expect("get_raw_mempool").0
-    })
-    .await
-    .expect("mempool check spawn_blocking");
+            if !txids.is_empty() {
+                break txids;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                panic!(
+                    "CoinJoin tx never appeared in mempool within 10s after all 3 clients \
+                     submitted signatures. The coordinator broadcasts in signing.rs \
+                     assemble_and_broadcast after collecting all partial sigs. \
+                     Last observation: mempool empty."
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
 
     assert!(
         !mempool_txids.is_empty(),
@@ -534,19 +545,57 @@ async fn blame_non_signer_timeout() {
         handle.await.expect("client task panicked");
     }
 
-    // ----- Wait for signing timeout (2s) + buffer (1s) -----
-    tokio::time::sleep(Duration::from_secs(4)).await;
-
-    // ----- Assert round is back in Idle -----
+    // ----- Wait for signing timeout (2s) + blame to complete -----
+    // WR-05 (Plan 10-02): poll-until-deadline replaces the previous bare
+    // 4s sleep. Predicate: coordinator /info reports round_state=="idle"
+    // AND ban_list contains non_signer_utxo. Deadline: 10s (2.5x original
+    // sleep budget). 100ms poll cadence matches round_bootstrap.rs:141.
+    // Final last-observation diagnostic captures both fields so a
+    // timeout makes the failure mode obvious from the log alone.
     let http_client = reqwest::Client::new();
-    let info: shared::protocol::InfoResponse = http_client
-        .get(format!("{}/info", coordinator_url))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let (info, banned) = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let mut last_round_state: Option<String> = None;
+        let mut last_banned: bool;
+        loop {
+            // Fetch /info. Transient connect/decode errors are ignored
+            // here — the deadline check below converts persistent errors
+            // into a clear panic. last_round_state retains the most
+            // recent observation for diagnostics.
+            let info_now: Option<shared::protocol::InfoResponse> = match http_client
+                .get(format!("{}/info", coordinator_url))
+                .send()
+                .await
+            {
+                Ok(r) => r.json().await.ok(),
+                Err(_) => None,
+            };
+
+            let now = coordinator::round::blame::now_unix_secs();
+            let banned_now = {
+                let bl = ban_list.read().await;
+                bl.is_banned(&non_signer_utxo, now)
+            };
+
+            if let Some(ref i) = info_now {
+                if i.round_state == "idle" && banned_now {
+                    break (i.clone(), banned_now);
+                }
+                last_round_state = Some(i.round_state.clone());
+            }
+            last_banned = banned_now;
+
+            if tokio::time::Instant::now() >= deadline {
+                panic!(
+                    "After signing timeout, coordinator did not return to idle AND ban \
+                     non-signer UTXO within 10s. Last /info round_state: {:?}, last \
+                     ban_list.is_banned({}): {}",
+                    last_round_state, non_signer_utxo, last_banned
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
 
     assert_eq!(
         info.round_state, "idle",
@@ -554,16 +603,12 @@ async fn blame_non_signer_timeout() {
         info.round_state
     );
 
-    // ----- Assert non-signer UTXO is in ban list -----
-    {
-        let bl = ban_list.read().await;
-        let now = coordinator::round::blame::now_unix_secs();
-        assert!(
-            bl.is_banned(&non_signer_utxo, now),
-            "Non-signer UTXO must be banned in BanList after signing timeout; utxo={}",
-            non_signer_utxo
-        );
-    }
+    // ----- Non-signer UTXO must be in ban list -----
+    assert!(
+        banned,
+        "Non-signer UTXO must be banned in BanList after signing timeout; utxo={}",
+        non_signer_utxo
+    );
 
     eprintln!(
         "blame_non_signer_timeout PASSED: round returned to idle, non-signer banned (utxo={})",
@@ -1266,19 +1311,51 @@ async fn round_restart_and_completion_after_blame() {
         handle.await.expect("client task panicked");
     }
 
-    // ----- Wait for signing timeout (2s) + buffer (2s) for blame + restart -----
-    tokio::time::sleep(Duration::from_secs(4)).await;
-
-    // ----- Assert coordinator restarted to input_reg -----
+    // ----- Wait for signing timeout + blame + auto-restart to input_reg -----
+    // WR-05 (Plan 10-02): poll-until-deadline replaces the previous bare
+    // 4s sleep. Predicate: coordinator /info reports round_state=="input_reg"
+    // AND ban_list contains non_signer_utxo. Deadline: 10s (2.5x original
+    // sleep budget). 100ms poll cadence matches round_bootstrap.rs:141.
     let http_client = reqwest::Client::new();
-    let info: shared::protocol::InfoResponse = http_client
-        .get(format!("{}/info", coordinator_url))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let (info, banned) = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let mut last_round_state: Option<String> = None;
+        let mut last_banned: bool;
+        loop {
+            let info_now: Option<shared::protocol::InfoResponse> = match http_client
+                .get(format!("{}/info", coordinator_url))
+                .send()
+                .await
+            {
+                Ok(r) => r.json().await.ok(),
+                Err(_) => None,
+            };
+
+            let now = coordinator::round::blame::now_unix_secs();
+            let banned_now = {
+                let bl = ban_list.read().await;
+                bl.is_banned(&non_signer_utxo, now)
+            };
+
+            if let Some(ref i) = info_now {
+                if i.round_state == "input_reg" && banned_now {
+                    break (i.clone(), banned_now);
+                }
+                last_round_state = Some(i.round_state.clone());
+            }
+            last_banned = banned_now;
+
+            if tokio::time::Instant::now() >= deadline {
+                panic!(
+                    "After blame, coordinator did not restart to input_reg AND ban \
+                     non-signer UTXO within 10s. Last /info round_state: {:?}, last \
+                     ban_list.is_banned({}): {}",
+                    last_round_state, non_signer_utxo, last_banned
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
 
     assert_eq!(
         info.round_state, "input_reg",
@@ -1286,16 +1363,12 @@ async fn round_restart_and_completion_after_blame() {
         info.round_state
     );
 
-    // ----- Assert non-signer is in ban list -----
-    {
-        let bl = ban_list.read().await;
-        let now = coordinator::round::blame::now_unix_secs();
-        assert!(
-            bl.is_banned(&non_signer_utxo, now),
-            "Non-signer UTXO must be banned after blame; utxo={}",
-            non_signer_utxo
-        );
-    }
+    // ----- Non-signer UTXO must be in ban list (already polled above) -----
+    assert!(
+        banned,
+        "Non-signer UTXO must be banned after blame; utxo={}",
+        non_signer_utxo
+    );
 
     // ----- Assert banned UTXO gets HTTP 403 on re-registration -----
     {
@@ -1374,21 +1447,39 @@ async fn round_restart_and_completion_after_blame() {
         handle.await.expect("round 2 client task panicked");
     }
 
-    // ----- Wait for broadcast -----
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // ----- Wait for round-2 broadcast -----
+    // WR-05 (Plan 10-02): poll-until-deadline replaces the previous bare
+    // 2s sleep. Same shape as the first mempool wait above —
+    // predicate: !get_raw_mempool().is_empty(). Deadline: 10s
+    // (5x original sleep budget). 100ms poll cadence.
+    let mempool_txids: Vec<String> = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let rpc_url_c = setup.rpc_url.clone();
+            let rpc_user_c = setup.rpc_user.clone();
+            let rpc_pass_c = setup.rpc_pass.clone();
+            let txids: Vec<String> = tokio::task::spawn_blocking(move || {
+                use corepc_node::client::client_sync::Auth;
+                let auth = Auth::UserPass(rpc_user_c, rpc_pass_c);
+                let client = corepc_node::Client::new_with_auth(&rpc_url_c, auth)
+                    .expect("create rpc client for mempool check");
+                client.get_raw_mempool().expect("get_raw_mempool").0
+            })
+            .await
+            .expect("mempool check spawn_blocking");
 
-    // ----- Assert CoinJoin tx in mempool with 2 denomination outputs -----
-    let rpc_url = setup.rpc_url.clone();
-    let rpc_user = setup.rpc_user.clone();
-    let rpc_pass = setup.rpc_pass.clone();
-
-    let mempool_txids: Vec<String> = tokio::task::spawn_blocking(move || {
-        use corepc_node::client::client_sync::Auth;
-        let auth = Auth::UserPass(rpc_user, rpc_pass);
-        let client = corepc_node::Client::new_with_auth(&rpc_url, auth)
-            .expect("create rpc client for mempool check");
-        client.get_raw_mempool().expect("get_raw_mempool").0
-    }).await.expect("mempool check spawn_blocking");
+            if !txids.is_empty() {
+                break txids;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                panic!(
+                    "Round-2 CoinJoin tx never appeared in mempool within 10s after round 2 \
+                     completed. Last observation: mempool empty."
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
 
     assert!(
         !mempool_txids.is_empty(),
