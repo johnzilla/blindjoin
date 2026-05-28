@@ -320,3 +320,205 @@ pub async fn bootstrap_regtest_bitcoind(exe: String) -> (BitcoindGuard, RpcCreds
     .await
     .expect("regtest bootstrap spawn_blocking panicked")
 }
+
+/// UTXO funding result for an integration test.
+///
+/// Canonical handoff struct between [`fund_regtest`] and consuming tests.
+/// Three P2WPKH UTXOs derived from hardcoded test WIFs (not wallet-owned),
+/// each funded with `(denomination + 50_000 sats fee margin)` via the
+/// regtest wallet's `sendtoaddress` + a 1-confirmation block.
+///
+/// **Why a separate handoff struct (rather than returning a tuple):** the
+/// fields cross the `mod.rs` ↔ `full_round.rs` module boundary and are
+/// named at multiple consumer sites; a struct keeps the call shape stable
+/// even if the funding contract grows future fields (e.g. an additional
+/// change-output outpoint for a 4-participant scenario).
+#[derive(Clone, Debug)]
+pub struct FundedSetup {
+    pub rpc_url: String,
+    pub rpc_user: String,
+    pub rpc_pass: String,
+    /// `(outpoint "txid:vout", value_sats)` per participant.
+    pub utxos: [(String, u64); 3],
+}
+
+/// Spin up a regtest `bitcoind` (via [`bootstrap_regtest_bitcoind`]), derive
+/// 3 P2WPKH addresses from hardcoded test WIFs, send `denomination + 50_000`
+/// sats to each, mine 1 confirmation block, and locate each output's vout
+/// via `get_raw_transaction_verbose` (wallet-agnostic — works against the
+/// Bitcoin Core v30+ descriptor wallets where `listunspent` does NOT return
+/// UTXOs paid to addresses the wallet does not own; see 10-RESEARCH.md
+/// Pitfall 1).
+///
+/// **Single locus** (D-06 promotion) for the funded-regtest setup across
+/// all integration tests that need 3 spendable test UTXOs. Consumers in
+/// `full_round.rs` (and any future plan that needs the same funded setup)
+/// call this once at the top of the test, hold the returned
+/// [`BitcoindGuard`] for the test's full duration, and consume the
+/// returned [`FundedSetup`] for coordinator + client orchestration.
+///
+/// **Caller contract:** Hold the returned [`BitcoindGuard`] for the
+/// test's full duration. Dropping it earlier kills bitcoind mid-test,
+/// breaking subsequent RPC calls. The credentials in the returned
+/// [`FundedSetup`] remain valid only while the guard is alive.
+///
+/// **Schema note (descriptor-wallet gotcha):** Bitcoin Core v30 made
+/// descriptor wallets mandatory. The wallet's `listunspent` only returns
+/// UTXOs the wallet owns (i.e. derived from the wallet's own descriptors)
+/// — UTXOs paid to externally-derived P2WPKH addresses (which the test
+/// WIFs produce) are invisible to it. This helper instead reads each
+/// funding tx directly via `corepc_node::Client::get_raw_transaction_verbose`,
+/// returning a `GetRawTransactionVerbose` whose `.outputs:
+/// Vec<RawTransactionOutput>` carries the vout index, value (BTC), and
+/// `scriptPubKey` for each output. We match the recipient address against
+/// `output.script_pubkey.address` and capture the `(outpoint, value_sats)`
+/// pair. This pattern is wallet-agnostic and works identically against
+/// legacy and descriptor wallets.
+///
+/// **Skip contract — call `require_bitcoind!()` first and forward the
+/// resolved `exe` string.** This helper takes the bitcoind executable path
+/// as a parameter rather than re-resolving it: the macro's `None => return`
+/// expansion only works in a function returning `()`, and this helper
+/// returns `(BitcoindGuard, FundedSetup)`. Forwarding the macro's return
+/// value preserves the single-source-of-truth-per-test-invocation
+/// invariant Phase 9 WR-03 established.
+///
+/// Canonical caller shape:
+/// ```ignore
+/// #[tokio::test]
+/// async fn my_test() {
+///     let exe = require_bitcoind!();                       // skip if missing
+///     let (bitcoind_guard, setup) = fund_regtest(exe).await;
+///     // ... use setup; hold bitcoind_guard for the test's full duration ...
+///     let _bitcoind_guard = bitcoind_guard;
+/// }
+/// ```
+pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
+    // Shared bootstrap: brings up bitcoind, sets stdio to /dev/null,
+    // passes -printtoconsole=0, mines 101 blocks. Returns the bare guard.
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
+
+    let RpcCreds {
+        url: rpc_url,
+        user: rpc_user,
+        pass: rpc_pass,
+    } = creds;
+
+    // Move the bare BitcoindGuard into the closure; return it from the
+    // closure paired with the FundedSetup. This eliminates the
+    // Arc<BitcoindGuard> + Arc::try_unwrap plumbing the file-private
+    // version carried (10-RESEARCH.md Anti-Pattern — IN-02 from Phase 9).
+    tokio::task::spawn_blocking(move || {
+        use std::str::FromStr;
+
+        use bitcoin::{
+            secp256k1::Secp256k1, Address, Amount, CompressedPublicKey, Network, PrivateKey, Txid,
+        };
+
+        let node = bitcoind_guard.node();
+
+        // Hardcoded regtest WIF keys — REGTEST ONLY, zero monetary value.
+        let test_wifs = [
+            "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+            "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+            "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
+        ];
+        let denomination: u64 = 100_000;
+        let fund_sats: u64 = denomination + 50_000; // covers denomination + fee margin
+        let fund_btc = Amount::from_sat(fund_sats);
+
+        let secp = Secp256k1::new();
+
+        // Derive P2WPKH addresses for each test key (regtest). These are
+        // EXTERNAL to the bitcoind regtest wallet — list_unspent will not
+        // see them on v30+ descriptor wallets (see Schema note above).
+        let utxo_addresses: Vec<Address> = test_wifs
+            .iter()
+            .map(|wif| {
+                let sk = PrivateKey::from_wif(wif).expect("valid test WIF");
+                let raw_pk =
+                    bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &sk.inner);
+                let cpk = CompressedPublicKey(raw_pk);
+                Address::p2wpkh(&cpk, Network::Regtest)
+            })
+            .collect();
+
+        // bootstrap_regtest_bitcoind already mined 101 blocks. We only need
+        // a fresh mining address for the post-funding confirmation block.
+        let mine_addr: Address = node.client.new_address().expect("get new address");
+
+        // Fund each test address via sendtoaddress.
+        let mut funding_txids: Vec<String> = Vec::new();
+        for addr in &utxo_addresses {
+            let txid_result = node
+                .client
+                .send_to_address(addr, fund_btc)
+                .expect("send_to_address failed");
+            // SendToAddress is a newtype: SendToAddress(pub String).
+            funding_txids.push(txid_result.0.clone());
+        }
+
+        // Mine 1 confirmation block.
+        node.client
+            .generate_to_address(1, &mine_addr)
+            .expect("generate confirmation block");
+
+        // Wallet-agnostic vout discovery: read each funding tx directly
+        // via get_raw_transaction_verbose, find the output whose
+        // scriptPubKey matches the intended recipient address. Works for
+        // both legacy and descriptor wallets (10-RESEARCH.md Pattern 1 /
+        // Example 4). Does NOT depend on wallet ownership of the
+        // recipient address.
+        let utxos_vec: Vec<(String, u64)> = funding_txids
+            .iter()
+            .zip(utxo_addresses.iter())
+            .map(|(funding_txid_str, recipient_addr)| {
+                let txid =
+                    Txid::from_str(funding_txid_str).expect("valid funding txid hex");
+                let tx = node
+                    .client
+                    .get_raw_transaction_verbose(txid)
+                    .expect("get_raw_transaction_verbose");
+
+                let recipient_str = recipient_addr.to_string();
+                // ScriptPubKey carries an `address: Option<String>` field on v23+
+                // types (re-exported through v30 at feature 30_2). The expected
+                // happy path matches via that field; this is the wallet-agnostic
+                // equivalent of the broken list_unspent + address-string filter.
+                let out = tx
+                    .outputs
+                    .iter()
+                    .find(|o| {
+                        o.script_pubkey.address.as_deref() == Some(&recipient_str)
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "funding tx {} has no output to {}",
+                            funding_txid_str, recipient_str
+                        )
+                    });
+
+                let outpoint = format!("{}:{}", funding_txid_str, out.index);
+                let value_sats = (out.value * 100_000_000.0).round() as u64;
+                (outpoint, value_sats)
+            })
+            .collect();
+
+        assert_eq!(utxos_vec.len(), 3, "must have 3 funded UTXOs");
+
+        let setup = FundedSetup {
+            rpc_url,
+            rpc_user,
+            rpc_pass,
+            utxos: [
+                utxos_vec[0].clone(),
+                utxos_vec[1].clone(),
+                utxos_vec[2].clone(),
+            ],
+        };
+
+        (bitcoind_guard, setup)
+    })
+    .await
+    .expect("fund_regtest spawn_blocking panicked")
+}
