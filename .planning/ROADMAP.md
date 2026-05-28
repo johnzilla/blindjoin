@@ -38,7 +38,7 @@
 **v1.3 Test Infrastructure & Operational Hardening** (in progress)
 
 - [x] **Phase 9: CI integration-test reliability** — Pin bitcoind in CI, eliminate the leaked-process stdout-hang, document the canonical invocation pattern so the integration suite actually runs end-to-end on every PR (completed 2026-05-27)
-- [ ] **Phase 10: full_round.rs decision + execution** — Repair-or-retire the 15-test full_round suite against the pinned bitcoind, with explicit corepc-node version pinning everywhere a typed Client is used
+- [ ] **Phase 10: full_round.rs decision + execution** — Repair-or-retire the 8-test full_round suite (6 carve-outs to repair + 2 already-passing) against the pinned bitcoind, with explicit corepc-node version pinning everywhere a typed Client is used
 
 ## Phase Details
 
@@ -77,7 +77,7 @@ Plans:
 **Requirements**: REPAIR-01, REPAIR-02
 **Success Criteria** (what must be TRUE):
 
-  1. `cargo test --test integration full_round::` either runs all 15 tests to completion against the pinned bitcoind with a PASS verdict on every one, OR `tests/integration/full_round.rs` is deleted from the repo and the TODO.md "Resolved" section references the retirement decision with rationale
+  1. `cargo test --test integration full_round::` either runs all 8 tests (6 carve-outs to repair + 2 already-passing) to completion against the pinned bitcoind with a PASS verdict on every one, OR `tests/integration/full_round.rs` is deleted from the repo and the TODO.md "Resolved" section references the retirement decision with rationale
   2. `grep -r "corepc-node" --include='Cargo.toml'` shows every dependency declaration with an explicit `features = ["NN_M"]` entry — no test in the workspace silently depends on the corepc-node `0_17_2` (Bitcoin Core 0.17.2) default feature
   3. CI's integration-test job remains green on a PR that touches `tests/integration/full_round.rs` (or, if retired, on a PR that proves the retirement landed cleanly with no orphan references to the deleted module)
 

@@ -179,3 +179,34 @@ jobs:
         run: cargo install cargo-audit --locked
       - name: Run audit
         run: cargo audit
+
+  corepc-node-feature-pin-check:
+    name: corepc-node feature pin check
+    runs-on: ubuntu-latest
+    # REPAIR-02 invariant: every `corepc-node = ...` declaration in any
+    # Cargo.toml in the workspace must include an explicit `features = ...`
+    # clause. corepc-node defaults to the silent `0_17_2` (Bitcoin Core 0.17.2,
+    # released 2018) RPC schema if no version feature is selected; this gate
+    # catches future additions that forget the features clause.
+    #
+    # Pattern (verified 2026-05-27 against the current tree — produces zero
+    # matches, exit 0):
+    #   grep -rEn 'corepc-node\s*='        — every declaration line
+    #   | grep -v 'features\s*='           — drop the well-formed ones
+    #   | grep -v '^[^:]*:[0-9]*:#'        — drop commented-out lines
+    # Multi-line table form (`corepc-node = {` on one line, `features =` on a
+    # separate line) is a known false-positive shape — maintainers see the
+    # failure and either single-line the declaration or extend the regex.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Enforce explicit corepc-node feature
+        run: |
+          set -eu
+          if grep -rEn 'corepc-node\s*=' --include='Cargo.toml' . \
+             | grep -v 'features\s*=' \
+             | grep -v '^[^:]*:[0-9]*:#'; then
+            echo "ERROR: corepc-node declaration(s) above lack an explicit 'features = [...]' clause." >&2
+            echo "       Without a version feature, corepc-node uses the Bitcoin Core 0.17.2 (2018) RPC schema." >&2
+            echo "       Add 'features = [\"30_2\"]' (or whatever version pin is appropriate) to each declaration." >&2
+            exit 1
+          fi
