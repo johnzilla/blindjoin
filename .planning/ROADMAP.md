@@ -124,3 +124,13 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 11-02-PLAN.md — Six-test unmute cycle in tests/integration/full_round.rs (canonical-first: full_round_three_clients; then file order: blame_non_signer_timeout, adversarial_replay_token, adversarial_invalid_utxo, adversarial_wrong_denomination, round_restart_and_completion_after_blame); one bisectable commit per unmute with CD-1 PASS-proof body; D-08 escape-valve halts on canonical-first failure or any 4th orthogonal blocker
+
+### Phase 12: Repair client/src/wallet.rs:260 — bdk_wallet 2.3 SignOptions requires non_witness_utxo for segwit signing. Two repair options surfaced in 11-02-SUMMARY: (A) SignOptions { trust_witness_utxo: true, ..default() } — minimal, contextually safe since client populates witness_utxo from its own trusted regtest RPC; (B) populate non_witness_utxo from RPC — heavier, full BIP-143 compliance. After the wallet repair lands, Plan 11-02 six unmute commits become executable verbatim (canonical-first order D-05, CD-1 PASS-proof body stamps). Closes the 4th orthogonal blocker that halted Phase 11 Plan 11-02 per D-08. Provides the prerequisite for re-executing Plan 11-02 and closing REPAIR-01.
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 11
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 12 to break down)

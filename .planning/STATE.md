@@ -88,3 +88,4 @@ Last activity: 2026-05-28 -- Phase 11 planning complete
 ### Roadmap Evolution
 
 - Phase 11 added: coordinator RSA pubkey encoding + full_round.rs unmute completion
+- Phase 12 added: repair client/src/wallet.rs:260 bdk_wallet 2.3 non_witness_utxo segwit signing — unblocks Plan 11-02 unmute cycle (D-08 escape-valve discovery)
