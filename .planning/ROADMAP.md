@@ -138,10 +138,16 @@ Plans:
 
 ### Phase 13: client/src/wallet.rs wire-format fix + Plan 12-02 unmute cycle re-execution
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Close REPAIR-01 locally by fixing the client wire-format encoder at `client/src/wallet.rs:279-281` (raw DER -> consensus-serialized `bitcoin::Witness`) and re-executing the six-test unmute cycle from Plan 12-02 verbatim against pinned brew bitcoind v31. All 8 `full_round::*` tests pass.
+**Requirements**: REPAIR-01 (closes locally in Plan 13-02 per D-04/D-14; REPAIR-02 closure remains tied to combined Phase 11+12+13 PR observation per Phase 11 D-11)
 **Depends on:** Phase 12
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 13 to break down)
+**Wave 1**
+
+- [ ] 13-01-PLAN.md -- wire-format fix (client/src/wallet.rs: raw DER -> bitcoin::Witness consensus serialization) -- single atomic commit with D-07 canonical-first PASS-proof in body
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 13-02-PLAN.md -- six-test unmute cycle (canonical-first then file order; three-SHA CD-1 bodies; D-14 closeout doc reconciliation)
