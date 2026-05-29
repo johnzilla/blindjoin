@@ -30,27 +30,27 @@ async fn main() -> anyhow::Result<()> {
     // --generate-wallet: print descriptors and exit (no round participation needed)
     if cfg.generate_wallet {
         let utxo = cfg.utxo.as_deref().unwrap_or("0000000000000000000000000000000000000000000000000000000000000000:0");
-        let utxo_value = cfg.utxo_value_sats.unwrap_or(0);
-        ClientWallet::generate(utxo, utxo_value, network)?;
+        ClientWallet::generate(utxo, network)?;
         std::process::exit(0);
     }
 
-    // Require --utxo and --utxo-value-sats for round participation
+    // Require --utxo for round participation. --utxo-value-sats is no longer
+    // required: the coordinator queries Bitcoin Core's gettxout at registration
+    // and supplies the real value via the PSBT's witness_utxo. The CLI flag is
+    // accepted for backward compat but ignored.
     let utxo = cfg.utxo.as_deref()
         .ok_or_else(|| anyhow::anyhow!("--utxo is required for round participation"))?;
-    let utxo_value_sats = cfg.utxo_value_sats
-        .ok_or_else(|| anyhow::anyhow!("--utxo-value-sats is required for round participation"))?;
 
     let wallet = if let Some(descriptor) = cfg.descriptor.as_deref() {
         // --descriptor path: requires --utxo-address
         let utxo_address = cfg.utxo_address.as_deref()
             .ok_or_else(|| anyhow::anyhow!("--utxo-address is required when using --descriptor"))?;
-        ClientWallet::from_descriptor(descriptor, utxo, utxo_value_sats, utxo_address, network)?
+        ClientWallet::from_descriptor(descriptor, utxo, utxo_address, network)?
     } else {
         // WIF path (backward compat, default for testing)
         let wif = cfg.utxo_wif.as_deref()
             .ok_or_else(|| anyhow::anyhow!("--utxo-wif is required when not using --descriptor or --generate-wallet"))?;
-        ClientWallet::from_wif(wif, utxo, utxo_value_sats, network)?
+        ClientWallet::from_wif(wif, utxo, network)?
     };
 
     // CLI-01: If --pkarr-pubkey is provided, resolve coordinator URL from DHT.

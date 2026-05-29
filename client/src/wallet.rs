@@ -18,7 +18,6 @@ pub struct BdkClientWallet {
     #[allow(dead_code)]
     pub network: Network,
     pub utxo_outpoint: OutPoint,
-    pub utxo_value_sats: u64,
     /// The P2WPKH script_pubkey controlling the UTXO (needed for BIP-322 and PSBT signing).
     utxo_script_pubkey: ScriptBuf,
     /// The WIF key string, stored for secret_key_for_signing (WIF wallets only).
@@ -34,7 +33,6 @@ impl BdkClientWallet {
     pub fn from_wif(
         wif: &str,
         utxo_outpoint_str: &str,
-        utxo_value_sats: u64,
         network: Network,
     ) -> Result<Self> {
         let secret_key = bitcoin::PrivateKey::from_wif(wif)?;
@@ -63,7 +61,6 @@ impl BdkClientWallet {
         Ok(Self {
             network,
             utxo_outpoint: outpoint,
-            utxo_value_sats,
             utxo_script_pubkey,
             wif_key: Some(wif.to_string()),
             inner,
@@ -78,7 +75,6 @@ impl BdkClientWallet {
     pub fn from_descriptor(
         external_desc: &str,
         utxo_outpoint_str: &str,
-        utxo_value_sats: u64,
         utxo_address: &str,
         network: Network,
     ) -> Result<Self> {
@@ -107,7 +103,6 @@ impl BdkClientWallet {
         Ok(Self {
             network,
             utxo_outpoint: outpoint,
-            utxo_value_sats,
             utxo_script_pubkey,
             wif_key: None,
             inner,
@@ -121,7 +116,6 @@ impl BdkClientWallet {
     /// Returns a wallet ready for immediate use in the current round.
     pub fn generate(
         utxo_outpoint_str: &str,
-        utxo_value_sats: u64,
         network: Network,
     ) -> Result<Self> {
         use bdk_wallet::keys::GeneratableKey;
@@ -151,6 +145,12 @@ impl BdkClientWallet {
             .create_wallet_no_persist()
             .map_err(|e| anyhow!("Failed to create bdk wallet from generated key: {e}"))?;
 
+        // The first external address (m/84'/0'/0'/0/0) is the only address this
+        // wallet can sign for in a round when called via generate(). Surface it
+        // prominently so the user funds the right place — funds sent to any other
+        // derivation will not produce valid signatures.
+        let first_address = inner.peek_address(KeychainKind::External, 0).address;
+
         // T-03-04: print prominent warning and write descriptors.txt with restricted permissions
         println!();
         println!("=============================================================");
@@ -169,6 +169,18 @@ impl BdkClientWallet {
         println!("these descriptors can spend all funds derived from this key.");
         println!("=============================================================");
         println!();
+        println!("=============================================================");
+        println!("  FUND THIS ADDRESS TO PARTICIPATE IN A ROUND:");
+        println!("=============================================================");
+        println!("  {}", first_address);
+        println!();
+        println!("  (BIP-84 path: m/84'/0'/0'/0/0)");
+        println!();
+        println!("This is the wallet's first external address. The signer will");
+        println!("ONLY produce valid signatures for a UTXO at this address.");
+        println!("Funds sent to any other derivation will fail to sign.");
+        println!("=============================================================");
+        println!();
 
         // Write to descriptors.txt with 0600 permissions
         let content = format!(
@@ -177,8 +189,9 @@ impl BdkClientWallet {
              # Anyone with this file can spend your funds. Keep it secure.\n\n\
              mnemonic={}\n\
              external_descriptor={}\n\
-             internal_descriptor={}\n",
-            mnemonic_str, external_desc, internal_desc
+             internal_descriptor={}\n\
+             fund_address={}\n",
+            mnemonic_str, external_desc, internal_desc, first_address
         );
         std::fs::write("descriptors.txt", &content)?;
         #[cfg(unix)]
@@ -189,15 +202,11 @@ impl BdkClientWallet {
         println!("Descriptors also written to: descriptors.txt (permissions: 0600)");
 
         let outpoint = parse_outpoint(utxo_outpoint_str)?;
-
-        // Use the first external address as the utxo_script_pubkey placeholder.
-        // In production, the user would provide --utxo-address for their actual UTXO script.
-        let utxo_script_pubkey = inner.peek_address(KeychainKind::External, 0).address.script_pubkey();
+        let utxo_script_pubkey = first_address.script_pubkey();
 
         Ok(Self {
             network,
             utxo_outpoint: outpoint,
-            utxo_value_sats,
             utxo_script_pubkey,
             wif_key: None,
             inner,

@@ -11,7 +11,10 @@ pub struct ClientConfig {
     #[arg(long, env = "BLINDJOIN_UTXO")]
     pub utxo: Option<String>,
 
-    /// UTXO value in satoshis. Required for round participation.
+    /// UTXO value in satoshis. **Deprecated:** the coordinator now queries Bitcoin
+    /// Core's gettxout at input registration and supplies the real value via the
+    /// PSBT's witness_utxo. The CLI flag is accepted for backward compat but is
+    /// ignored; safe to remove from scripts.
     #[arg(long, env = "BLINDJOIN_UTXO_VALUE_SATS")]
     pub utxo_value_sats: Option<u64>,
 
@@ -32,6 +35,12 @@ pub struct ClientConfig {
 
     /// Generate a new BIP-84 wallet, print descriptors to stdout, write descriptors.txt, and exit.
     /// When this flag is set, --utxo, --utxo-value-sats, and --utxo-wif are not required.
+    ///
+    /// Important: if you later use this wallet to participate in a round (via --descriptor),
+    /// the UTXO you register MUST be at the wallet's first external address
+    /// (derivation path m/84'/0'/0'/0/0). Funds sent to a different derivation
+    /// will not produce valid signatures. The generate command prints the
+    /// exact address to fund.
     #[arg(long)]
     pub generate_wallet: bool,
 

@@ -51,10 +51,10 @@ async fn main() -> Result<()> {
 
     let utxo = std::env::var("BLINDJOIN_UTXO")
         .context("BLINDJOIN_UTXO env var required (format: txid:vout)")?;
-    let utxo_value_sats: u64 = std::env::var("BLINDJOIN_UTXO_VALUE_SATS")
-        .context("BLINDJOIN_UTXO_VALUE_SATS env var required")?
-        .parse()
-        .context("BLINDJOIN_UTXO_VALUE_SATS must be a u64")?;
+    // BLINDJOIN_UTXO_VALUE_SATS no longer required: coordinator queries gettxout
+    // and supplies the real value via the PSBT's witness_utxo. Env var is read
+    // for backward compat but ignored.
+    let _ = std::env::var("BLINDJOIN_UTXO_VALUE_SATS");
     let utxo_wif = std::env::var("BLINDJOIN_UTXO_WIF")
         .context("BLINDJOIN_UTXO_WIF env var required")?;
 
@@ -125,7 +125,7 @@ async fn main() -> Result<()> {
         );
 
         // Build wallet for this round. Re-created each loop to handle UTXO state reset.
-        let wallet = match ClientWallet::from_wif(&utxo_wif, &utxo, utxo_value_sats, network) {
+        let wallet = match ClientWallet::from_wif(&utxo_wif, &utxo, network) {
             Ok(w) => w,
             Err(e) => {
                 error!(error = %e, "Failed to build wallet from WIF");

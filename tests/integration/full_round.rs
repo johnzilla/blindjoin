@@ -203,7 +203,7 @@ async fn full_round_three_clients() {
         .map(|(i, wif)| {
             let url = coordinator_url.clone();
             let wif = wif.to_string();
-            let (utxo_str, utxo_value) = setup.utxos[i].clone();
+            let (utxo_str, _utxo_value) = setup.utxos[i].clone();
 
             tokio::spawn(async move {
                 use bitcoin::Network;
@@ -212,7 +212,7 @@ async fn full_round_three_clients() {
                 use client::wallet::ClientWallet;
 
                 let wallet =
-                    ClientWallet::from_wif(&wif, &utxo_str, utxo_value, Network::Regtest)
+                    ClientWallet::from_wif(&wif, &utxo_str, Network::Regtest)
                         .expect("ClientWallet creation");
                 let coordinator_client = CoordinatorClient::new(url);
 
@@ -494,7 +494,7 @@ async fn blame_non_signer_timeout() {
     let client_handles: Vec<_> = test_wifs.iter().enumerate().map(|(i, wif)| {
         let url = coordinator_url.clone();
         let wif = wif.to_string();
-        let (utxo_str, utxo_value) = setup.utxos[i].clone();
+        let (utxo_str, _utxo_value) = setup.utxos[i].clone();
         let should_sign = i != 0; // client 0 is the non-signer
 
         tokio::spawn(async move {
@@ -503,7 +503,7 @@ async fn blame_non_signer_timeout() {
             use client::round;
             use client::wallet::ClientWallet;
 
-            let wallet = ClientWallet::from_wif(&wif, &utxo_str, utxo_value, Network::Regtest)
+            let wallet = ClientWallet::from_wif(&wif, &utxo_str, Network::Regtest)
                 .expect("ClientWallet creation");
             let coordinator_client = CoordinatorClient::new(url);
 
@@ -782,7 +782,7 @@ async fn adversarial_replay_token() {
         use client::round;
         use client::wallet::ClientWallet;
 
-        let wallet = ClientWallet::from_wif(wif, &setup.utxos[i].0, setup.utxos[i].1, Network::Regtest)
+        let wallet = ClientWallet::from_wif(wif, &setup.utxos[i].0, Network::Regtest)
             .expect("ClientWallet creation");
         let coordinator_client = CoordinatorClient::new(coordinator_url.clone());
 
@@ -817,7 +817,7 @@ async fn adversarial_replay_token() {
         use client::wallet::ClientWallet;
 
         let wallet = ClientWallet::from_wif(
-            test_wifs[0], &setup.utxos[0].0, setup.utxos[0].1, Network::Regtest
+            test_wifs[0], &setup.utxos[0].0, Network::Regtest
         ).expect("ClientWallet creation");
         let coordinator_client = CoordinatorClient::new(coordinator_url.clone());
 
@@ -961,7 +961,7 @@ async fn adversarial_wrong_denomination() {
         use client::round;
         use client::wallet::ClientWallet;
 
-        let wallet = ClientWallet::from_wif(wif, &setup.utxos[i].0, setup.utxos[i].1, Network::Regtest)
+        let wallet = ClientWallet::from_wif(wif, &setup.utxos[i].0, Network::Regtest)
             .expect("ClientWallet creation");
         let coordinator_client = CoordinatorClient::new(coordinator_url.clone());
 
@@ -1284,7 +1284,7 @@ async fn round_restart_and_completion_after_blame() {
     let client_handles: Vec<_> = test_wifs.iter().enumerate().map(|(i, wif)| {
         let url = coordinator_url.clone();
         let wif = wif.to_string();
-        let (utxo_str, utxo_value) = setup.utxos[i].clone();
+        let (utxo_str, _utxo_value) = setup.utxos[i].clone();
         let should_sign = i != 0;
 
         tokio::spawn(async move {
@@ -1293,7 +1293,7 @@ async fn round_restart_and_completion_after_blame() {
             use client::round;
             use client::wallet::ClientWallet;
 
-            let wallet = ClientWallet::from_wif(&wif, &utxo_str, utxo_value, Network::Regtest)
+            let wallet = ClientWallet::from_wif(&wif, &utxo_str, Network::Regtest)
                 .expect("ClientWallet creation");
             let coordinator_client = CoordinatorClient::new(url);
 
@@ -1423,7 +1423,7 @@ async fn round_restart_and_completion_after_blame() {
         let i = idx + 1; // client index (1 or 2)
         let url = coordinator_url.clone();
         let wif = wif.to_string();
-        let (utxo_str, utxo_value) = setup.utxos[i].clone();
+        let (utxo_str, _utxo_value) = setup.utxos[i].clone();
 
         tokio::spawn(async move {
             use bitcoin::Network;
@@ -1431,7 +1431,7 @@ async fn round_restart_and_completion_after_blame() {
             use client::round;
             use client::wallet::ClientWallet;
 
-            let wallet = ClientWallet::from_wif(&wif, &utxo_str, utxo_value, Network::Regtest)
+            let wallet = ClientWallet::from_wif(&wif, &utxo_str, Network::Regtest)
                 .expect("ClientWallet creation");
             let coordinator_client = CoordinatorClient::new(url);
 
