@@ -5,8 +5,8 @@ milestone_name: Test Infrastructure & Operational Hardening
 current_plan: 1
 status: executing
 stopped_at: Phase 13 context gathered
-last_updated: "2026-05-29T01:01:32.142Z"
-last_activity: 2026-05-29 -- Phase 13 execution started
+last_updated: "2026-05-29T00:47:39.637Z"
+last_activity: 2026-05-29 -- Phase 13 planning complete
 progress:
   total_phases: 5
   completed_phases: 4
@@ -19,10 +19,10 @@ progress:
 
 ## Current Position
 
-Phase: 13 (client-src-wallet-rs-wire-format-fix-plan-12-02-unmute-cycle) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 13
-Last activity: 2026-05-29 -- Phase 13 execution started
+Phase: 12 (repair-client-src-wallet-rs-260-bdk-wallet-2-3-signoptions-r) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-05-29 -- Phase 13 planning complete
 
 ## Progress
 
@@ -90,5 +90,3 @@ Last activity: 2026-05-29 -- Phase 13 execution started
 - Phase 11 added: coordinator RSA pubkey encoding + full_round.rs unmute completion
 - Phase 12 added: repair client/src/wallet.rs:260 bdk_wallet 2.3 non_witness_utxo segwit signing — unblocks Plan 11-02 unmute cycle (D-08 escape-valve discovery)
 - Phase 13 added: client/src/wallet.rs wire-format fix + Plan 12-02 unmute cycle re-execution — absorbs Phase 12 Plan 02 D-11 halt (5th orthogonal blocker: HTTP 400 /round/sign wire format mismatch)
-- Phase 13 halted (Plan 13-01 D-07 sanity gate FAILED at b21744a): wire-format fix is necessary but NOT sufficient — HTTP 400 from /round/sign persists with identical signature as Plan 12-02. 6th orthogonal blocker surfaced downstream of coordinator/src/round/signing.rs:160. No fix(13): commit landed; working tree reverted.
-- Phase 14 added: coordinator BroadcastRejected error-message enrichment + Plan 13-01 wire-format fix + downstream repair + six-unmute cycle re-execution — absorbs Phase 13 Plan 13-01 D-07/D-12 halt (6th orthogonal blocker, root cause invisible without coordinator error enrichment)

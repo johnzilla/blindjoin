@@ -151,13 +151,3 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 13-02-PLAN.md -- six-test unmute cycle (canonical-first then file order; three-SHA CD-1 bodies; D-14 closeout doc reconciliation)
-
-### Phase 14: coordinator BroadcastRejected error-message enrichment + Plan 13-01 wire-format fix + downstream repair + six-unmute cycle re-execution
-
-**Goal:** Resolve the 6th orthogonal blocker downstream of `coordinator/src/round/signing.rs:160` surfaced by Phase 13 Plan 13-01's D-07 sanity gate (HTTP 400 from `/round/sign` persists even after the canonical wire-format fix). Land coordinator error-message enrichment (1-3 LOC, reconsidering Phase 13 D-03 deferral) + the wire-format fix + the downstream repair the enrichment surfaces, then re-execute Plan 11-02-PLAN.md's six-unmute cycle with four-SHA commit bodies (Phase 11 RSA `cc20f6f` + Phase 12 wallet-trust `0bbcf3c` + Plan 14-02 wire-format + Plan 14-02 downstream-fix). REPAIR-01 closes locally when all 8 `full_round::*` tests are green against pinned brew bitcoind v31. **Seed:** `.planning/phases/13-client-src-wallet-rs-wire-format-fix-plan-12-02-unmute-cycle/13-01-SUMMARY.md`.
-**Requirements**: REPAIR-01 (closes locally in Plan 14-03; REPAIR-02 closure remains tied to combined Phase 11+12+13+14 PR observation per Phase 11 D-11)
-**Depends on:** Phase 13
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd-plan-phase 14 to break down)
