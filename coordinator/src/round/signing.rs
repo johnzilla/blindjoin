@@ -161,10 +161,15 @@ async fn assemble_and_broadcast(
                 Ok(witness) => {
                     psbt.inputs[i].final_script_witness = Some(witness);
                 }
-                Err(_) => {
+                Err(e) => {
+                    let preview: String = sig_bytes.iter().take(16)
+                        .map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join("");
                     return Err(ApiError {
                         code: ErrorCode::BroadcastRejected,
-                        message: format!("Invalid witness data for input {}", i),
+                        message: format!(
+                            "Invalid witness data for input {} (len={}, prefix={}, err={})",
+                            i, sig_bytes.len(), preview, e
+                        ),
                         round_id: Some(round_id_str.to_string()),
                     });
                 }

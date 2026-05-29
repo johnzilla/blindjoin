@@ -93,11 +93,15 @@ impl CoordinatorClient {
     }
 
     pub async fn post_sign(&self, req: SignRequest) -> Result<()> {
-        self.alice_client
+        let resp = self.alice_client
             .post(format!("{}/round/sign", self.base_url))
             .json(&req)
-            .send().await?
-            .error_for_status()?;
+            .send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("POST /round/sign failed: {} — body: {}", status, body);
+        }
         Ok(())
     }
 
