@@ -92,6 +92,23 @@ pub async fn post_input(
             "Invalid utxo_outpoint format (expected txid:vout)", None)
     })?;
 
+    // Ban check — fast rejection before any token decoding or RPC (T-02-01).
+    // Must run before blinded_token size/decode so a banned UTXO with a malformed
+    // token still gets a clear UTXO_BANNED response rather than masking the ban.
+    // No UTXO identifiers are logged here (PRIV-02).
+    {
+        let ban_guard = state.ban_list.read().await;
+        let now = crate::round::blame::now_unix_secs();
+        if ban_guard.is_banned(&req.utxo_outpoint, now) {
+            return Err(api_error(
+                StatusCode::FORBIDDEN,
+                "UTXO_BANNED",
+                "UTXO is temporarily banned",
+                None,
+            ));
+        }
+    }
+
     // Decode base64 blinded token
     let blinded_token_bytes = B64.decode(&req.blinded_token).map_err(|_| {
         api_error(StatusCode::BAD_REQUEST, "INVALID_TOKEN",
@@ -113,22 +130,6 @@ pub async fn post_input(
             ),
             None,
         ));
-    }
-
-    // Ban check — fast rejection before acquiring round write lock (T-02-01).
-    // BanList::is_banned hashes the outpoint internally; pass the raw string.
-    // No UTXO identifiers are logged here (PRIV-02).
-    {
-        let ban_guard = state.ban_list.read().await;
-        let now = crate::round::blame::now_unix_secs();
-        if ban_guard.is_banned(&req.utxo_outpoint, now) {
-            return Err(api_error(
-                StatusCode::FORBIDDEN,
-                "UTXO_BANNED",
-                "UTXO is temporarily banned",
-                None,
-            ));
-        }
     }
 
     // Decode ownership proof for pre-lock UTXO validation (AVAIL-01)
