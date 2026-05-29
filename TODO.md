@@ -1,5 +1,24 @@
 # TODO
 
+## Resolved 2026-05-28
+
+- [x] **REPAIR-01: full_round.rs carve-outs repaired.** All 8 `full_round::*`
+  end-to-end integration tests now pass locally against pinned brew bitcoind
+  v31.0.0; the six `#[ignore = "TODO(Phase-10)"]` markers have been removed.
+  Root cause was NOT the originally-hypothesized `listunspent`/RPC schema drift —
+  it was a wire-format mismatch in client/server witness encoding:
+  `BdkClientWallet::sign_psbt_input` returned the raw first stack item from
+  `final_script_witness.nth(0)` (DER signature + sighash byte), but the
+  coordinator's `assemble_and_broadcast` decoded that wire payload as a
+  `bitcoin::consensus::deserialize::<bitcoin::Witness>` — incompatible shapes.
+  Fix: client consensus-serializes the whole 2-item P2WPKH witness stack
+  (`[sig, pubkey]`) before transmission. Two adjacent fixes shipped in the
+  same cycle: `post_input` now runs the ban check before blinded_token size
+  validation (banned UTXOs reliably get HTTP 403 instead of 400), and the
+  blame-test helper arms an input_reg→output_reg timer on the restart path
+  so Round 2's partial-quorum case advances via timeout rather than hanging.
+  See commits `39a2d0a`, `8538238`, `0780935`, `489646f`.
+
 ## Resolved 2026-05-27
 
 - [x] **v1.3 Phase 9: CI integration-test reliability — SHIPPED.** All five

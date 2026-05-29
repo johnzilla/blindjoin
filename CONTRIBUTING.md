@@ -36,26 +36,14 @@ BLINDJOIN_REQUIRE_BITCOIND=1 \
 
 The `-- --nocapture` flag lets you see `eprintln!` output and `tracing` events inline. Drop it once the test is passing for cleaner output.
 
-### Running ignored (Phase-10) tests locally
-
-Six tests in `tests/integration/full_round.rs` carry `#[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction — see TODO.md"]` markers (per Phase 9 decision D-10). These tests do **not** run in CI and do **not** run with the default canonical command above. Phase 10 will repair them. If you are iterating on those tests locally as part of Phase-10 work, add `--include-ignored`:
-
-```bash
-BLINDJOIN_REQUIRE_BITCOIND=1 \
-  BITCOIND_EXE=$(brew --prefix)/bin/bitcoind \
-  cargo test --test integration -- --include-ignored 2>&1 \
-  | tee target/integration-test.log
-```
-
-Most of the six carve-out tests will fail until Phase 10 lands the RPC-schema repairs — that is the expected state, not a regression.
-
 ## Interpreting output
 
 Cargo's test output uses a small set of literal strings. The table below maps the strings you'll see in your terminal (or in `target/integration-test.log`) to a verdict and the next step.
 
 | Output snippet | Verdict | Next step |
 |---|---|---|
-| `test result: ok. N passed; 0 failed; M ignored` | Green | The `M ignored` count is expected — those are Phase-10 carve-outs with `#[ignore = "TODO(Phase-10): ..."]` markers in `tests/integration/full_round.rs`. Nothing to do. |
+| `test result: ok. N passed; 0 failed; 0 ignored` | Green | All tests passed. |
+| `test result: ok. N passed; 0 failed; M ignored` (M > 0) | Investigate | Some tests were skipped via `#[ignore]`. Grep `tests/` for `#[ignore` to see which and why. The repo currently ships with no ignored tests; an `M ignored` count means a future ignore-marker was added and may need attention. |
 | `test result: FAILED. N failed` | Red | Open `target/integration-test.log` and grep for `panicked at` or `FAILED` to find the first failure. Re-run the failing test in isolation with the single-test command above and `-- --nocapture`. |
 | `panicked at 'bitcoind required but not found'` | Red | `BLINDJOIN_REQUIRE_BITCOIND=1` is set but `BITCOIND_EXE` points to a missing or non-executable binary. Run `ls -l $BITCOIND_EXE` and `$BITCOIND_EXE --version` to verify the path resolves and runs. |
 | `bitcoind not found (...), skipping (local-dev mode; ...)` | Skipped | `BLINDJOIN_REQUIRE_BITCOIND` is unset and `corepc-node` could not locate `bitcoind` on its own. Tests skipped gracefully — not an error in local-dev mode. To match CI's behavior (panic instead of skip), set `BLINDJOIN_REQUIRE_BITCOIND=1`. |
