@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
 current_plan: "none — Phase 14 awaiting `/gsd:plan-phase 14`"
-status: Roadmap drafted; phases 14-18 defined; awaiting plan-phase entry
+status: executing
 stopped_at: Phase 14 context gathered
-last_updated: "2026-05-29T22:29:43.367Z"
-last_activity: 2026-05-29 — v1.4 roadmap drafted (Phases 14-18) following the SUMMARY.md shared → coordinator → client → integration build order
+last_updated: "2026-05-29T23:07:21.392Z"
+last_activity: 2026-05-29 -- Phase 14 planning complete
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
+  total_plans: 3
   completed_plans: 0
   percent: 0
 ---
@@ -21,8 +21,8 @@ progress:
 
 Phase: 14 — Sprint-0 Spikes + Discuss-Phase Decisions (not started; awaiting `/gsd:plan-phase 14`)
 Plan: —
-Status: Roadmap drafted; phases 14-18 defined; awaiting plan-phase entry
-Last activity: 2026-05-29 — v1.4 roadmap drafted (Phases 14-18) following the SUMMARY.md shared → coordinator → client → integration build order
+Status: Ready to execute
+Last activity: 2026-05-29 -- Phase 14 planning complete
 
 ## Project Reference
 
