@@ -1,300 +1,291 @@
-# Domain Pitfalls: CoinJoin Coordinator
+# PITFALLS — v1.4 BIP-322 Multi-Script Support
 
-**Domain:** CoinJoin coordinator with RSA blind signatures, Tor hidden service, DHT discovery
-**Researched:** 2026-04-07
-**Confidence:** HIGH (multiple confirmed real-world incidents, protocol research, post-mortems)
+**Domain:** Adding P2TR + P2SH-P2WPKH BIP-322 Simple ownership proof support to existing single-script (P2WPKH-only) CoinJoin coordinator + client
+**Researched:** 2026-05-29
+**Overall confidence:** MEDIUM-HIGH (HIGH on protocol/spec; MEDIUM on crate version specifics; LOW on bdk_wallet 2.3+ minor-version API churn)
 
----
-
-## Critical Pitfalls
-
-Mistakes that cause rewrites, total anonymity set collapse, or legal exposure.
+This document scopes pitfalls to **v1.4 multi-script-type integration**. v1.0 cross-cutting CoinJoin pitfalls (tagging attack, blame-shrinkage, denomination fingerprinting, etc.) remain in force and live in git history at the prior `.planning/research/PITFALLS.md` baseline — this v1.4 version is a delta.
 
 ---
 
-### Pitfall 1: Per-Participant Unique RSA Public Keys (Tagging Attack)
+## CRITICAL
 
-**What goes wrong:** The coordinator issues a different RSA public key to each participant during input registration. When Bob presents his blinded token at output registration, the coordinator matches the unblinding against the unique key it gave that Alice, directly linking input to output. All anonymity is destroyed. This attack is passive from the participant's perspective — nothing looks wrong.
+### V1.4-CRIT-01: Address-Type Spoofing via Client-Claimed Script Type
 
-**Why it happens:** The natural implementation is to generate one RSA key per round. Developers miss that the coordinator controls key distribution and can trivially differentiate keys per-session without client detection.
+**What goes wrong:** Client submits `ownership_proof` declaring "this is a P2TR witness," but the UTXO at `txid:vout` is actually P2WPKH (or vice versa). Coordinator dispatches to the P2TR verifier whose semantics differ (e.g. P2TR uses x-only pubkeys via taproot tweaking, not HASH160 binding), so a P2TR verifier handed a P2WPKH-shaped witness can produce false positives. Worst case: attacker who controls one UTXO claims a verifier that gives them ownership of a different UTXO.
 
-**Consequences:** Complete deanonymization of every participant in every round, with zero warning signs visible to users. The attack is silent.
+**Why it happens:** Natural API is `OwnershipProof { witness_stack, script_type: ScriptType }` — and trusting the client field is one line shorter than re-deriving from the on-chain UTXO.
 
-**Real-world incident:** This exact vulnerability was independently discovered in both Ashigaru Whirlpool (June 2025, reported by "nothingmuch") and was exploitable by malicious WabiSabi coordinators via the credential issuer tagging attack (GingerWallet Discussion #116, December 2024). The WabiSabi version affected Wasabi Wallet ≤ 2.2.1.0, GingerWallet ≤ 2.0.13, and BTCPay Server coinjoin plugin ≤ 1.0.101.0.
+**Precedent:** Generic verification-bypass class. Same shape as JWT `alg=none` and PKCS#1-v1.5 / RSA-PSS dispatch bugs.
+
+**Prevention (LOAD-BEARING):**
+- **Script type MUST be derived from `txout.script_pubkey`, never accepted from the client.** Dispatch: `let script_type = classify(&txout.script_pubkey)?; verify_for(script_type, &ownership_proof, &message)`.
+- Single enum `ScriptType { P2WPKH, P2TR, P2SH_P2WPKH }` from `classify(spk) -> Result<ScriptType, UnsupportedScriptType>` with **no fallthrough default arm**.
+- `OwnershipProof` wire type carries ONLY witness stack bytes (and any annex/script-path data), never a script-type tag.
+- Property test: feed P2WPKH witness against P2TR script_pubkey — verifier MUST reject. Repeat for all 9 (script_pubkey × witness-shape) combinations.
+
+**Detection in code review:**
+- Any `match ownership_proof.script_type` block in coordinator → reject.
+- Any wire-type field that influences verifier dispatch → reject.
+- A `Bip322Verifier` trait with `verify(witness, message)` (no `script_pubkey`) → can be misdispatched.
+
+**Phase:** Plan-phase per-script-type verifier task. Discuss-phase locks in "script type is derived, not declared" as non-negotiable invariant.
+
+---
+
+### V1.4-CRIT-02: Sighash Silent Failures Across Script Types
+
+**What goes wrong:** Each script type uses a structurally different sighash:
+
+- **P2WPKH** (BIP-143 segwit v0): `SighashCache::p2wpkh_signature_hash(index, script_code, value, sighash_type)` where `script_code` is the *implicit* P2PKH scriptCode `OP_DUP OP_HASH160 <pkh> OP_EQUALVERIFY OP_CHECKSIG`, not the raw P2WPKH script.
+- **P2SH-P2WPKH** (BIP-143 wrapped): same sighash *math* as P2WPKH, but witness program's pubkey is wrapped in `OP_0 <pkh>` redeemScript that must match `HASH160(redeemScript) == p2sh hash`. Sighash uses the *underlying P2WPKH* scriptCode, not the P2SH script_pubkey.
+- **P2TR key-path** (BIP-341 schnorr): `SighashCache::taproot_key_spend_signature_hash(index, &prevouts, sighash_type)` — fundamentally different (tagged hash `TapSighash`, sighash epoch byte, all prevouts required). Schnorr (BIP-340) not ECDSA. SIGHASH_DEFAULT (0x00) is the 64-byte form; SIGHASH_ALL (0x01) is the 65-byte form.
+
+A verifier using the wrong sighash routine produces a "valid" hash that doesn't match what the network computes. Test vectors generated by the same wrong code pass; only on-chain anchor or third-party implementation (Bitcoin Core `verifymessage`, `ACken2/bip322-js`) surfaces the bug.
+
+**v1.0 → v1.4 carry-forward of the v1.3 REPAIR-01 lesson:** partial-sig wire-format mismatch (DER vs consensus-encoded `bitcoin::Witness`) was silent in this same way — both ends looked right in isolation; only the cross-implementation byte stream surfaced it.
+
+**Why it happens:**
+- Copy-paste P2WPKH verifier into P2TR verifier, change spk check, leave BIP-143 sighash call intact.
+- For P2SH-P2WPKH: implementer treats script_pubkey as scriptCode for sighash. Bitcoin Core requires the unwrapped P2WPKH scriptCode as the implicit scriptCode.
+
+**Prevention (LOAD-BEARING):**
+- **Per-script-type property tests against the official BIP-322 `basic-test-vectors.json`** (bitcoin/bips repo). Each verifier independently passes every vector in its class.
+- **Cross-implementation round-trip test**: for each script type, sign with `bdk_wallet` (or raw secp256k1 + sighash), verify with the official `bip322` crate AND with our in-tree verifier. Either failure ⇒ witness invalid. This is the cross-check that would have caught REPAIR-01 in v1.3.
+- **Regtest on-chain anchor test**: produce a BIP-322 witness for a regtest UTXO, then construct the equivalent real spending transaction using the same key and sighash routine, broadcast it. If bitcoind accepts the real spend, the sighash math is correct.
+- For P2TR: distinguish SIGHASH_DEFAULT (64-byte sig) from SIGHASH_ALL (65-byte sig with trailing `0x01`). BIP-322 §6 permits both for P2TR; segwit v0 requires SIGHASH_ALL only.
+
+**Detection in code review:**
+- `SighashCache::p2wpkh_signature_hash` in the P2TR verifier path.
+- `from_der` or `Signature::from_der` in the P2TR verifier path (P2TR uses 64-byte schnorr).
+- A "shared" sighash helper switching on `script_type` internally — concentrates exactly the bug class V1.4-CRIT-01 warns against. Three separate verifier functions with no shared dispatch.
+
+**Phase:** Per-script-type verifier task, gated by property-test passing the entire BIP-322 spec vector set for that script type.
+
+---
+
+### V1.4-CRIT-03: bip322 Crate Pre-1.0 API Risk
+
+**What goes wrong:** `rust-bitcoin/bip322` crate stalled at 0.0.10 for ~9 months (last published ~September 2025; no releases through 2026-05-29). Adopting it mid-milestone and then having the API churn in a patch-version update (pre-1.0 SemVer treats `0.x → 0.y` as breaking) forces re-implementation of every call site — the same forensic pattern as v1.3 REPAIR-01.
+
+**Why it happens:** Default `cargo add bip322` picks up latest, which may be a fresh release with API changes from whatever was current at discuss-phase.
+
+**Stack research finding:** Stack agent recommends extending custom `shared/src/bip322.rs` (~205 LOC) rather than adopting the crate, because (a) 9 months of silence is a maintenance-cadence red flag, (b) bdk_wallet doesn't ship BIP-322 signing anyway so client-side code must be ours either way, (c) `bitcoin 0.32.x` already provides every primitive needed (`SighashCache`, `verify_schnorr`, `XOnlyPublicKey`, `is_p2tr/is_p2sh/is_p2wpkh`).
+
+**Prevention (LOAD-BEARING):**
+- **Discuss-phase decides: extend-custom (recommended) vs adopt-crate.** If adopt-crate is chosen:
+  - **Pin exact version (`bip322 = "=0.X.Y"`)** in `Cargo.toml`. No `^`, no `~`.
+  - **API contract test in `shared/`**: every method we use from the bip322 crate has a `#[test]` exercising that exact signature with known-good witness + result. Breaking changes localized at compile.
+  - **Fallback plan documented**: "If crate unsuitable, extend in-tree `shared/src/bip322.rs` with per-script-type verifiers — copy from rust-bitcoin source if license-compatible (MIT/Apache-2.0)."
+- **Sprint-0 spike**: `cargo tree -p bip322 0.0.10` verify pin against `bitcoin 0.32.x`. Gate question for the adopt-crate fallback.
+- **Adopt only if Sprint-0 verifies clean version pin AND discuss-phase explicitly accepts 0.0.x stability risk.**
+
+**Phase:** Discuss-phase lock-in. Plan-phase first task is the Sprint-0 spike.
+
+---
+
+## MODERATE
+
+### V1.4-MOD-01: OwnershipProof Wire-Format Evolution Without Versioning
+
+**What goes wrong:** Today, `OwnershipProof.witness_stack` is `Vec<Vec<u8>>` — flat list of byte arrays, JSON-encoded as hex array. Sufficient for P2WPKH (2 items: sig, pubkey) and P2TR key-path (1 item: 64- or 65-byte schnorr sig), but **breaks down for P2SH-P2WPKH**, which requires both witness stack AND the P2SH redeemScript transmitted (redeemScript is not derivable from script_pubkey alone — only HASH160 is on-chain).
+
+Naive extension "add `redeem_script: Option<String>`" breaks any client pre-dating the change unless `#[serde(default)]`. The v1.0 lesson "NO `#[serde(deny_unknown_fields)]`" in `shared/src/protocol.rs` partially protects (older coordinators drop unknown fields), but older *clients* sending only witness stack to a newer coordinator fail P2SH-P2WPKH verification.
+
+**This is the v1.3 REPAIR-01 wire-format lesson generalized.**
 
 **Prevention:**
-- Publish the RSA public key in the PKARR record and in the round parameters before any participant connects. The key must be fixed per coordinator identity, not per round or per session.
-- Clients MUST fetch the coordinator's public key from the DHT record and verify it matches what the coordinator sends during input registration — reject any mismatch immediately.
-- Include the RSA public key hash in the round commitment (see Pitfall 2).
-- Consider using a single long-lived signing key rather than rotating per-round. If rotating, publish the new key in PKARR before accepting registrations.
+- **Discuss-phase decision: how does P2SH-P2WPKH carry the redeemScript?** Architecture researcher recommends PSBT-input shape (`base64-encoded bitcoin::psbt::Input`) over tagged-enum extension — conservative, future-proof, aligns with PSBT-everywhere semantics.
+- **Property test at wire level**: for each script type, encode `OwnershipProof`, decode coordinator-side, encode back — bytewise identical.
+- **Coordinator advertises `protocol_version: u32`** in `/info` and PKARR record (e.g., `protocol_version: 2` for v1.4). Older clients see `protocol_version: 2` and abort with "this coordinator requires a newer client."
 
-**Warning signs:** Key changes between rounds without PKARR record update; coordinator key doesn't match DHT-published parameters.
-
-**Phase:** Address in the blind signature protocol design phase (Phase 1 or equivalent core protocol sprint). The client-side verification of the coordinator's published key is the critical control.
+**Phase:** Plan-phase task for OwnershipProof shape change. Roundtrip serialization test ships before either coordinator or client uses new shape.
 
 ---
 
-### Pitfall 2: Round Parameters Not Committed in Client-Verifiable Hash (Round ID Forgery)
+### V1.4-MOD-02: PKARR Record Schema Evolution Breaks Discovery
 
-**What goes wrong:** The coordinator gives different round parameters (minimum participants, denomination, fee, or credential issuance parameters) to different participants. Since participants cannot see each other's parameters, they each believe they are in the same round, but the coordinator has partitioned them into singleton groups it can identify.
+**What goes wrong:** v1.4 adds `supported_script_types: ["p2wpkh", "p2tr", "p2sh-p2wpkh"]` to PKARR record. Architecture researcher noted current record is at 215 bytes (under 255-byte DNS TXT limit but at 220-byte warn threshold). Older clients parsing strictly interpret a v1.4 record as malformed, or infer P2WPKH-only by default and mis-register.
 
-**Why it happens:** Developers implement a simple round identifier (UUID or sequence number) rather than deriving the round ID from a hash of all parameters. The coordinator can then silently modify what it tells each participant.
-
-**Consequences:** Coordinator can isolate any individual participant into an effectively solo transaction, fully tracing their input to output without the participant knowing a round completed.
-
-**Real-world precedent:** ZeroLink (the Wasabi v1 protocol on which blindjoin is based) introduced the RoundHash specifically to prevent this. The signing-phase check — Alice verifies that the RoundHash equals the hash of all registered inputs — is not optional decoration. Wasabi 2.x derives the RoundID by hashing all round parameters including the credential issuance key for the same reason.
+**Features researcher recommends:** compact CSV (`"script_types": "p2sh-p2wpkh,p2tr,p2wpkh"`) in TXT JSON to respect 255-byte budget. `/round/info` JSON uses proper array (no budget constraint).
 
 **Prevention:**
-- Round ID = SHA256(denomination || min_participants || coordinator_pubkey || round_sequence_number || ...). Derive deterministically from all parameters that matter for unlinkability.
-- At signing phase: clients verify that the round ID committed in their BIP-322 ownership proof matches the round parameters they actually observed. Reject if they diverge.
-- Clients MUST compare round parameters received against the PKARR-published round parameters. Any deviation is an abort signal.
+- **Versioned key**: add `_blindjoin_v=2` TXT record alongside script-type record. Clients seeing `v=2` know to look for `supported_script_types`; clients pre-dating v1.4 see no `v` and assume `v=1` (P2WPKH-only).
+- **Default behavior when field missing**: client treats absence of `supported_script_types` as `["p2wpkh"]` — matches v1.0 implicit contract. CI-tested.
+- **Coordinator publishes both `v=2` and legacy `v=1`-shape record for a transition period (one milestone)** so older clients still resolve. Drop `v=1` in v1.5.
+- **Integration test**: discover v1.4 coordinator with simulated v1.0 client — client either resolves to P2WPKH-only or refuses cleanly, never silently mis-registers.
 
-**Warning signs:** Round ID not derived from a hash of parameters; round parameters not checked against DHT-published state.
-
-**Phase:** Core round state machine implementation. Must be in the first working protocol sprint.
+**Phase:** Plan-phase task pairs with `/round/info` field addition.
 
 ---
 
-### Pitfall 3: Blame Round Exploited to Reduce Anonymity Set
+### V1.4-MOD-03: `/round/info` Field Addition Without Coordinated Client Update
 
-**What goes wrong:** A malicious participant (or the coordinator itself) deliberately fails to sign in the signing phase, triggering a blame round. The blame round reconvenes with a subset of participants. If an adversary controls even one participant and can force multiple blame cycles, they progressively reduce the anonymity set — eventually to a set small enough to trace by elimination.
-
-**Why it happens:** Blame rounds are necessary for liveness but create a shrinking-set vulnerability if an adversary can repeatedly force them at low cost. The Wasabi v2.x research confirmed "soft aborts can allow unbounded iteration of attacks."
-
-**Consequences:** Privacy degradation proportional to number of blame cycles. In the worst case, an attacker with multiple UTXOs can reduce the surviving set to a known cluster.
+**What goes wrong:** Coordinator's `InfoResponse` (`shared/src/protocol.rs:13-28`) gets `supported_script_types`. Forward-compat already in place (no `deny_unknown_fields`). But client *logic* relies on knowing what's supported: v1.0 client trying to register P2TR UTXO with v1.4 coordinator that does NOT support P2TR (operator disabled it) gets generic `UnsupportedScriptType` at registration time, after Tor circuit built. UX worsens; debugging is opaque.
 
 **Prevention:**
-- Apply a permanent ban on any UTXO that causes a blame round. Do not allow re-entry for the rest of the coordinator's lifetime (or at minimum a long cooldown period — days, not hours).
-- Cap blame rounds at a fixed maximum (e.g., 1 or 2). If the maximum is hit, abort the entire round rather than continuing with a tiny set. A failed round is better than a deanonymized round.
-- Require a fresh UTXO for each re-registration attempt after a ban. This makes repeated blame-forcing expensive since the attacker must own distinct UTXOs.
-- Log blame events by UTXO hash (not IP — see Pitfall 8) so the ban list persists across restarts.
+- **Client uses `supported_script_types` field if present; falls back to `["p2wpkh"]` if absent**.
+- **Client checks UTXO's script type against `supported_script_types` BEFORE registering** — fail fast.
+- **`/info` carries `protocol_version: u32`** alongside script-type list. Client refuses `protocol_version > known_max` with "please upgrade" error.
 
-**Warning signs:** The same UTXO appearing in multiple blame rounds; rounds repeatedly failing at signing phase; round sizes shrinking across blame cycles.
-
-**Phase:** Blame protocol implementation sprint. Cap and ban logic is not optional.
+**Phase:** Plan-phase, paired with V1.4-MOD-02.
 
 ---
 
-### Pitfall 4: Coordinator-Controlled Isolation (Singleton Deanonymization)
+### V1.4-MOD-04: bdk_wallet Mixed-Descriptor Wallet Support Unclear
 
-**What goes wrong:** The coordinator notices an input it wants to deanonymize, then refuses to admit any other participants into the round with that input — manufacturing a "round" of one participant whose input and output are trivially linked.
+**What goes wrong:** User holds UTXOs across multiple script types (P2WPKH legacy, P2TR fresh, P2SH-P2WPKH old exchange withdrawal). Current client uses single `Wallet` with `wpkh(...)` descriptor. Adding P2TR registration requires either (a) second `Wallet` per script type, or (b) loading multiple descriptors into one wallet. bdk_wallet's standard architecture is two-keychain (external + internal) per Wallet — multi-script-type-per-Wallet is not first-class.
 
-**Why it happens:** The coordinator controls which connection confirmations it accepts. Nothing in the blind signature scheme prevents the coordinator from selectively admitting participants.
+`bdk_wallet/issues/394` and `590` (mid-2026) indicate active topic but no production-ready 2.3 solution. **`bdk_wallet/issues/150` (BIP-322 message signing) open since May 2023 with no resolution** — meaning BIP-322 signer code must be ours regardless of which path is chosen.
 
-**Real-world precedent:** The ZeroLink spec explicitly documents this attack and its mitigation.
+**Prevention — discuss-phase picks one:**
+1. **One Wallet per script type** (simplest; client config 3× more complex — user provides 3 descriptors). **Recommended.**
+2. **Single Wallet, key-only signing** (use bdk_wallet for P2WPKH; for P2TR + P2SH-P2WPKH, derive key from same xpriv and sign manually using `secp256k1` + `bitcoin::sighash`, bypassing bdk_wallet broader machinery). BIP-322 signing path is narrow (1 input, 1 output, no fee estimation).
+3. **Wait for bdk_wallet 3.0** (currently `-rc` per public release data) — adopt if 3.0 ships multi-script during v1.4; otherwise pick (1) or (2).
+- **Pin bdk_wallet to exact version** (v1.3 REPAIR-02 carry-forward).
+- **Sprint-0 spike**: 50-line throwaway deriving P2TR address from `tr(...)` descriptor in bdk_wallet 2.3 + signing BIP-322 message. If API doesn't expose what we need, pivot to (2) in discuss-phase, not mid-implementation.
+
+**Phase:** Discuss-phase. Mid-implementation pivots here are expensive.
+
+---
+
+### V1.4-MOD-05: bdk_wallet 2.3 → 2.4+ Minor-Version API Churn
+
+**What goes wrong:** v1.3 records that bdk_wallet 2.3 introduced `SignOptions { trust_witness_utxo: true }` requirement and real on-chain `witness_utxo` values. If we end up on bdk_wallet 2.4 or 3.0-rc during v1.4 (for Taproot signing API improvement), BIP-322 signing path plumbing may shift again. bdk_wallet 3.0 release notes introduce "major API changes including persistent UTXO locking, structured wallet events, and adopts NetworkKind throughout the codebase" — not a stable target.
 
 **Prevention:**
-- Enforce minimum participant thresholds client-side: clients MUST verify the CoinJoin transaction has the configured minimum number of equal-value outputs before signing. Refuse to sign if the output count is below the minimum.
-- Publish the minimum participant count in the PKARR record; clients use the PKARR value, not what the coordinator tells them during the round.
-- Clients compare the actual PSBT output count against the committed minimum before submitting their partial signature.
+- **Pin `bdk_wallet = "=2.3.x"` in `Cargo.toml`. No `^`. CI grep gate** (analogous to corepc-node pin from v1.3 REPAIR-02).
+- **Do not upgrade mid-milestone** unless critical bug forces it; if forced, treat upgrade as its own plan with its own verification phase.
+- **API surface tests for `SignOptions`** specifically — encode known-good signing flow as `#[test]` so subsequent `SignOptions` rename surfaces at compile time.
 
-**Warning signs:** Rounds consistently completing with only 2-3 participants; minimum participant count not enforced at signing phase.
-
-**Phase:** Client CLI implementation — the PSBT validation step before signing is the critical control. Must be part of the signing phase spec.
+**Phase:** Sprint 0 — set pin, set CI gate.
 
 ---
 
-## Moderate Pitfalls
+### V1.4-MOD-06: CoinJoin Privacy — Mixed vs Segregated Script-Type Rounds
+
+**What goes wrong:** Two competing privacy stories:
+
+1. **Segregated rounds (one script type per round)** preserve the v1.0 invariant "do not mix address types in the same round — different output types break the equal-value guarantee visually." All inputs P2WPKH; all outputs P2WPKH. Maximum within-round indistinguishability but tiny anonymity sets per script type until each type has independent liquidity.
+
+2. **Mixed rounds (any script type can join)** maximize anonymity set per round but create a chain-analysis signal: "this transaction has a wildly heterogeneous input set with equal-value outputs" is itself a CoinJoin fingerprint, AND per-input script type leaks individual UTXOs to the round.
+
+**Features researcher recommends mixed rounds (Option B) following Wasabi 2.0.3 precedent** (zkSNACKs PR #8912). Wasabi argues mixed is fine because Round ID guarantee means all honest liquidity contributes to anon set. **But for blindjoin's RSA-blind-signature model, the credentials-based Round-ID equivalence doesn't directly apply** — unlinkability comes from the blind signature, not from credential equivalence.
+
+**Decision is contested between researchers.** Pitfalls research defaults to segregated (privacy-conservative); Features research recommends mixed (anon-set-maximizing, Wasabi-precedent). **Must be resolved in discuss-phase before plan-phase starts** — coordinator round-state machine and PKARR schema both depend on the answer.
+
+**Mitigation if mixed chosen:**
+- Clients produce outputs of randomly-selected supported script type, not their input's script type (mimicking Wasabi 2.0.3).
+- Document privacy trade-off explicitly in README's privacy section.
+
+**Mitigation if segregated chosen:**
+- Liquidity bot maintains UTXOs of all supported types and joins under-filled rounds.
+- Per-round script type published in PKARR + `/round/info`.
+
+**Phase:** Discuss-phase. Deferring is the wrong answer.
 
 ---
 
-### Pitfall 5: DoS via Refusing to Sign (Griefing Attack)
+### V1.4-MOD-07: BIP-322 vs Legacy "Bitcoin Signed Message" Format Confusion
 
-**What goes wrong:** A participant registers a UTXO, participates through output registration, then refuses to provide their partial signature. This aborts the round (or forces blame) with no cost to the attacker beyond the UTXO lockup time.
+**What goes wrong:** BIP-322 is NOT the legacy `signmessage`/`verifymessage` format. Legacy uses magic string `"\x18Bitcoin Signed Message:\n" || varstr(message)`. BIP-322 uses tagged hash `SHA256(SHA256("BIP0322-signed-message") || SHA256("BIP0322-signed-message") || message)` and a virtual transaction.
 
-**Why it happens:** Input registration has no proof of intent to complete. Any participant can abort at signing with zero on-chain cost on signet (fees are free or trivial).
+Implementer reading BIP-322 quickly and copying a snippet from older Stack Overflow / BIP-137 reference may compute legacy-format hash, then build a BIP-322 virtual transaction — producing a verifier matching nothing. Or accept BIP-322 *or* legacy silently, expanding attack surface.
+
+Existing impl at `shared/src/bip322.rs:19-27` does this correctly. v1.4 must continue to use this same message-hash function, not legacy format, even though BIP-340 / Taproot has its own tagged-hash conventions (`TapSighash`, `TapBranch`) that look superficially similar.
 
 **Prevention:**
-- UTXO banning: permanently ban any UTXO that fails to provide a valid partial signature during the signing phase. Store bans in persistent state across restarts.
-- On signet this is less critical (no real economic cost), but the ban mechanism must be in place before mainnet exposure. Design the ban store now even if the stakes are low.
-- Rate-limit new UTXO registrations per Tor circuit guard (where identifiable) — but never log IPs directly.
+- **`bip322_message_hash` function in `shared/src/bip322.rs` is the single source of truth.** All three verifiers (P2WPKH, P2TR, P2SH-P2WPKH) call this function. No reimplementation.
+- **Property test against BIP-322 official `basic-test-vectors.json`** — message-hash function independently tested with spec's documented `to_spend_txid` values.
+- **Negative test**: feed legacy-format-signed message to BIP-322 verifier — must reject. Conversely, BIP-322 witness to legacy verifier must reject. No silent acceptance.
 
-**Warning signs:** The same UTXO appearing in multiple failed rounds; rounds consistently aborting at signing phase from the same UTXO fingerprint.
-
-**Phase:** Round state machine and ban store implementation.
+**Phase:** Foundational; first plan task confirms message-hash function is reused, not reimplemented per script type.
 
 ---
 
-### Pitfall 6: Marvin Attack on the RSA Crate
+## MINOR
 
-**What goes wrong:** The underlying `rsa` Rust crate (which `blind-rsa-signatures` depends on) is vulnerable to the Marvin Attack — a timing side-channel that can enable private key recovery by a network attacker if the coordinator's RSA signing endpoint is accessible and measurable.
+### V1.4-MIN-01: Regtest Test Harness Brittleness with New Script Types
 
-**Why it happens:** The `rsa` crate's decryption/signing operations are not fully constant-time. The Marvin Attack exploits timing variance in RSA private key operations.
+**What goes wrong:** v1.3 hardened the regtest test harness (`BitcoindGuard`, `require_bitcoind!()`, pinned bitcoind v30.2). Adding P2TR + P2SH-P2WPKH means generating those UTXO types. bitcoind `getnewaddress` defaults to bech32m (P2TR) in recent versions, but explicit `address_type` parameter avoids default drift. Coinbase outputs in regtest are P2PK — must mine to wallet address of target type then spend. corepc-node's typed `Client` API surface may have different RPC method shapes for `getnewaddress(address_type)` per feature flag — re-verify against pinned feature.
 
 **Prevention:**
-- The coordinator's RSA signing endpoint is only reachable via a Tor hidden service. Tor's onion routing adds significant timing noise, substantially mitigating but not eliminating the attack surface.
-- Track whether `blind-rsa-signatures` / the `rsa` crate ships a Marvin fix before v1 launch. Check the crate's changelog and open issues.
-- If the fix is not available, consider key rotation (new RSA key per N rounds) to limit exposure window from any key compromise.
-- Use RSA-4096 minimum. The `check_rsa_parameters()` function in `blind-rsa-signatures` had a bug rejecting valid 4096-bit keys in earlier versions — verify the version in use accepts 4096-bit keys.
+- Each script-type integration test explicitly specifies `getnewaddress` parameters (`bech32m` for P2TR, `p2sh-segwit` for P2SH-P2WPKH, `bech32` for P2WPKH). Never rely on bitcoind defaults.
+- `BitcoindGuard` and `require_bitcoind!()` semantics do NOT change — v1.3 RAII pattern is script-type-agnostic.
+- Liquidity bot updated: `script_types: ["p2wpkh", "p2tr", "p2sh-p2wpkh"]` config field; bot rotates which type it submits to each round.
 
-**Warning signs:** Using an `rsa` crate version prior to any published Marvin patch; RSA signing endpoint reachable on clearnet.
-
-**Phase:** Dependency audit sprint. Verify before any mainnet flag exposure.
+**Phase:** Test infrastructure plans before verifier plans.
 
 ---
 
-### Pitfall 7: Tor Circuit Reuse Across Input and Output Registration
+### V1.4-MIN-02: Liquidity Bot Becomes Uniform-Script-Type Fingerprint
 
-**What goes wrong:** The client uses the same Tor circuit (and thus the same exit guard node) for both input registration (Alice, tied to UTXO) and output registration (Bob, presenting the blind token). If the coordinator or a network observer can correlate Tor circuits, the phases are linked.
-
-**Why it happens:** Default Tor behavior reuses circuits for connections to the same destination. A developer implementing Tor integration without explicit fresh-circuit requests will create this linkage.
+**What goes wrong:** If liquidity bot only submits P2WPKH UTXOs, on a coordinator accepting mixed-script rounds, *bot's inputs are visually identifiable* as the liquidity provider. Even with segregated rounds: if P2TR + P2SH-P2WPKH rounds have only the bot as "always-present" participant, on-chain analysis identifies bot's output by cross-round correlation.
 
 **Prevention:**
-- The PROJECT.md already specifies fresh Tor circuits per phase — this must be enforced in code, not just documented.
-- Use `IsolateDestAddr` / stream isolation in Arti. Each phase (input reg, output reg) must use an explicitly isolated stream with no circuit reuse.
-- Verify with integration tests: connect input phase and output phase through Tor, confirm they route through different guard nodes (observable in test logs).
-- In Arti, use `TorClient::isolated_client()` or equivalent stream isolation API for each phase transition.
+- Bot generates UTXOs across all supported script types in rotation, not pinned to one type.
+- Bot's output addresses derived from separate keychain per round so output clusters don't form.
+- Document bot's privacy posture honestly in README: "the liquidity bot increases anonymity-set fill rate, but its UTXOs are identifiable to operators who run the bot."
 
-**Warning signs:** Input and output registration phases using the same `TorClient` without stream isolation; no test verifying circuit isolation.
-
-**Phase:** Tor integration sprint. Must be verified before the full-stack integration test.
+**Phase:** Plan-phase task for liquidity bot updates.
 
 ---
 
-### Pitfall 8: Logging IP Addresses or Input-Output Associations
+### V1.4-MIN-03: BIP-322 Simple-vs-Full Wire Form Ambiguity
 
-**What goes wrong:** Coordinator logs contain Tor exit IP addresses, UTXO identifiers alongside timestamps, or any data that correlates input registration events to output registration events. This data becomes a surveillance target and a legal liability.
+**What goes wrong:** BIP-322 has Simple (base64 `smp || witness`) and Full (base64 `to_sign` transaction) wire forms. blindjoin uses custom `OwnershipProof { witness_stack: Vec<Vec<u8>> }` — neither. Verifier must reconstruct `to_spend` + `to_sign` from `script_pubkey + message`, then verify supplied `witness_stack` against `to_sign` sighash. Current `shared/src/bip322.rs:34-76` does this correctly for P2WPKH.
 
-**Why it happens:** Default frameworks log request details. Structured logging in async Rust (tracing crate) makes it easy to inadvertently include UTXO details in request spans.
+When adopting `rust-bitcoin/bip322` crate, the crate may expect Simple or Full form (with `smp` prefix + base64), not our raw `witness_stack`. Bridging requires translating: extract our `witness_stack`, wrap in `Witness`, hand to crate verifier with our reconstructed `to_sign`. Mis-bridging silently mis-calls crate API.
 
 **Prevention:**
-- Audit every `tracing::info!`, `debug!`, `warn!` call site for UTXO identifiers, addresses, output script hashes, or connection metadata.
-- Log only round-level events (round started, round completed, round aborted, participant count) — never participant-level events that could be correlated.
-- The UTXO ban list must store a hash (e.g., TXID:vout SHA256) not the raw UTXO, and it must never be logged with timestamps that could correlate to a round.
-- Add a logging policy to the README: what is logged, what is explicitly not logged, and why.
+- Maintain our own wire format; use bip322 crate as *verifier only*, not as wire-format codec.
+- Adapter function `verify_with_bip322_crate(script_pubkey, witness_stack, message) -> Result<()>` is the only place that touches the crate. All other code calls this adapter. Apply V1.4-CRIT-03 contract-test pattern.
 
-**Warning signs:** `span!` or request middleware that auto-captures all request fields; UTXO identifiers visible in log output; IP addresses in any log.
-
-**Phase:** Core coordinator implementation. Establish logging discipline before any other code is written.
+**Phase:** Plan-phase first crate-adoption task.
 
 ---
 
-### Pitfall 9: Arti Hidden Service Stability Under Load
+## PHASE-SPECIFIC WARNINGS
 
-**What goes wrong:** Arti's onion service implementation, while stabilized in 2.0.0, has had resilience bugs in earlier versions (e.g., TROVE-2024-005 and TROVE-2024-006 — incorrect circuit construction and same-relay-in-multiple-positions bugs that increase traffic analysis vulnerability). The Tor hidden service drops connections under participant load spikes.
-
-**Why it happens:** Hidden service circuit construction is complex; early Arti versions had algorithmic bugs that compiled fine but built malformed circuits. The Rust borrow checker catches memory bugs, not semantic circuit bugs.
-
-**Prevention:**
-- Pin to Arti 2.0.0+ and track changelogs for TROVE advisories. Subscribe to Tor Project security announcements.
-- Test hidden service stability under concurrent load in the integration test suite (multiple clients connecting simultaneously for a round).
-- Implement connection retry logic in the client with exponential backoff — Tor connections are inherently less reliable than TCP.
-- The PROJECT.md notes a Sprint 0 PoC to verify arti-client works for hidden services. Do this before any other Tor-dependent development.
-
-**Warning signs:** Participants reporting frequent connection drops; round timeouts clustering at connection establishment rather than signing.
-
-**Phase:** Sprint 0 (Tor PoC) and integration test suite.
-
----
-
-### Pitfall 10: Fixed Denomination Fingerprinting
-
-**What goes wrong:** Fixed-denomination CoinJoin transactions are identifiable on-chain by blockchain analysis. All outputs being exactly 0.01 BTC (or any fixed value) is a strong heuristic for detecting CoinJoin, reducing post-mix privacy.
-
-**Why it happens:** This is inherent to the ZeroLink design. It is not a bug — it is a known limitation. The mistake is not communicating this clearly to users, or building additional features (like change output handling) that make the fingerprint worse.
-
-**Prevention:**
-- Document the fingerprinting limitation explicitly in the README and in the client output. Users should know their CoinJoin transactions are identifiable as CoinJoins on-chain, just not linkable input-to-output.
-- Ensure change outputs (outputs not equal to the denomination) are handled consistently across all participants so they don't create unique fingerprints that reduce the anonymity set.
-- Do not mix address types (P2WPKH vs P2TR) in the same round — different output types break the equal-value guarantee visually.
-
-**Warning signs:** Inconsistent output address types within a single round; change output amounts that are unique per participant.
-
-**Phase:** Transaction construction and PSBT validation sprint.
-
----
-
-## Minor Pitfalls
-
----
-
-### Pitfall 11: PKARR Record Spoofing / Eclipse on Discovery
-
-**What goes wrong:** A malicious actor publishes a PKARR record for a fake coordinator with a malicious .onion address. Clients discovering coordinators via DHT are routed to a surveillance coordinator rather than a legitimate one.
-
-**Prevention:**
-- PKARR records are signed with the coordinator's key pair. Clients MUST verify the signature on every PKARR record before trusting the contained .onion address.
-- Use coordinator public key pinning: if a user has previously connected to a coordinator identified by a specific public key, warn on key change (similar to SSH host key verification).
-- Provide a well-known "trusted coordinator" list for first-time users as a bootstrapping mechanism.
-
-**Phase:** PKARR integration sprint.
-
----
-
-### Pitfall 12: BIP-322 Ownership Proof Not Committing to Round ID
-
-**What goes wrong:** The BIP-322 ownership proof (proving a participant controls a UTXO) does not include the round ID in the signed message. This means a valid ownership proof from one round could be replayed in a different round by the coordinator.
-
-**Prevention:**
-- The BIP-322 message signed for ownership proof MUST include the round ID (as defined in Pitfall 2) as a mandatory component. This binds the proof to the specific round and prevents replay.
-- Validate at the coordinator: reject any ownership proof whose embedded round ID does not match the current round's ID.
-
-**Phase:** Input registration protocol implementation.
-
----
-
-### Pitfall 13: In-Memory State Not Actually Zeroed After Broadcast
-
-**What goes wrong:** Rust's `Drop` semantics do not guarantee memory zeroing. Simply dropping a struct containing blinding factors, RSA signing keys, or partial signatures does not clear the memory — the compiler may optimize away the zeroing if it detects the memory is no longer read.
-
-**Prevention:**
-- Use `zeroize` crate (the de facto standard in the Rust cryptography ecosystem) for all sensitive state: blinding factors, RSA key material, partial signatures, round participant lists.
-- Derive `Zeroize` and `ZeroizeOnDrop` on all state structs holding sensitive data.
-- After broadcast, explicitly call `zeroize()` on round state before the struct drops.
-- Integration test: verify round state structs implement `ZeroizeOnDrop` (can be a compile-time check with trait bounds).
-
-**Phase:** Core coordinator and client implementation. Apply from the start — retrofitting zeroize is error-prone.
-
----
-
-### Pitfall 14: Signet → Mainnet "Just a Config Flag" Assumption
-
-**What goes wrong:** Developers treat the mainnet configuration flag as trivial. In practice, signet and mainnet differ in: UTXO value scale (actual economic risk), fee pressure (mainnet fees can spike 10-100x making rounds economically irrational), and the regulatory environment.
-
-**Prevention:**
-- Enforce a build-time feature flag for mainnet (`#[cfg(feature = "mainnet")]`), not just a runtime config value. This prevents accidental mainnet deployment.
-- Add a mainnet-specific safety checklist to the repository: required review items before enabling the mainnet flag for a deployment.
-- Test under realistic mainnet fee scenarios before promoting mainnet support.
-
-**Phase:** Late in development, before any mainnet documentation or promotion.
-
----
-
-## Phase-Specific Warnings
-
-| Phase Topic | Likely Pitfall | Mitigation |
+| Phase / Task Topic | Likely Pitfall | Mitigation |
 |---|---|---|
-| Blind signature protocol design | Per-participant key tagging (Pitfall 1) | Fix RSA key to coordinator identity, publish in PKARR, verify client-side |
-| Round ID / parameter commitment | Parameter forgery partition attack (Pitfall 2) | Derive round ID from hash of all parameters |
-| Blame protocol implementation | Blame cycle shrinkage attack (Pitfall 3) | Cap blame rounds, permanent UTXO banning |
-| Client signing phase | Singleton isolation attack (Pitfall 4) | Client-side PSBT output count validation before signing |
-| Tor integration (Sprint 0 PoC) | Arti hidden service stability (Pitfall 9) | Sprint 0 explicitly validates arti hidden service works |
-| Tor client phase isolation | Circuit reuse linking input/output phases (Pitfall 7) | Stream isolation per phase, integration test verifying different guards |
-| Logging setup | PII leakage in logs (Pitfall 8) | Establish logging policy before first line of coordinator code |
-| Dependency selection | Marvin attack on RSA crate (Pitfall 6) | Track rsa crate advisories, hide behind Tor |
-| Memory management | Sensitive state not zeroed (Pitfall 13) | zeroize crate from day one |
-| Transaction construction | Fixed denomination fingerprinting (Pitfall 10) | Document limitation, enforce consistent address types per round |
-| PKARR integration | Record spoofing on discovery (Pitfall 11) | Mandatory signature verification on every DHT record |
-| Input registration | BIP-322 proof without round ID commitment (Pitfall 12) | Embed round ID in BIP-322 message |
+| Crate adoption decision (discuss-phase) | bip322 crate pre-1.0 churn (V1.4-CRIT-03) | Pin exact version; document fallback; check crate's own test coverage |
+| Verifier dispatch design | Script-type spoofing (V1.4-CRIT-01) | Derive script type from `script_pubkey`, never client field |
+| Per-script-type verifier impl | Silent sighash failures (V1.4-CRIT-02) | Property tests against BIP-322 spec vectors + cross-impl round-trip + on-chain anchor |
+| OwnershipProof wire format | Schema break for older clients (V1.4-MOD-01) | Versioned `protocol_version`; roundtrip test in shared/; serde defaults |
+| PKARR record schema update | Discovery breaks across versions (V1.4-MOD-02) | Default `supported_script_types` to `["p2wpkh"]` when absent; v=2 alongside v=1 |
+| `/round/info` field addition | Older clients silently mis-register (V1.4-MOD-03) | Client pre-checks script-type support pre-Tor-build |
+| bdk_wallet descriptor strategy | Multi-script unclear in 2.3 (V1.4-MOD-04) | Discuss-phase picks: one Wallet per type OR manual sign bypassing bdk_wallet |
+| Cargo.toml pinning | bdk_wallet 2.x minor churn (V1.4-MOD-05) | Exact `=2.3.x` pin; CI grep gate |
+| Round design (mixed vs segregated) | Privacy regression (V1.4-MOD-06) | **Discuss-phase decides — researchers split; resolve before plan starts** |
+| BIP-322 message hash | Legacy format confusion (V1.4-MOD-07) | Single `bip322_message_hash` reused across verifiers; spec-vector test |
+| Regtest test harness | New address types break v1.3 fixtures (V1.4-MIN-01) | Explicit `getnewaddress` address_type; reuse `BitcoindGuard` unchanged |
+| Liquidity bot update | Uniform-script fingerprint (V1.4-MIN-02) | Rotate script types; honest README disclaimer |
+| Crate-adapter integration | Simple-vs-Full wire form mismatch (V1.4-MIN-03) | Bridge in one adapter; contract-test the adapter |
+
+---
+
+## v1.3 REPAIR-01 LESSONS CARRIED FORWARD
+
+1. **Wire format ≠ API shape.** Any wire-format change ships with a roundtrip serialization test in `shared/` BEFORE either coordinator or client uses the new shape.
+2. **bdk_wallet 2.3 segwit signing requires `SignOptions { trust_witness_utxo: true }`** and real on-chain `witness_utxo` values. P2SH-P2WPKH path goes through same machinery — do not retry zero placeholders.
+3. **Pin every dependency referenced by version in a test fixture, and CI-enforce.** bip322 crate, bdk_wallet, corepc-node feature pin — all need exact pins with CI gates.
+4. **When 2-3 carry-forward plans appear with the same shape, abandon Plan.md and pivot to direct bisectable commits.** If multiple orthogonal blockers surface during v1.4 BIP-322 implementation, pivot to `/gsd:debug` early.
+5. **"Closed-local" creates tracking debt.** REPAIR-01 PR observation closure is inherited by v1.4. Do not let v1.4 ship without discharging it — the v1.4 cut PR is the natural moment.
 
 ---
 
 ## Sources
 
-- GingerWallet WabiSabi vulnerability disclosure: https://github.com/GingerPrivacy/GingerWallet/discussions/116
-- Bitcoin Magazine WabiSabi deanonymization report: https://bitcoinmagazine.com/technical/wabisabi-deanonymization-vulnerability-disclosed
-- NoBSBitcoin WabiSabi coordinator deanonymization: https://www.nobsbitcoin.com/wabisabi-vulnerability-allows-malicious-coordinators-to-deanonymize-coinjoin-users/
-- Ashigaru Whirlpool RSA blinding review: https://gist.github.com/84adam/e130b40cff5915de67b86fc8e452c8aa
-- ZeroLink protocol specification (RoundHash defense): https://github.com/nopara73/ZeroLink
-- WabiSabi protocol spec (Round ID): https://github.com/WalletWasabi/WabiSabi/blob/master/protocol.md
-- WabiSabi timing/data withholding mitigations: https://github.com/WalletWasabi/WabiSabi/issues/83
-- Peter Todd CoinJoin comparison (July 2025): https://petertodd.org/2025/coinjoin-comparison
-- Reiterating centralized CoinJoin deanonymization attacks (bitcoindev): https://groups.google.com/g/bitcoindev/c/CbfbEGozG7c/m/fwwxCihmEQAJ
-- JoinMarket Sybil attack issue: https://github.com/JoinMarket-Org/joinmarket-clientserver/issues/960
-- Arti TROVE-2024-005/006 (hidden service circuit bugs): https://blog.torproject.org/arti_1_2_4_released/
-- Arti 1.4.6 hidden service resilience: https://blog.torproject.org/arti_1_4_6_released/
-- rust-blind-rsa-signatures (jedisct1): https://github.com/jedisct1/rust-blind-rsa-signatures
-- Input-output mapping analysis in CoinJoin (2025): https://arxiv.org/html/2510.17284
-- Samourai shutdown implications: https://cointelegraph.com/research/samourai-wallet-shutdown-implications-for-other-privacy-self-custody-tools
-- Who will run CoinJoin coordinators (Delving Bitcoin): https://delvingbitcoin.org/t/who-will-run-the-coinjoin-coordinators/934
-- FinCEN CVC mixing regulatory context: https://fintelegram.com/coinjoin-crackdown-global-regulators-re-draw-the-privacy-line-for-bitcoin/
+- [BIP-322 Spec](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki)
+- [BIP-341 Taproot Spec](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki)
+- [BIP-340 Schnorr Spec](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki)
+- [BIP-143 segwit v0 sighash](https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
+- [rust-bitcoin/bip322 GitHub](https://github.com/rust-bitcoin/bip322)
+- [bip322 crate on crates.io](https://crates.io/crates/bip322)
+- [ACken2/bip322-js (cross-impl reference)](https://github.com/ACken2/bip322-js)
+- [bdk_wallet Issue #150 (BIP-322 signing)](https://github.com/bitcoindevkit/bdk_wallet/issues/150)
+- [BDK Issue #394 (P2WPKH to single-sig P2TR wallet)](https://github.com/bitcoindevkit/bdk/issues/394)
+- [Wasabi CoinJoin docs (mixed script types)](https://docs.wasabiwallet.io/using-wasabi/CoinJoin.html)
+- [zkSNACKs WalletWasabi PR #8912 (Taproot coordinator-side)](https://github.com/zkSNACKs/WalletWasabi/pull/8912)
+- [WabiSabi protocol spec](https://github.com/WalletWasabi/WabiSabi/blob/master/protocol.md)
