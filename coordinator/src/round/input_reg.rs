@@ -110,34 +110,20 @@ pub fn parse_outpoint(s: &str) -> Option<OutPoint> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round::state::{Phase, RoundState, RoundStateInner};
+    use crate::round::state::RoundState;
     use crate::blind::rsa::RsaBlindSigner;
-    use std::collections::HashMap;
 
-    // TODO(fix-verification-gap): migrate to production `start_round` path.
-    // See .planning/workstreams/fix-verification-gap/BACKDOOR-INVENTORY.md finding #1.
+    /// Build a state in InputReg phase via the production path. Returns a
+    /// signer constructed from the same DER bytes start_round generated, so
+    /// the test can use its public key for client-side blinding.
     fn make_input_reg_state() -> (RoundState, RsaBlindSigner) {
-        let signer = RsaBlindSigner::generate().unwrap();
-        let sk_der = signer.secret_key_der().unwrap();
-        let pk_der = signer.public_key_spki_der().unwrap();
-        let pk_hash = signer.public_key_hash();
-        let round_secret = [0x42u8; 32];
-
         let mut state = RoundState::new_idle();
-        state.rsa_pubkey_hash = Some(pk_hash);
-        state.rsa_pubkey_der = Some(pk_der);
-        let signer_for_inner = RsaBlindSigner::from_der_secret_key(&sk_der).unwrap();
-        state.inner = Some(RoundStateInner {
-            rsa_signing_key: sk_der,
-            rsa_signer: signer_for_inner,
-            round_secret,
-            registered_inputs: HashMap::new(),
-            redeemed_tokens: std::collections::HashSet::new(),
-            registered_outputs: vec![],
-            partial_sigs: HashMap::new(),
-            change_addresses: HashMap::new(),
-        });
-        state.transition_to(Phase::InputReg).unwrap();
+        crate::round::manager::start_round(&mut state).expect("start_round");
+        let sk_der = state.inner.as_ref()
+            .expect("start_round populated inner")
+            .rsa_signing_key.clone();
+        let signer = RsaBlindSigner::from_der_secret_key(&sk_der)
+            .expect("rebuild signer from start_round's DER bytes");
         (state, signer)
     }
 

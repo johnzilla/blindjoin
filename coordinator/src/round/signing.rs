@@ -284,35 +284,30 @@ mod tests {
         ).unwrap()
     }
 
-    // TODO(fix-verification-gap): direct phase mutation bypasses state-machine validator;
-    // placeholder RSA key masks future regressions. Migrate to production transition path.
-    // See .planning/workstreams/fix-verification-gap/BACKDOOR-INVENTORY.md finding #2.
+    /// Build a state in Signing phase via production transitions:
+    /// Idle → InputReg (via start_round) → OutputReg → Signing. Inserts one
+    /// RegisteredInput so process_sign's UTXO-registered check passes. The
+    /// returned round_secret is copied from inner so the caller can mint
+    /// matching session tokens.
     fn make_signing_state(utxo_str: &str) -> (RoundState, [u8; 32]) {
         let mut state = RoundState::new_idle();
-        state.phase = Phase::Signing;
-        let round_secret = [0xab_u8; 32];
-        let inner = RoundStateInner {
-            rsa_signing_key: vec![0u8; 1], // placeholder
-            rsa_signer: RsaBlindSigner::generate().unwrap(),
-            round_secret,
-            registered_inputs: {
-                let mut m = HashMap::new();
-                m.insert(utxo_str.to_string(), RegisteredInput {
-                    utxo_str: utxo_str.to_string(),
-                    change_address: "tb1qtest".to_string(),
-                    blind_sig_hash: [0u8; 32],
-                    script_pubkey: bitcoin::ScriptBuf::new(),
-                    value_sats: 150_000,
-                });
-                m
-            },
-            redeemed_tokens: HashSet::new(),
-            registered_outputs: vec![],
-            partial_sigs: HashMap::new(),
-            change_addresses: HashMap::new(),
-        };
+        crate::round::manager::start_round(&mut state).expect("start_round");
+        // Insert one registered input + bump participant_count to mirror what
+        // a real input_reg flow would have produced before advancing phases.
+        {
+            let inner = state.inner.as_mut().expect("inner populated by start_round");
+            inner.registered_inputs.insert(utxo_str.to_string(), RegisteredInput {
+                utxo_str: utxo_str.to_string(),
+                change_address: "tb1qtest".to_string(),
+                blind_sig_hash: [0u8; 32],
+                script_pubkey: bitcoin::ScriptBuf::new(),
+                value_sats: 150_000,
+            });
+        }
         state.participant_count = 1;
-        state.inner = Some(inner);
+        state.transition_to(Phase::OutputReg).expect("InputReg→OutputReg");
+        state.transition_to(Phase::Signing).expect("OutputReg→Signing");
+        let round_secret = state.inner.as_ref().expect("inner").round_secret;
         (state, round_secret)
     }
 
