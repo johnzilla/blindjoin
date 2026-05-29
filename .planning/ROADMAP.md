@@ -67,7 +67,10 @@
   3. An ADR (architectural decision record) checked into `.planning/decisions/v1.4-adr.md` records the resolutions of Open Decisions #1 (crate adopt/extend), #2 (mixed vs segregated rounds), and #3 (P2SH-P2WPKH wire format: B1 tagged enum vs B2 PSBT-input shape), each with the chosen option and a one-paragraph rationale.
   4. v1.3 `full_round::*` integration tests still pass at this phase boundary (no production code touched by Phase 14 spikes; rollback safety net intact).
   5. Each spike was capped at 2 days of effort or explicitly escalated; spike branches are not merged into `main` (POC code lives in branches, not the trunk).
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
+- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
 ### Phase 15: Shared Crate Multi-Script Contract
 **Goal**: `shared/` becomes the single source of truth for BIP-322 multi-script verification and the new wire types, so coordinator and client compile against one contract and produce byte-identical to_spend/to_sign transactions per script type.
@@ -79,7 +82,10 @@
   3. A roundtrip serialization test for the new `OwnershipProof` wire format (including the P2SH-P2WPKH `final_script_sig` field per ADR Open Decision #3) passes in `shared/` BEFORE any coordinator or client code consumes the new shape (v1.3 REPAIR-01 lesson #1 enforced as a phase boundary).
   4. `shared` crate compiles with exact-pinned dependency versions; `Cargo.lock` reflects no minor-version drift on `bdk_wallet`, `bitcoin`, or (if adopted) `bip322`.
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (`shared` changes are additive; existing P2WPKH witness-only path unchanged for v1.3-format inputs).
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
+- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
 ### Phase 16: Coordinator Integration & Advertisement
 **Goal**: Coordinator accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs under an operator-configurable allowlist and advertises the supported set over PKARR + `/round/info` so clients can fail-fast before opening a Tor circuit.
@@ -91,7 +97,10 @@
   3. A client that resolves the coordinator's PKARR record observes `supported_script_types` as a CSV-encoded TXT field on a record bumped to `version: "0.2.0"`; the total payload remains under the 220-byte warn threshold at `coordinator/src/discovery/pkarr_pub.rs:76`. The `/round/info` response carries `supported_script_types` as a proper JSON array.
   4. A spoofing attempt — client declares `script_type: p2wpkh` for an on-chain P2TR UTXO — is rejected with `UnsupportedScriptType` at validate-utxo time because the coordinator derives `script_type` from `txout.script_pubkey` and cross-checks against the client declaration (CRIT-01 invariant, load-bearing, code-review checked).
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary AND a v1.3 client successfully registers a P2WPKH UTXO against the v1.4 coordinator (one cell of the backwards-compat matrix verified inline).
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
+- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
 ### Phase 17: Client Multi-Script Wallet & Discovery
 **Goal**: A user with a v1.4 client can generate a wallet of any of three script types, sign BIP-322 ownership proofs for that type, and reject mismatched coordinators before any Tor circuit opens.
@@ -103,7 +112,10 @@
   3. A v1.4 client with a P2TR wallet pointed at a v1.3 coordinator (or v1.4 coordinator with `allow_p2tr = false`) rejects the coordinator at discovery time BEFORE opening a Tor circuit, with a clear error naming both the coordinator and the missing script type (e.g. `coordinator <onion> does not support p2tr ownership proofs`).
   4. A v1.4 client with a P2WPKH wallet successfully completes a full CoinJoin round against an unmodified v1.3 coordinator (the WALLET-04 compatibility shim correctly detects pre-`0.2.0` PKARR / missing `/round/info` field and emits the legacy witness-only `OwnershipProof` wire format).
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (the client's existing P2WPKH path is preserved as a code path, not removed in favor of the new dispatcher).
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
+- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
 ### Phase 18: Mixed-Script E2E + Liquidity Bot
 **Goal**: An operator running the v1.4 stack on signet sees the liquidity bot generate UTXOs across all enabled script types, and the v1.4 acceptance gate — a mixed-script CoinJoin round on regtest — completes and broadcasts a real txid.
@@ -115,7 +127,10 @@
   3. The liquidity bot, started with `script_types = ["p2wpkh", "p2tr", "p2sh-p2wpkh"]` in its config, generates UTXOs across all three types over a 3-round signet window AND rotates the type it uses per round (so its registrations are not a uniform-script fingerprint that defeats V1.4-MIN-02).
   4. v1.3 `full_round::*` P2WPKH-only integration tests still pass alongside the new mixed-script test — both suites green in a single `cargo test` run, providing the rollback safety net at the milestone boundary.
   5. The v1.3-client ↔ v1.4-coordinator compatibility cell of the backwards-compat matrix is verified inline (a v1.3 client binary registers a P2WPKH UTXO against the v1.4 coordinator and the round completes), discharging the WALLET-04 compatibility shim against a real v1.3 build artifact.
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
+- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
 ## Cross-Phase Invariant (v1.4)
 
