@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: 1
+current_plan: 2
 status: executing
-stopped_at: Phase 14 context gathered
-last_updated: "2026-05-29T23:25:05.754Z"
-last_activity: 2026-05-29 -- Phase 14 execution started
+stopped_at: Completed 14-01-PLAN.md (Sprint-0-A GO verdict)
+last_updated: "2026-05-29T23:32:29.078Z"
+last_activity: 2026-05-29 -- Plan 14-01 complete; ready for Plan 14-02
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 33
 ---
 
 # Project State
@@ -20,9 +20,9 @@ progress:
 ## Current Position
 
 Phase: 14 (sprint-0-spikes-discuss-phase-decisions) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 14
-Last activity: 2026-05-29 -- Phase 14 execution started
+Plan: 2 of 3 (Plan 14-01 complete; Sprint-0-A verdict GO)
+Status: Ready to execute Plan 14-02 (Sprint-0-B bdk_wallet 2.3 P2TR PoC)
+Last activity: 2026-05-29 -- Plan 14-01 complete; ready for Plan 14-02
 
 ## Project Reference
 
@@ -34,7 +34,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 ## Progress
 
 **Phases Complete:** 0 of 5 (v1.4 milestone)
-**Current Plan:** 1
+**Plans Complete:** 1 of 3 (Phase 14)
+**Current Plan:** 2
 
 **v1.4 phase map:**
 
@@ -46,8 +47,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Phase 14 context gathered
-**Resume File:** .planning/phases/14-sprint-0-spikes-discuss-phase-decisions/14-CONTEXT.md
+**Stopped At:** Completed 14-01-PLAN.md (Sprint-0-A GO verdict)
+**Resume File:** None
 
 ## Blockers
 
@@ -56,6 +57,14 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 ## Performance Metrics
 
 (v1.4 metrics will accumulate per-phase. Cumulative trends live in `RETROSPECTIVE.md`. v1.3 milestone-scoped metrics live in `milestones/v1.3-*` archives.)
+
+| Phase | Plan | Duration | Tasks | Files | Notes |
+|-------|------|----------|-------|-------|-------|
+| 14 | 01 | ~5 min | 3 | 3 | Sprint-0-A cargo-tree + audit probe; verdict GO (< 2 hours, well under D-18 2-day cap) |
+
+## Phase 14 Decisions (recorded from plan execution)
+
+- **Plan 14-01 / Sprint-0-A → GO** (2026-05-29): bip322 v0.0.10 pulls in `bitcoin v0.32.8` at depth 1 (gate 1 PASS), `cargo audit` reports 0 vulnerabilities + 0 warnings on the spike-branch lockfile (gate 2 PASS), and the wire-shape adapter sketches at 26 LOC with zero `unwrap_or*` and zero field-shape squashing (gate 3 PASS). **ADR Decision #1 flips from default ACCEPTED-EXTEND to ACCEPTED-ADOPT** for Plan 14-03 to consume. Three new transitive crates accepted into the v1.4 dependency graph: `bip322 v0.0.10`, `snafu v0.8.9`, `snafu-derive v0.8.9` (proc-macro, compile-time only). Spike branch `spike/14-A-bip322-cargo-tree` pushed to `origin` (HEAD `9ce2ff9`) for reproducibility per D-19; NOT merged to main per D-19/D-21.
 
 ## Accumulated Context
 

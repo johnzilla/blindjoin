@@ -68,7 +68,7 @@
   4. v1.3 `full_round::*` integration tests still pass at this phase boundary (no production code touched by Phase 14 spikes; rollback safety net intact).
   5. Each spike was capped at 2 days of effort or explicitly escalated; spike branches are not merged into `main` (POC code lives in branches, not the trunk).
 **Plans**: 3 plans
-- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
 - [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
 - [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
@@ -83,7 +83,7 @@
   4. `shared` crate compiles with exact-pinned dependency versions; `Cargo.lock` reflects no minor-version drift on `bdk_wallet`, `bitcoin`, or (if adopted) `bip322`.
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (`shared` changes are additive; existing P2WPKH witness-only path unchanged for v1.3-format inputs).
 **Plans**: 3 plans
-- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
 - [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
 - [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
@@ -160,7 +160,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 9. CI integration-test reliability | v1.3 | 5/5 | Complete | 2026-05-27 |
 | 10. full_round.rs decision + execution | v1.3 | 2/2 | Complete | 2026-05-28 |
 | 11-13. REPAIR-01 carry-forward (shipped as direct commits) | v1.3 | n/a | Closed-local | 2026-05-29 |
-| 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 0/0 | Not started | — |
+| 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 1/3 | In Progress|  |
 | 15. Shared Crate Multi-Script Contract | v1.4 | 0/0 | Not started | — |
 | 16. Coordinator Integration & Advertisement | v1.4 | 0/0 | Not started | — |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 0/0 | Not started | — |
