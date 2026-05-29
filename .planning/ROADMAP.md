@@ -104,10 +104,34 @@ Plans:
 | 7. Coordinator DoS Hardening | v1.1 | 3/3 | Complete | 2026-04-10 |
 | 8. Public-endpoint hardening | v1.2 | 4/4 | Complete | 2026-05-26 |
 | 9. CI integration-test reliability | v1.3 | 5/5 | Complete   | 2026-05-27 |
-| 10. full_round.rs decision + execution | v1.3 | 1/2 (10-02 partial: Tasks 1+2 of 3 — Task 3 blocked) | In Progress (blocked) |  |
+| 10. full_round.rs decision + execution | v1.3 | 2/2 (REPAIR-01 closed via direct fixes, see note below) | Complete | 2026-05-29 |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
+
+## Reconciliation note (2026-05-29)
+
+Phases 11–13 below chronicle a multi-cycle debugging sequence that absorbed
+orthogonal blockers as they surfaced (Phase 11: RSA encoding; Phase 12: bdk_wallet
+2.3 trust_witness_utxo; Phase 13: wire-format mismatch). The original plans
+were halted partway through under the D-11/D-12 escape-valve discipline.
+
+The actual fixes that closed REPAIR-01 shipped as direct code commits, NOT as
+Plan.md execution:
+
+- `cc20f6f` fix(11): RSA SPKI decode
+- `0bbcf3c` fix(12): trust_witness_utxo for bdk_wallet 2.3
+- `39a2d0a` fix(client): consensus-serialize Witness on the wire
+- `8538238` fix: surface coordinator response body in client error
+- `0780935` fix(coordinator): ban check before blinded_token validation
+- `489646f` test(full_round): enable 6 carve-out tests + blame helper fix
+- `39302c3` fix(coordinator): use real on-chain UTXO values in witness_utxo
+- `6f8c7e5` test: replace 2 MEDIUM backdoors with state-machine path
+- `9dad19f` fix(client): document --generate-wallet, drop unused --utxo-value-sats
+
+The Phase 11/12/13 directories under `.planning/phases/` preserve the original
+execution trace (CONTEXT.md, PATTERNS.md, halt SUMMARYs) as a forensic audit
+log of what was tried. They do NOT reflect what ultimately shipped.
 
 ### Phase 11: coordinator RSA pubkey encoding + full_round.rs unmute completion
 

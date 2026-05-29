@@ -45,10 +45,10 @@ Requirements for the **Test Infrastructure & Operational Hardening** milestone. 
 
 | REQ-ID | Phase | Plan | Status |
 |--------|-------|------|--------|
-| TEST-01 | Phase 9 | TBD | active |
-| TEST-02 | Phase 9 | TBD | active |
-| TEST-03 | Phase 9 | TBD | active |
-| TEST-04 | Phase 9 | TBD | active |
-| TEST-05 | Phase 9 | TBD | active |
-| REPAIR-01 | Phase 10 | TBD | active |
-| REPAIR-02 | Phase 10 | TBD | active |
+| TEST-01 | Phase 9 | 09-01 | closed (2026-05-27) |
+| TEST-02 | Phase 9 | 09-01 | closed (2026-05-27) |
+| TEST-03 | Phase 9 | 09-02 | closed (2026-05-27) |
+| TEST-04 | Phase 9 | 09-02 | closed (2026-05-27) |
+| TEST-05 | Phase 9 | 09-05 | closed (2026-05-27) |
+| REPAIR-01 | Phase 10–13 | direct commits (see ROADMAP reconciliation note) | closed-local (2026-05-29) — pending PR observation |
+| REPAIR-02 | Phase 10 | 10-02 (4026f50) | closed (2026-05-29) — corepc-node feature pin CI gate landed |

@@ -2,41 +2,56 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
-current_plan: 1
-status: executing
-stopped_at: Phase 13 context gathered
-last_updated: "2026-05-29T00:47:39.637Z"
-last_activity: 2026-05-29 -- Phase 13 planning complete
+current_plan: 0
+status: idle
+stopped_at: REPAIR-01 closed; v1.3 ready to ship
+last_updated: "2026-05-29T03:00:00.000Z"
+last_activity: 2026-05-29 -- REPAIR-01 closed; coordinator witness_utxo bug fix + planning state reconciled
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 11
-  percent: 80
+  completed_plans: 13
+  percent: 100
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 12 (repair-client-src-wallet-rs-260-bdk-wallet-2-3-signoptions-r) — EXECUTING
-Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-05-29 -- Phase 13 planning complete
+No phase active. v1.3 REPAIR-01 closed locally (all 8 full_round tests green). REPAIR-02 closed (corepc-node feature pin CI gate landed at 4026f50). v1.3 is ready to ship pending PR observation.
 
 ## Progress
 
-**Phases Complete:** 1 of 2
-**Current Plan:** 1
+**Phases Complete:** 2 of 2 (v1.3 milestone)
+**Current Plan:** none
 
 ## Session Continuity
 
-**Stopped At:** Phase 13 context gathered
-**Resume File:** .planning/phases/13-client-src-wallet-rs-wire-format-fix-plan-12-02-unmute-cycle/13-CONTEXT.md
+**Stopped At:** REPAIR-01 closed; planning state reconciled
+**Resume File:** none
+
+## Reconciliation note (2026-05-29)
+
+Phases 11-13 chronicle a multi-cycle debugging sequence that absorbed
+orthogonal blockers as they surfaced. The actual fixes shipped as code
+commits, not as the originally-planned per-phase Plan.md execution:
+
+- Wire-format encoding fix (`client/src/wallet.rs`): `39a2d0a`
+- Coordinator response body in client error path: `8538238`
+- Ban check before blinded_token validation: `0780935`
+- Enable 6 full_round carve-outs + blame-test helper fix: `489646f`
+- Coordinator uses real on-chain witness_utxo values: `39302c3`
+- Replace 2 MEDIUM test backdoors with state-machine path: `6f8c7e5`
+- Drop dead --utxo-value-sats CLI plumbing + document generate-wallet: `9dad19f`
+
+The Phase 11-13 `.planning/phases/{11,12,13}-*/` directories preserve
+the original execution trace as a forensic audit log. They DO NOT
+reflect what ultimately shipped.
 
 ## Blockers
 
-- **Phase 10-02 Task 3:** `tests/integration/mod.rs::fund_regtest` line 481 fails on bitcoind v31 with RPC -5 "No such mempool transaction". `get_raw_transaction_verbose` called after confirmation block; bitcoind v30+ needs `-txindex=1` or a block hash to find buried txes. All 6 carve-out tests fail identically. **Fix A (recommended):** reorder `get_raw_transaction_verbose` to run BEFORE `generate_to_address(1, &mine_addr)` in `mod.rs::fund_regtest`. Open Plan 10-03 to apply, then resume Task 3 via `/gsd:execute-phase 10 --resume`.
+- None.
 
 - v1.3 phase shape: 2 phases (9 + 10), not 3. Phase 9 bundles all 5 TEST-* requirements because the pieces interlock — TEST-02 (no silent skips) requires TEST-01 (bitcoind on the runner) to be observable; TEST-03 (clean exit on panic) and TEST-04 (no leaked daemons) are the same root cause (corepc-node Box::leak); TEST-05 (CONTRIBUTING.md) documents the canonical pattern the other four enable. Splitting 9a/9b would create a phase whose success criteria can't be observed end-to-end until the other half lands.
 - v1.3 Phase 10 sequenced after Phase 9 because REPAIR-01's success criterion ("all 15 tests pass against pinned bitcoind") only becomes observable once Phase 9's CI infrastructure exists. REPAIR-02 (explicit corepc-node version features) naturally falls out of any repair path taken in REPAIR-01.
