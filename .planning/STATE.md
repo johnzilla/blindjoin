@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: "none — Phase 14 awaiting `/gsd:plan-phase 14`"
+current_plan: 1
 status: executing
 stopped_at: Phase 14 context gathered
-last_updated: "2026-05-29T23:07:21.392Z"
-last_activity: 2026-05-29 -- Phase 14 planning complete
+last_updated: "2026-05-29T23:25:05.754Z"
+last_activity: 2026-05-29 -- Phase 14 execution started
 progress:
   total_phases: 5
   completed_phases: 0
@@ -19,22 +19,22 @@ progress:
 
 ## Current Position
 
-Phase: 14 — Sprint-0 Spikes + Discuss-Phase Decisions (not started; awaiting `/gsd:plan-phase 14`)
-Plan: —
-Status: Ready to execute
-Last activity: 2026-05-29 -- Phase 14 planning complete
+Phase: 14 (sprint-0-spikes-discuss-phase-decisions) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 14
+Last activity: 2026-05-29 -- Phase 14 execution started
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** v1.4 BIP-322 Multi-Script Support — broaden CoinJoin participation to P2TR and P2SH-P2WPKH UTXOs alongside existing P2WPKH; align the "forward-compatible with all address types" claim in PROJECT.md with shipped reality.
+**Current focus:** Phase 14 — sprint-0-spikes-discuss-phase-decisions
 
 ## Progress
 
 **Phases Complete:** 0 of 5 (v1.4 milestone)
-**Current Plan:** none — Phase 14 awaiting `/gsd:plan-phase 14`
+**Current Plan:** 1
 
 **v1.4 phase map:**
 
