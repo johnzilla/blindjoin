@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Test Infrastructure & Operational Hardening
-current_plan: 2
-status: halted
-stopped_at: "Phase 12 Plan 02 halted at D-11 escape-valve — 5th orthogonal blocker (HTTP 400 /round/sign: client sends raw DER bytes; coordinator expects bitcoin::Witness consensus encoding). Phase 13 absorbs per D-12."
-last_updated: "2026-05-28T23:30:00.000Z"
+current_plan: 1
+status: executing
+stopped_at: Phase 13 context gathered
+last_updated: "2026-05-29T00:19:03.474Z"
 last_activity: 2026-05-28
 progress:
-  total_phases: 4
-  completed_phases: 3
+  total_phases: 5
+  completed_phases: 4
   total_plans: 11
-  completed_plans: 10
-  percent: 75
+  completed_plans: 11
+  percent: 80
 ---
 
 # Project State
@@ -31,8 +31,8 @@ Last activity: 2026-05-28
 
 ## Session Continuity
 
-**Stopped At:** Phase 12 Plan 02 halted at D-11 — 5th orthogonal blocker (HTTP 400 from /round/sign: wire format mismatch — client sends raw DER bytes; coordinator expects bitcoin::Witness consensus encoding). Phase 13 absorbs per D-12.
-**Resume File:** .planning/phases/12-repair-client-src-wallet-rs-260-bdk-wallet-2-3-signoptions-r/12-02-SUMMARY.md
+**Stopped At:** Phase 13 context gathered
+**Resume File:** .planning/phases/13-client-src-wallet-rs-wire-format-fix-plan-12-02-unmute-cycle/13-CONTEXT.md
 
 ## Blockers
 
