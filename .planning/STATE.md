@@ -2,9 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-status: planning
-last_updated: "2026-05-29T20:51:43.646Z"
-last_activity: 2026-05-29
+current_plan: "none — Phase 14 awaiting `/gsd:plan-phase 14`"
+status: Roadmap drafted; phases 14-18 defined; awaiting plan-phase entry
+stopped_at: Phase 14 context gathered
+last_updated: "2026-05-29T22:29:43.367Z"
+last_activity: 2026-05-29 — v1.4 roadmap drafted (Phases 14-18) following the SUMMARY.md shared → coordinator → client → integration build order
 progress:
   total_phases: 5
   completed_phases: 0
@@ -35,6 +37,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 **Current Plan:** none — Phase 14 awaiting `/gsd:plan-phase 14`
 
 **v1.4 phase map:**
+
 - Phase 14 — Sprint-0 Spikes + Discuss-Phase Decisions (gating; no requirements mapped; produces ADR artifact)
 - Phase 15 — Shared Crate Multi-Script Contract (BIP322-01..04, ADVERT-04)
 - Phase 16 — Coordinator Integration & Advertisement (ADVERT-01, ADVERT-02, ADVERT-03)
@@ -43,8 +46,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Roadmap drafted; next action is `/gsd:plan-phase 14` to plan the Sprint-0 spikes + ADR phase
-**Resume File:** `.planning/ROADMAP.md` (Phase 14 detail section)
+**Stopped At:** Phase 14 context gathered
+**Resume File:** .planning/phases/14-sprint-0-spikes-discuss-phase-decisions/14-CONTEXT.md
 
 ## Blockers
 
