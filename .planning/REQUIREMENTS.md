@@ -74,30 +74,39 @@ Explicitly excluded with reasoning to prevent re-adding later.
 
 ## Traceability
 
-Empty initially. Filled during roadmap creation when phases are derived.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BIP322-01 | TBD | Pending |
-| BIP322-02 | TBD | Pending |
-| BIP322-03 | TBD | Pending |
-| BIP322-04 | TBD | Pending |
-| ADVERT-01 | TBD | Pending |
-| ADVERT-02 | TBD | Pending |
-| ADVERT-03 | TBD | Pending |
-| ADVERT-04 | TBD | Pending |
-| WALLET-01 | TBD | Pending |
-| WALLET-02 | TBD | Pending |
-| WALLET-03 | TBD | Pending |
-| WALLET-04 | TBD | Pending |
-| INTEG-01 | TBD | Pending |
-| INTEG-02 | TBD | Pending |
+| BIP322-01 | Phase 15 | Pending |
+| BIP322-02 | Phase 15 | Pending |
+| BIP322-03 | Phase 15 | Pending |
+| BIP322-04 | Phase 15 | Pending |
+| ADVERT-01 | Phase 16 | Pending |
+| ADVERT-02 | Phase 16 | Pending |
+| ADVERT-03 | Phase 16 | Pending |
+| ADVERT-04 | Phase 15 | Pending |
+| WALLET-01 | Phase 17 | Pending |
+| WALLET-02 | Phase 17 | Pending |
+| WALLET-03 | Phase 17 | Pending |
+| WALLET-04 | Phase 17 | Pending |
+| INTEG-01 | Phase 18 | Pending |
+| INTEG-02 | Phase 18 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 14 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 14 ⚠️
+- Mapped to phases: 14 ✓
+- Unmapped: 0
+- Phase 14 (Sprint-0 + Discuss-Phase Decisions) maps zero requirements — it is a gating spike/decision phase that produces an ADR resolving Open Decisions #1, #2, #3, #4 before Phase 15 plan-phase can derive tasks. This is intentional, not an orphan.
+
+### Phase Coverage Summary
+
+| Phase | Requirements Mapped | Notes |
+|-------|---------------------|-------|
+| Phase 14 — Sprint-0 Spikes + Discuss-Phase Decisions | (none) | Gating ADR-producing phase; resolves Open Decisions #1-#4 |
+| Phase 15 — Shared Crate Multi-Script Contract | BIP322-01, BIP322-02, BIP322-03, BIP322-04, ADVERT-04 | shared/ contract + wire-format roundtrip test (REPAIR-01 lesson #1) |
+| Phase 16 — Coordinator Integration & Advertisement | ADVERT-01, ADVERT-02, ADVERT-03 | Allowlist + dispatcher + PKARR/`/round/info` advertisement + CRIT-01 cross-check |
+| Phase 17 — Client Multi-Script Wallet & Discovery | WALLET-01, WALLET-02, WALLET-03, WALLET-04 | Wallet descriptors + signing + fail-fast discovery + v1.4→v1.3 compat shim |
+| Phase 18 — Mixed-Script E2E + Liquidity Bot | INTEG-01, INTEG-02 | Acceptance gate (mixed-script regtest round) + liquidity bot multi-script |
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-05-29 after v1.4 scoping*
+*Last updated: 2026-05-29 after v1.4 roadmap drafted (Phases 14-18 with full requirement traceability)*
