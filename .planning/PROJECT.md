@@ -12,14 +12,21 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 ## Current State
 
-v1.2 Production Readiness shipped (1 phase, Phase 8 "Public-endpoint hardening"). v1.3 Test Infrastructure & Operational Hardening started 2026-05-26 — focused on making CI catch integration regressions automatically. Phase 8 delivered DoS resistance on the coordinator HTTP API: per-route rate limits (HTTP 429 + Retry-After, RATE_LIMITED JSON envelope), uniform request timeouts (HTTP 408), and Tor accept-loop connection cap (tokio::sync::Semaphore + ConnectionGuard). 4 operator-tunable knobs in `coordinator.toml`; release builds refuse clearnet without `BLINDJOIN_ALLOW_CLEARNET=1`.
+v1.3 Test Infrastructure & Operational Hardening shipped 2026-05-29 (5 phases, 13 plans, 4 days). Made the integration test feedback loop trustworthy: CI now installs a pinned bitcoind v30.2 (`actions/cache@v4` + PGP-verified install), the entire `tests/integration/` tree has zero `Box::leak` (clean process lifecycle via `BitcoindGuard` RAII + `require_bitcoind!()` macro), `CONTRIBUTING.md` documents the canonical invocation, and any test using corepc-node's typed `Client` must declare an explicit `features = ["NN_M"]` (CI grep gate). REPAIR-01 closed locally — all 8 `full_round::*` tests green on pinned brew bitcoind v31 via a chain of direct fixes (RSA SPKI handshake, bdk_wallet 2.3 `trust_witness_utxo`, wire-format `Witness` consensus encoding, real on-chain `witness_utxo` values, ban-check ordering, error-body surfacing). Full PR observation closure pending v1.4 cut.
 
-Shipped v1.1 Security & Availability Hardening (5,918 LOC Rust, 8 phases total across 3 milestones to date); v1.3 in progress.
-Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio, tower_governor 0.8, tower-http 0.6.
+Shipped to date: v1.0 MVP → v1.1 Security & Availability → v1.2 Production Readiness → v1.3 Test Infrastructure (10 phases total across 4 milestones; 6,490 Rust LOC across coordinator/client/shared).
+Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio, tower_governor 0.8, tower-http 0.6, corepc-node 0.12 (features pinned), bitcoind v30.2.
 Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
 PKARR DHT discovery live. Docker Compose stack operational.
-CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned.
-Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance.
+CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned, bitcoind cached + PGP-verified, corepc-node feature pin enforced.
+Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance, real on-chain witness_utxo values in PSBT assembly.
+
+## Next Milestone Goals
+
+- Tor-mode verification harness (closes Phase 8 HUMAN-UAT item 3 — coordinator with `tor_mode=true` + test client opening ≥257 concurrent `.onion` streams)
+- REPAIR-01 PR observation closure (currently closed-local only)
+- Candidates from BACKLOG.md: B-02 BIP-322 multi-script support, B-03 dynamic fee estimation
+- Direction TBD via `/gsd:new-milestone`
 
 ## Requirements
 
@@ -52,22 +59,17 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - ✓ Operator-tunable knobs via `coordinator.toml` and `BLINDJOIN__COORDINATOR__*` env vars; validated at startup — v1.2 Phase 8
 - ✓ GlobalKeyExtractor for rate limiting (Tor-safe; PeerIpKeyExtractor would break under Tor) — v1.2 Phase 8
 
+- ✓ CI installs a pinned `bitcoind` binary (cached, PGP+SHA256-verified) so integration tests can spawn it without per-job download cost — v1.3 Phase 9 (TEST-01)
+- ✓ Integration tests that require bitcoind actually execute in CI on every PR — no silent graceful-skips — v1.3 Phase 9 (TEST-02)
+- ✓ `cargo test` output streams cleanly (no buffering pipes) and exits on test panic without blocking on leaked child processes — v1.3 Phase 9 (TEST-03)
+- ✓ `corepc-node` test fixtures release their spawned `bitcoind` on test end (zero `Box::leak` across `tests/integration/`) — v1.3 Phase 9 (TEST-04)
+- ✓ `CONTRIBUTING.md` documents the canonical integration-test invocation pattern — v1.3 Phase 9 (TEST-05)
+- ✓ `full_round.rs` repaired — all 8 tests pass against pinned bitcoind v31 via direct code commits (RSA SPKI handshake, bdk_wallet 2.3 `trust_witness_utxo`, wire-format `Witness` consensus encoding, real on-chain `witness_utxo`, ban-check ordering, error-body surfacing) — v1.3 Phases 10-13 (REPAIR-01 closed-local; full PR observation pending v1.4 cut)
+- ✓ Any test using corepc-node's typed `Client` declares an explicit version feature (CI grep gate enforces) — v1.3 Phase 10 (REPAIR-02)
+
 ### Active
 
-## Current Milestone: v1.3 Test Infrastructure & Operational Hardening
-
-**Goal:** Move the project from "tests compile" to "tests actually run end-to-end in CI" so integration regressions are caught on every PR — not surfaced months later when someone runs them locally for the first time.
-
-**Target features:**
-- CI installs bitcoind and the integration suite actually executes (no more silent graceful-skips)
-- Cargo-test stdout-hang pattern eliminated (no more leaked-bitcoind pipe blocks; output streams to file)
-- `full_round.rs` either repaired (corepc-node v30 client API port) or retired (delete if unit coverage suffices)
-
-(Tor-mode integration harness deferred to v1.4+ — see REQUIREMENTS.md "Future Requirements" for the deferred Phase 8 HUMAN-UAT item 3 closure.)
-
-**Key context:** Phase 8 surfaced multiple structural problems with the test infrastructure that had been silently rotting — tests that always graceful-skipped in CI, `cargo test` stdout pipes blocked behind leaked bitcoind processes, hardcoded test WIFs that were never valid, RPC schema drift in `full_round.rs`. The milestone exists to stop the fire-fighting cycle by making the test feedback loop trustworthy. Scope is deliberately narrow: no new product features, no protocol changes; just durable test infrastructure.
-
-(Requirements list will be populated in the next workflow step.)
+(No active requirements — run `/gsd:new-milestone` to define v1.4 scope.)
 
 ### Out of Scope
 
@@ -89,6 +91,8 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - **Builder background:** Owner has Rust + Bitcoin experience (arbstr-vault treasury service with Cashu ecash + Lightning).
 - **v1.0 shipped:** Full protocol working on signet with Tor, PKARR discovery, Docker deployment, and CI/CD.
 - **v1.1 shipped:** CI/CD security gates (test/clippy/audit on PRs and releases), coordinator DoS hardening (RPC before lock, RSA caching), supply-chain hardening (SHA-pinned actions, release checksums).
+- **v1.2 shipped:** Public-endpoint DoS resistance via tower_governor + tower-http (per-route rate limits, request timeouts, Tor accept-loop semaphore cap), 4 operator-tunable config knobs validated at startup, release clearnet refusal.
+- **v1.3 shipped:** Trustworthy integration-test feedback loop — pinned bitcoind v30.2 in CI (cached + PGP-verified), `BitcoindGuard` RAII + `require_bitcoind!()` macro eliminate `Box::leak` and the pipe-buffer stdout-hang, `CONTRIBUTING.md` documents the canonical invocation, corepc-node feature pin enforced by CI grep gate, REPAIR-01 closed locally (all 8 `full_round::*` tests green) via direct fixes for RSA SPKI handshake, bdk_wallet 2.3 segwit signing, partial-sig wire format, and coordinator witness_utxo correctness.
 
 ## Constraints
 
@@ -119,6 +123,14 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 | GlobalKeyExtractor over PeerIpKeyExtractor | Tor-safe by design; per-peer throttling impossible on Tor (single IP) | ✓ Good — would have been a CRITICAL bug |
 | Validate hardening knobs at startup (`config.validate()`) | Fail-fast at boot beats panic-at-first-request or silent deadlock | ✓ Good — CR-01 & CR-02 fixed pre-ship |
 | ConnectionGuard RAII for Tor permits | Load-bearing `let _permit = permit;` is one careless cleanup away from disabling the cap | ✓ Good — WR-01 hardened |
+| Pin bitcoind v30.2 in CI via `.bitcoind-version` + actions/cache + PGP-verified install | Defeats keyserver flake and a hostile main HEAD; cache-then-verify-on-miss preserves the integrity gate even with cache hits | ✓ Good — TEST-01/02 closed, CI install cost amortized |
+| `BitcoindGuard` RAII + `require_bitcoind!()` macro over Box::leak + skip blocks | Macro returns from the calling test scope (a plain fn cannot); RAII guarantees graceful `node.stop()` then process.kill() fallback | ✓ Good — `tests/integration/` tree has zero Box::leak and zero inline skip blocks |
+| `view_stdout=false` + `-printtoconsole=0` belt-and-suspenders | view_stdout=false is corepc-node 0.12 default; explicit guards a future default flip silently re-introducing the pipe-hang | ✓ Good — root cause cannot resurface silently |
+| corepc-node feature pin enforced by CI grep gate | Silent dependence on the 0_17_2 default would mean tests target the wrong Bitcoin Core RPC surface | ✓ Good — REPAIR-02 closed via 4026f50 |
+| Close REPAIR-01 via direct commits rather than re-executing halted Plans 11-13 | After 6 orthogonal blockers and 3 escape-valve halts, Plan.md execution had ceased to be the load-bearing path; direct bisectable commits delivered REPAIR-01 with full forensic audit trail preserved | ⚠ Revisit — closed-local but full PR observation pending; preserve the forensic trace as a reference for "when to abandon the structured path" |
+| client signs PSBT with `SignOptions { trust_witness_utxo: true }` (bdk_wallet 2.3) | Client populates witness_utxo from its own trusted regtest RPC; full BIP-143 non_witness_utxo path was heavier and unnecessary given trust boundary | ✓ Good — narrowly scoped fix with D-08 block comment explaining safety boundary |
+| Partial-sig wire format = consensus-serialized `bitcoin::Witness` (not raw DER) | Coordinator deserializes via `bitcoin::Witness` consensus encoding; raw DER on the wire produced silent HTTP 400 | ✓ Good — wire-format mismatch was the root of the 6th orthogonal blocker |
+| Coordinator uses real on-chain UTXO values in PSBT `witness_utxo` (not zero placeholders) | bdk_wallet sighash computation requires the actual amount; zero placeholders produced invalid signatures | ✓ Good — closed the last input-amount source of REPAIR-01 failures |
 
 ## Evolution
 
@@ -138,4 +150,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-26 — v1.3 Test Infrastructure & Operational Hardening started*
+*Last updated: 2026-05-29 after v1.3 milestone (Test Infrastructure & Operational Hardening) shipped*

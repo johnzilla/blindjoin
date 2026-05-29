@@ -1,5 +1,41 @@
 # Milestones
 
+## v1.3 Test Infrastructure & Operational Hardening (Shipped: 2026-05-29)
+
+**Phases completed:** 5 phases (9-13), 13 plans, ~4-day milestone
+**Code diff (ex-planning):** 24 files changed, +1,493 / -739 across coordinator, client, shared, CI
+**Notes:** No pre-close milestone audit (close approved without it). REPAIR-01 closed locally — all 8 `full_round::*` tests green on pinned brew bitcoind v31; full PR observation closure deferred to v1.4 cut.
+
+**Key accomplishments:**
+
+- CI substrate for integration tests — `.bitcoind-version` pin (Bitcoin Core v30.2), `actions/cache@v4` with PGP+SHA256-verified install on miss, `BITCOIND_EXE` exported, workflow-level `BLINDJOIN_REQUIRE_BITCOIND=1`; tests now panic-on-miss instead of silent graceful-skip (TEST-01, TEST-02)
+- Shared test fixtures + clean process lifecycle — `require_bitcoind!()` macro, `BitcoindGuard` RAII, `RpcCreds`, `bootstrap_regtest_bitcoind()`; entire `tests/integration/` tree now has **zero `Box::leak`** and zero inline skip blocks; `view_stdout=false` + `-printtoconsole=0` kill the pipe-buffer hang (TEST-03, TEST-04)
+- `CONTRIBUTING.md` canonical pattern — 61-line local-dev manual with copy-pasteable invocation, single-test example, `--include-ignored` opt-in, and 4-row pass/fail/skip verdict reference card (TEST-05)
+- REPAIR-02 corepc-node feature pin CI gate — `grep` job rejects any `Cargo.toml` declaring `corepc-node` without an explicit `features = ["NN_M"]`; doc count corrected 15→8 tests across ROADMAP+REQUIREMENTS; 4 WR-05 bare sleeps replaced with bounded poll-until-deadline loops (REPAIR-02 closed via commit `4026f50`)
+- REPAIR-01 closed-local — all 8 `full_round::*` tests green via a chain of direct fixes: client RSA pubkey decode `from_der` → `from_spki` (SPKI-symmetric handshake); client signs PSBT with `SignOptions { trust_witness_utxo: true }` (bdk_wallet 2.3 segwit); partial-sig wire format = consensus-serialized `bitcoin::Witness`; coordinator uses real on-chain UTXO values in PSBT `witness_utxo`; ban-check ordered before blinded-token validation; coordinator error body surfaced in client error path
+- Test-infra & CLI hygiene — 2 MEDIUM test backdoors removed and replaced with the production state-machine path; dead `--utxo-value-sats` CLI flag dropped; `--generate-wallet` placeholder documented; planning state reconciled with shipped reality (Phase 11-13 directories preserved as forensic audit log under `.planning/milestones/v1.3-phases/`)
+
+**Known gaps recorded at close:**
+- REPAIR-01 PR observation closure still pending — closed-local only. Full closure expected at v1.4 cut PR.
+- Phase 11-13 Plan.md executions halted under D-08/D-11/D-12 escape-valves; the actual fixes shipped as direct code commits rather than Plan execution. Original execution trace preserved as forensic audit log.
+
+---
+
+## v1.2 Production Readiness (Shipped: 2026-05-26)
+
+**Phases completed:** 1 phase (Phase 8), 4 plans
+
+**Key accomplishments:**
+
+- Per-route rate limiting on coordinator HTTP API via `tower_governor` 0.8 (60/min read split, 30/min write split, `GlobalKeyExtractor` for Tor-safety) returning HTTP 429 + `Retry-After` + `RATE_LIMITED` JSON envelope
+- Uniform request timeout via `tower_http::TimeoutLayer` returning HTTP 408 honoring `request_timeout_secs`
+- Tor accept-loop connection cap via `tokio::sync::Semaphore` (default 256) wrapped in `ConnectionGuard` RAII; load-bearing `let _permit = permit;` pattern documented
+- 4 operator-tunable knobs in `[coordinator]` config (`coordinator.toml` + `BLINDJOIN__COORDINATOR__*` env vars) all validated at startup via `CoordinatorConfig::validate()`
+- Release builds refuse to bind clearnet unless `BLINDJOIN_ALLOW_CLEARNET=1` is explicitly set
+- 11/11 must-haves verified statically; HUMAN-UAT items 1 & 2 closed via local runtime proof (Homebrew bitcoind v31 + integration tests); item 3 (Tor-mode connection-cap runtime test) deferred to v1.4+
+
+---
+
 ## v1.1 Security & Availability Hardening (Shipped: 2026-04-10)
 
 **Phases completed:** 2 phases, 4 plans, 7 tasks

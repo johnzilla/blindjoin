@@ -81,6 +81,53 @@
 
 ---
 
+## Milestone: v1.3 — Test Infrastructure & Operational Hardening
+
+**Shipped:** 2026-05-29
+**Phases:** 5 (9-13) | **Plans:** 13 | **Timeline:** 4 days (2026-05-26 → 2026-05-29)
+
+### What Was Built
+- Pinned bitcoind v30.2 substrate in CI (`.bitcoind-version`, `actions/cache@v4`, PGP+SHA256-verified install on cache miss, `BITCOIND_EXE` export, workflow-level `BLINDJOIN_REQUIRE_BITCOIND=1`)
+- Shared test fixtures (`require_bitcoind!()` macro, `BitcoindGuard` RAII, `RpcCreds`, `bootstrap_regtest_bitcoind`); entire `tests/integration/` tree has zero `Box::leak` and zero inline skip blocks
+- `CONTRIBUTING.md` canonical pattern (61 lines: prerequisites, copy-pasteable invocation, `--include-ignored` opt-in, 4-row verdict reference card)
+- REPAIR-02 corepc-node feature pin CI gate (grep job); 4 WR-05 bare sleeps → bounded poll-until-deadline loops
+- REPAIR-01 closed-local: all 8 `full_round::*` tests green via direct fixes — RSA SPKI handshake (`from_der`→`from_spki`); bdk_wallet 2.3 `SignOptions { trust_witness_utxo: true }`; partial-sig wire format = consensus-serialized `bitcoin::Witness`; coordinator real on-chain `witness_utxo`; ban-check ordering before blinded-token validation; coordinator error body surfaced in client error path
+- Hygiene: 2 MEDIUM test backdoors replaced with production state-machine path; dead `--utxo-value-sats` CLI flag dropped; `--generate-wallet` placeholder documented; planning state reconciled with shipped reality
+
+### What Worked
+- **Phase 9 5-plan structure** — TEST-* requirements were tightly interlocking and each plan delivered a complete, observable substrate (pin → fixtures → migrate-callers-A → migrate-callers-B → docs). Wave dependencies were obvious; no phase-internal replans.
+- **Pin-manifest pattern** — `.bitcoind-version` as a plain-text version file with no metadata composed cleanly into URLs, install commands, and docs. The cache-then-verify-on-miss pattern preserved the integrity gate without amortizing it away.
+- **RAII + macro for test fixtures** — `BitcoindGuard`'s graceful `node.stop()` then `Node::Drop`'s `process.kill()` belt-and-suspenders meant no panic-in-Drop and no leaked processes regardless of test exit path. `require_bitcoind!()` as a macro (not a fn) was load-bearing because a plain function cannot return from the calling test scope.
+- **Direct commits as escape valve** — after 3 escape-valve halts (Plans 11-02, 12-02, 13-01) under D-08/D-11/D-12, the structured Plan.md execution path had clearly ceased to be load-bearing. Pivoting to bisectable direct commits closed REPAIR-01 cleanly while preserving the original execution trace as a forensic audit log.
+
+### What Was Inefficient
+- **6 orthogonal blockers between Phase 10 and Phase 13** — REPAIR-01 had no clean Plan.md decomposition because the blocker chain (RPC schema → RSA SPKI → bdk_wallet 2.3 → wire format → witness_utxo correctness → ban ordering) was only discoverable serially. Each carry-forward (10→11→12→13) added planning overhead that didn't translate to shipped value. A "discover and patch as you find" debugging session would have shipped the same fixes in fewer artifacts.
+- **D-08 → D-11 → D-12 escape-valve discipline correctly halted unwinnable plans** — but the protocol of "create a new phase to absorb the carry-forward" produced phases (11, 12, 13) whose Plan.md files were largely abandoned. The forensic value of preserving them is real, but the planning overhead per blocker was high.
+- **HUMAN-UAT item 3 still deferred** (Tor-mode connection-cap test) — closed-local proof never arrived; the v1.4 milestone will inherit it.
+- **REPAIR-01 closed-local only** — full PR observation closure deferred to v1.4 cut PR. The "closed-local" status is honest but adds a tracking burden the next milestone has to discharge.
+
+### Patterns Established
+- **Pin manifest** — plain-text version file at repo root (e.g. `.bitcoind-version`), no metadata, `$(cat)` substitutes cleanly into URLs and install scripts
+- **Cache-then-verify-on-miss** — `actions/cache` restores the binary directly when warm; install step runs the full PGP+SHA256 integrity gate on miss before populating the cache. Cache poisoning recoverable by bumping the pin manifest.
+- **Content-addressed key fetch from SHA-pinned upstream commit** — `bitcoin-core/guix.sigs` at a specific commit, not `main` HEAD, defeats a hostile upstream push between research and execution.
+- **RAII guard with explicit `impl Drop`** — extends the `ConnectionGuard` pattern from `coordinator/src/network/tor.rs` for test-fixture resources requiring graceful shutdown before SIGKILL fallback.
+- **Test-fixture macro pattern** — `#[macro_export] macro_rules!` in `tests/integration/mod.rs`, reachable as `$crate::macro_name!()` from submodules via the `[[test]]` declaration in `Cargo.toml`. Macro form is load-bearing for return-from-caller skip semantics.
+- **Belt-and-suspenders against default flips** — set `view_stdout=false` and `-printtoconsole=0` explicitly even when one is the dependency default; protects against a future default flip silently re-introducing a root cause.
+- **D-* escape-valve numbering** — D-08/D-11/D-12 as named halt conditions in CONTEXT.md let the executor and the human reviewer share a vocabulary about "when to stop" without litigating each blocker.
+
+### Key Lessons
+1. **For multi-orthogonal-blocker debugging, abandon Plan.md execution sooner.** When the 3rd carry-forward phase appears with the same shape as phases 11 and 12, the structured path has stopped paying for itself. Pivot to direct bisectable commits and preserve the planning trail as a forensic log. Future debugging sessions of this shape should be marked as `/gsd:debug` cycles from the start, not phase carry-forwards.
+2. **Pin every dependency that's referenced by version in a test fixture.** Bitcoin Core via `.bitcoind-version`; corepc-node via explicit `features = ["NN_M"]`; both are now CI-enforced. The same discipline applies to any future test infra (Tor-mode harness, etc.).
+3. **RAII over `Box::leak` for spawned external processes in tests.** `Box::leak` is fast to type and silently corrupts test isolation; `BitcoindGuard` is 10 more lines of code and eliminates an entire class of "tests pass locally, hang in CI" bugs. Apply this pattern to any future spawned-process test fixture.
+4. **Distinguish "wire format" from "API shape" in client/coordinator contracts.** The 6th orthogonal blocker (HTTP 400 from /round/sign) was a wire-format encoding mismatch — coordinator deserialized `bitcoin::Witness` via consensus encoding; client sent raw DER bytes. Both sides "looked right" in isolation; only the wire byte stream surfaced it. Future wire-format changes should ship with a roundtrip serialization test in `shared/` before either side ships.
+5. **`closed-local` is honest but adds tracking debt.** REPAIR-01 closed locally on 2026-05-29 but full PR observation requires the v1.4 cut PR. Future milestones should treat "closed-local" requirements as inherited todos, not as closed.
+
+### Cost Observations
+- Model mix: ~5% opus (audit-phase, planning narrowings), ~85% sonnet (execution, code review, fix loops), ~10% haiku (mechanical reformatting)
+- Notable: The 6-blocker carry-forward chain meant ~3× the planning overhead of v1.1 for similar shipped LOC — the lesson is that debugging sessions and milestone phases have different cost curves, and confusing them is expensive
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -89,6 +136,8 @@
 |-----------|----------|--------|------------|
 | v1.0 | 3 days | 5 | Initial milestone — established Prove-Then-Layer pattern |
 | v1.1 | 1 day | 2 | Hardening milestone — established gap closure cycle and code review fix pipeline |
+| v1.2 | 1 day | 1 | Single-phase milestone — promoted BACKLOG B-01 directly to plan; established design-contract-in-CONTEXT.md (no parallel REQ-IDs) |
+| v1.3 | 4 days | 5 | Test infrastructure milestone — established pinned-binary + RAII fixture patterns; surfaced multi-orthogonal-blocker debugging mode where Plan.md execution stops paying for itself and direct commits are the right escape valve |
 
 ### Cumulative Quality
 
@@ -96,6 +145,8 @@
 |-----------|----------|-------|-------------|
 | v1.0 | 7,353 | 17 | 52 (51 checked) |
 | v1.1 | 5,918 | 4 | 6 (6 checked) |
+| v1.2 | 5,918 | 4 | 6 design decisions (no REQ-IDs) — all closed |
+| v1.3 | 6,490 | 13 | 7 (7 closed; REPAIR-01 closed-local pending PR observation) |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -103,3 +154,6 @@
 2. Sequential execution without worktrees is simpler and more reliable for solo builders
 3. Verify Rust borrow patterns at plan time — cargo check during planning prevents gap closure cycles
 4. Code review + auto-fix pipeline catches real issues with minimal overhead (~10%)
+5. **For multi-orthogonal-blocker debugging, abandon Plan.md execution sooner.** After 2-3 carry-forward phases with the same shape, the structured path has stopped paying — pivot to direct bisectable commits and preserve the planning trail as a forensic log.
+6. **Pin every dependency referenced by version in a test fixture, and CI-enforce the pin.** `.bitcoind-version` + corepc-node feature pin via grep gate is the pattern; apply to any future test infra.
+7. **RAII over `Box::leak` for spawned external processes in tests.** 10 lines of code eliminates a whole class of "passes locally, hangs in CI" bugs.
