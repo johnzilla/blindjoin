@@ -161,7 +161,6 @@ async fn wait_for_coordinator(coordinator_url: &str) {
 /// 7. Assert CoinJoin tx appears in bitcoind mempool
 /// 8. Verify the transaction has 3 outputs of 100_000 sats
 #[tokio::test]
-#[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn full_round_three_clients() {
     // ----- Step 1: skip gracefully if bitcoind missing (local-dev), panic in CI -----
     // require_bitcoind!() routes the skip path through `return` from this fn.
@@ -459,7 +458,6 @@ async fn spawn_coordinator_with_blame(
 ///
 /// Skips gracefully if bitcoind is not available.
 #[tokio::test]
-#[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn blame_non_signer_timeout() {
     // Skip gracefully if bitcoind missing (local-dev); panic in CI.
     let exe = require_bitcoind!();
@@ -653,8 +651,12 @@ async fn spawn_coordinator_with_blame_and_restart(
             fee_rate_sat_per_vbyte: 1,
             listen_addr: listen_addr.clone(),
             ban_file_path: "/dev/null".into(),
-            rate_limit_info_per_min: 60,
-            rate_limit_writes_per_min: 30,
+            // round_restart_and_completion_after_blame runs TWO rounds back-to-back
+            // with 3 clients each polling at 100ms cadence = ~30 req/sec sustained.
+            // GlobalKeyExtractor means one shared bucket across all clients, so
+            // need substantial headroom to avoid 429 over the test's lifetime.
+            rate_limit_info_per_min: 6000,
+            rate_limit_writes_per_min: 300,
             request_timeout_secs: 30,
             max_concurrent_connections: 256,
             tor_mode: false,
@@ -667,12 +669,18 @@ async fn spawn_coordinator_with_blame_and_restart(
     let ban_list: Arc<RwLock<BanList>> = Arc::new(RwLock::new(BanList::new()));
     let blame_round_count: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 
-    // Signing timeout task that bans non-signers, then restarts round to InputReg
+    // Signing timeout task that bans non-signers, then restarts round to InputReg.
+    // After restart, also arms an input_reg timer that advances to OutputReg once
+    // min_participants is reached — the production monitor (coordinator::run::run)
+    // does this in real deployments, but this helper builds a minimal coordinator
+    // so we replicate just the bit Round 2 needs.
     {
         let round_clone = Arc::clone(&round_state);
         let ban_list_clone = Arc::clone(&ban_list);
         let blame_count_clone = Arc::clone(&blame_round_count);
         let signing_timeout = Duration::from_secs(cfg.coordinator.round_timeout_signing_secs);
+        let input_reg_timeout = Duration::from_secs(cfg.coordinator.round_timeout_input_reg_secs);
+        let min_participants = cfg.coordinator.min_participants;
         let ban_file = cfg.coordinator.ban_file_path.clone();
         let ban_duration = cfg.coordinator.blame_ban_duration_secs;
 
@@ -696,6 +704,24 @@ async fn spawn_coordinator_with_blame_and_restart(
                     blame_count_clone.fetch_add(1, Ordering::Relaxed);
                     // Restart the round in InputReg so remaining clients can re-register
                     *round = build_input_reg_round_state();
+                    let new_round_id = round.round_id;
+                    drop(round);
+                    drop(bl);
+
+                    // Arm an input_reg timer for Round 2 — the minimal coordinator
+                    // doesn't have the production monitor loop, so without this Round 2
+                    // would hang forever when partial quorum (min < count < max) registers.
+                    let round_c = Arc::clone(&round_clone);
+                    tokio::spawn(async move {
+                        tokio::time::sleep(input_reg_timeout).await;
+                        let mut r = round_c.write().await;
+                        if r.round_id != new_round_id || r.phase != Phase::InputReg {
+                            return; // already advanced — no-op
+                        }
+                        if r.participant_count >= min_participants {
+                            let _ = r.transition_to(Phase::OutputReg);
+                        }
+                    });
                 }
             }
         });
@@ -727,7 +753,6 @@ async fn spawn_coordinator_with_blame_and_restart(
 ///
 /// Skips gracefully if bitcoind is not available.
 #[tokio::test]
-#[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn adversarial_replay_token() {
     let exe = require_bitcoind!();
 
@@ -851,7 +876,6 @@ async fn adversarial_replay_token() {
 ///
 /// Requires bitcoind (RPC validation). Skips gracefully if unavailable.
 #[tokio::test]
-#[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn adversarial_invalid_utxo() {
     let exe = require_bitcoind!();
 
@@ -908,7 +932,6 @@ async fn adversarial_invalid_utxo() {
 ///
 /// Requires bitcoind (input registration validates UTXOs). Skips gracefully if unavailable.
 #[tokio::test]
-#[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn adversarial_wrong_denomination() {
     let exe = require_bitcoind!();
 
@@ -1233,7 +1256,6 @@ async fn coordinator_info_endpoint_fields() {
 ///
 /// Skips gracefully if bitcoind is not available.
 #[tokio::test]
-#[ignore = "TODO(Phase-10): RPC schema drift on listunspent/getrawtransaction -- see TODO.md"]
 async fn round_restart_and_completion_after_blame() {
     let exe = require_bitcoind!();
 
