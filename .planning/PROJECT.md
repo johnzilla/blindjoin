@@ -21,12 +21,24 @@ PKARR DHT discovery live. Docker Compose stack operational.
 CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned, bitcoind cached + PGP-verified, corepc-node feature pin enforced.
 Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance, real on-chain witness_utxo values in PSBT assembly.
 
-## Next Milestone Goals
+## Current Milestone: v1.4 BIP-322 Multi-Script Support
 
-- Tor-mode verification harness (closes Phase 8 HUMAN-UAT item 3 — coordinator with `tor_mode=true` + test client opening ≥257 concurrent `.onion` streams)
+**Goal:** Broaden CoinJoin participation to P2TR and P2SH-P2WPKH UTXOs, eliminating the P2WPKH-only registration gate and making the "forward-compatible with all address types" claim match reality.
+
+**Target features:**
+- Adopt the official `bip322` crate (rust-bitcoin org) in place of `shared/src/bip322.rs` — discuss-phase verifies crate version stability before commit; fallback is to extend the custom impl
+- Remove the `is_p2wpkh()` hard gate at [coordinator/src/bitcoin/utxo.rs:119](coordinator/src/bitcoin/utxo.rs:119)
+- Add P2TR (BIP-86 single-key Taproot) and P2SH-P2WPKH support across client signing, wire types, and coordinator verification
+- Coordinator advertises supported script types via PKARR record + `/round/info` so clients reject mismatched coordinators before registration
+- Liquidity bot updated to generate test UTXOs across all supported script types
+- Per-script-type property tests over BIP-322 spec vectors
+- End-to-end integration test: full CoinJoin round with mixed P2WPKH + P2TR + P2SH-P2WPKH participants on regtest
+
+**Out of v1.4 scope (deferred to v1.5+):**
+- Tor-mode verification harness (Phase 8 HUMAN-UAT item 3 carry-forward)
 - REPAIR-01 PR observation closure (currently closed-local only)
-- Candidates from BACKLOG.md: B-02 BIP-322 multi-script support, B-03 dynamic fee estimation
-- Direction TBD via `/gsd:new-milestone`
+- P2WSH multisig (multi-key sighash complexity — stretch goal)
+- B-03 dynamic fee estimation
 
 ## Requirements
 
@@ -69,7 +81,15 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 
 ### Active
 
-(No active requirements — run `/gsd:new-milestone` to define v1.4 scope.)
+v1.4 BIP-322 Multi-Script Support (requirements detailed in `.planning/REQUIREMENTS.md`):
+
+- [ ] Adopt or pin a production-viable BIP-322 Simple implementation covering P2WPKH, P2TR, P2SH-P2WPKH
+- [ ] Remove coordinator P2WPKH-only registration gate; verify ownership proofs for all supported script types
+- [ ] Coordinator publishes supported script types via PKARR + `/round/info`; clients reject mismatched coordinators pre-registration
+- [ ] Client signs ownership proofs for P2TR and P2SH-P2WPKH UTXOs alongside existing P2WPKH path
+- [ ] Liquidity bot generates test UTXOs across all supported script types
+- [ ] End-to-end integration test: full CoinJoin round with mixed-script-type participants on regtest
+- [ ] Per-script-type property tests against BIP-322 spec vectors
 
 ### Out of Scope
 
@@ -150,4 +170,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after v1.3 milestone (Test Infrastructure & Operational Hardening) shipped*
+*Last updated: 2026-05-29 after v1.4 milestone (BIP-322 Multi-Script Support) started*

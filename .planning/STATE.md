@@ -1,12 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: ""
-current_plan: 0
-status: idle
-stopped_at: v1.3 shipped 2026-05-29; ready for /gsd:new-milestone
-last_updated: "2026-05-29T00:00:00.000Z"
-last_activity: 2026-05-29 -- v1.3 milestone closed; archives written to milestones/v1.3-*, v1.3 tag created
+milestone: v1.4
+milestone_name: BIP-322 Multi-Script Support
+status: planning
+last_updated: "2026-05-29T20:51:43.646Z"
+last_activity: 2026-05-29
 progress:
   total_phases: 0
   completed_phases: 0
@@ -19,7 +17,10 @@ progress:
 
 ## Current Position
 
-No active milestone. v1.3 Test Infrastructure & Operational Hardening shipped 2026-05-29 (5 phases, 13 plans). Awaiting `/gsd:new-milestone` to define v1.4.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-29 — Milestone v1.4 started
 
 ## Project Reference
 
