@@ -49,7 +49,7 @@
 
 ### 🚧 v1.4 BIP-322 Multi-Script Support (Phases 14-18)
 
-- [ ] **Phase 14: Sprint-0 Spikes + Discuss-Phase Decisions** — Two timeboxed spikes (`bip322` crate pin verification, bdk_wallet 2.3 P2TR sign PoC) produce a GO/NO-GO ADR that resolves Open Decisions #1, #2, #3, #4 before any production code is written.
+- [x] **Phase 14: Sprint-0 Spikes + Discuss-Phase Decisions** — Two timeboxed spikes (`bip322` crate pin verification, bdk_wallet 2.3 P2TR sign PoC) produced a GO/PASS ADR resolving Open Decisions #1 (ADOPT `bip322 = "=0.0.10"`), #2 (mixed rounds), #3 (B2 PSBT-input wire format), #4 (bdk path for P2TR sign). ✅ completed 2026-05-29
 - [ ] **Phase 15: Shared Crate Multi-Script Contract** — `shared/` exposes `ScriptType` dispatch, per-type BIP-322 sign/verify, extended `OwnershipProof` + `InfoResponse` wire types, and per-script-type property tests against the official BIP-322 vectors.
 - [ ] **Phase 16: Coordinator Integration & Advertisement** — Replace the `is_p2wpkh()` gate with a config-driven allowlist + dispatcher; advertise `supported_script_types` over PKARR and `/round/info`; cross-check declared script type against on-chain `scriptPubKey` (CRIT-01).
 - [ ] **Phase 17: Client Multi-Script Wallet & Discovery** — Client wallet supports BIP-84 / BIP-86 / BIP-49 descriptors, signs ownership proofs for all three types, and rejects mismatched coordinators at discovery before opening a Tor circuit; ships v1.4→v1.3 compatibility shim.
@@ -67,10 +67,10 @@
   3. An ADR (architectural decision record) checked into `.planning/decisions/v1.4-adr.md` records the resolutions of Open Decisions #1 (crate adopt/extend), #2 (mixed vs segregated rounds), and #3 (P2SH-P2WPKH wire format: B1 tagged enum vs B2 PSBT-input shape), each with the chosen option and a one-paragraph rationale.
   4. v1.3 `full_round::*` integration tests still pass at this phase boundary (no production code touched by Phase 14 spikes; rollback safety net intact).
   5. Each spike was capped at 2 days of effort or explicitly escalated; spike branches are not merged into `main` (POC code lives in branches, not the trunk).
-**Plans**: 3 plans
-- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
-- [x] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
-- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
+**Plans**: 3/3 complete
+- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolved Open Decision #1 → ADOPT)
+- [x] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolved Open Decision #4 → bdk path)
+- [x] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (recorded all 4 Open Decisions; structural D-21 gate verified empty)
 
 ### Phase 15: Shared Crate Multi-Script Contract
 **Goal**: `shared/` becomes the single source of truth for BIP-322 multi-script verification and the new wire types, so coordinator and client compile against one contract and produce byte-identical to_spend/to_sign transactions per script type.
@@ -160,7 +160,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 9. CI integration-test reliability | v1.3 | 5/5 | Complete | 2026-05-27 |
 | 10. full_round.rs decision + execution | v1.3 | 2/2 | Complete | 2026-05-28 |
 | 11-13. REPAIR-01 carry-forward (shipped as direct commits) | v1.3 | n/a | Closed-local | 2026-05-29 |
-| 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 2/3 | In Progress|  |
+| 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete | 2026-05-29 |
 | 15. Shared Crate Multi-Script Contract | v1.4 | 0/0 | Not started | — |
 | 16. Coordinator Integration & Advertisement | v1.4 | 0/0 | Not started | — |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 0/0 | Not started | — |
