@@ -273,21 +273,22 @@ impl BdkClientWallet {
         self.inner.sign(psbt, SignOptions { trust_witness_utxo: true, ..SignOptions::default() })
             .map_err(|e| anyhow!("bdk_wallet signing failed: {e}"))?;
 
-        // Extract the partial signature from the signed input.
-        // For P2WPKH, bdk_wallet populates partial_sigs with the ECDSA signature.
+        // Encode the signed witness as consensus-serialized bytes so the coordinator's
+        // bitcoin::consensus::deserialize::<Witness> round-trips. bdk_wallet finalizes
+        // single-key P2WPKH inputs (sets final_script_witness), so prefer that;
+        // fall back to constructing a 2-item stack from partial_sigs if not finalized.
         let input = &psbt.inputs[input_idx];
-        if let Some((_pk, sig)) = input.partial_sigs.iter().next() {
-            return Ok(sig.to_vec());
-        }
-
-        // Fallback: final_script_witness was set (fully finalized input)
         if let Some(witness) = &input.final_script_witness {
-            if let Some(sig_bytes) = witness.nth(0) {
-                return Ok(sig_bytes.to_vec());
-            }
+            return Ok(bitcoin::consensus::serialize(witness));
+        }
+        if let Some((pk, sig)) = input.partial_sigs.iter().next() {
+            let mut witness = bitcoin::Witness::new();
+            witness.push(sig.to_vec());
+            witness.push(pk.to_bytes());
+            return Ok(bitcoin::consensus::serialize(&witness));
         }
 
-        Err(anyhow!("bdk_wallet did not produce a partial signature for our input"))
+        Err(anyhow!("bdk_wallet did not produce a witness for our input"))
     }
 }
 
