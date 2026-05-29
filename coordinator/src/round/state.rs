@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use zeroize::Zeroize;
+use bitcoin::ScriptBuf;
 use crate::blind::rsa::RsaBlindSigner;
 
 /// The round phase state machine.
@@ -56,6 +57,14 @@ pub struct RegisteredInput {
     pub change_address: String,
     /// SHA-256 of the blind signature token hash (for double-registration prevention)
     pub blind_sig_hash: [u8; 32],
+    /// On-chain script_pubkey of this UTXO, as returned by Bitcoin Core gettxout
+    /// during validate_utxo. Used by signing.rs to populate the correct witness_utxo
+    /// in the PSBT — clients no longer need to overwrite it locally with unverified values.
+    /// Public chain data, no privacy concern, skipped from zeroize.
+    #[zeroize(skip)]
+    pub script_pubkey: ScriptBuf,
+    /// On-chain value of this UTXO in satoshis, as returned by gettxout.
+    pub value_sats: u64,
 }
 
 /// Registered output for one participant.

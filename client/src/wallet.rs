@@ -238,37 +238,24 @@ impl BdkClientWallet {
 
     /// Sign a PSBT input corresponding to our UTXO.
     ///
-    /// Sets witness_utxo on the correct input, then calls wallet.sign().
-    /// Returns the partial signature bytes (DER + SIGHASH_ALL) for POST /round/sign.
+    /// Trusts the coordinator's witness_utxo (sourced from Bitcoin Core gettxout
+    /// at registration time). Returns the consensus-serialized Witness for the
+    /// signed input so the coordinator can deserialize it on /round/sign.
     pub fn sign_psbt_input(&self, psbt: &mut Psbt) -> Result<Vec<u8>> {
-        use bitcoin::Amount;
-        use bitcoin::TxOut;
-
         // Find our input in the PSBT
         let input_idx = psbt.unsigned_tx.input.iter()
             .position(|inp| inp.previous_output == self.utxo_outpoint)
             .ok_or_else(|| anyhow!("Our UTXO not found in PSBT"))?;
 
-        // Set witness_utxo — required for segwit signing
-        psbt.inputs[input_idx].witness_utxo = Some(TxOut {
-            value: Amount::from_sat(self.utxo_value_sats),
-            script_pubkey: self.utxo_script_pubkey.clone(),
-        });
-
-        // bdk_wallet 2.3 changed SignOptions::default() to set trust_witness_utxo: false as a BIP-143
-        // fee-spoof mitigation: with only witness_utxo populated (no non_witness_utxo), a malicious
-        // PSBT creator could set a falsified witness_utxo.value to trick the signer into authorizing
-        // excessive fee. See: https://blog.trezor.io/details-of-firmware-updates-for-trezor-one-version-1-9-1-and-trezor-model-t-version-2-3-1-1eba8f60f2dd
-        //
-        // trust_witness_utxo: true is safe HERE because:
-        //   - This client constructs witness_utxo from self.utxo_value_sats (set at wallet construction
-        //     from the regtest RPC we already trust as ground truth) — not from a counterparty PSBT.
-        //   - The client is the sole signer over its own UTXO; no untrusted PSBT creator is involved.
-        //
-        // What would change this: any future code path where witness_utxo.value comes from an
-        // untrusted counterparty's PSBT. At that point, Option B (populate non_witness_utxo from
-        // RPC via get_raw_transaction) becomes required. See .planning/phases/11-coordinator-rsa-pubkey-encoding-full-round-rs-unmute-complet/11-02-SUMMARY.md
-        // §"Two minimal-repair candidates" for full analysis.
+        // trust_witness_utxo: true is required because we sign over a segwit witness_utxo
+        // without populating non_witness_utxo (which would require fetching the full prevout
+        // tx via RPC — a non-goal for the CLI client). The coordinator's witness_utxo is
+        // authoritative: validate_utxo populates it from Bitcoin Core's gettxout at
+        // registration time, before any participant signs. A malicious coordinator that
+        // lies about value cannot steal funds (bitcoind validates the broadcast against
+        // the real on-chain UTXO and rejects mismatched signatures — the attacker gets DoS,
+        // not theft). The deprecation marker stays until a future migration to non_witness_utxo
+        // (requires an RPC client in the wallet — out of scope for v1.x CLI).
         #[allow(deprecated)]
         self.inner.sign(psbt, SignOptions { trust_witness_utxo: true, ..SignOptions::default() })
             .map_err(|e| anyhow!("bdk_wallet signing failed: {e}"))?;

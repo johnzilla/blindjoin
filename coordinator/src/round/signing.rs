@@ -5,7 +5,6 @@ use crate::round::manager::verify_session_token;
 use crate::round::input_reg::parse_outpoint;
 use crate::bitcoin::rpc::BitcoinRpc;
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
-use crate::bitcoin::fee::estimate_fee_share;
 use crate::config::CoordinatorConfig;
 use bitcoin::ScriptBuf;
 use tracing::info;
@@ -101,7 +100,14 @@ async fn assemble_and_broadcast(
 
     let bitcoin_network = parse_bitcoin_network(&config.network.bitcoin_network);
 
-    // Build participant inputs for PSBT construction
+    // Build participant inputs for PSBT construction.
+    //
+    // Use the REAL on-chain script_pubkey and value_sats captured by validate_utxo
+    // at registration time (sourced from Bitcoin Core's gettxout). The previous
+    // implementation synthesized script_pubkey from the change address and
+    // value_sats from denomination + fee_share — both wrong values for a witness_utxo
+    // input. Clients had to overwrite witness_utxo locally to make signatures valid,
+    // forcing them to trust their own unverified --utxo-value-sats CLI arg.
     let mut participant_inputs: Vec<ParticipantInput> = Vec::new();
     for reg in inner.registered_inputs.values() {
         let outpoint = parse_outpoint(&reg.utxo_str).ok_or_else(|| ApiError {
@@ -117,11 +123,8 @@ async fn assemble_and_broadcast(
             })?;
         participant_inputs.push(ParticipantInput {
             outpoint,
-            value_sats: config.coordinator.denomination_sats + estimate_fee_share(
-                inner.registered_inputs.len() as u32,
-                config.coordinator.fee_rate_sat_per_vbyte,
-            ),
-            script_pubkey: change_script.clone(),
+            value_sats: reg.value_sats,
+            script_pubkey: reg.script_pubkey.clone(),
             change_address: change_script,
         });
     }
@@ -298,6 +301,8 @@ mod tests {
                     utxo_str: utxo_str.to_string(),
                     change_address: "tb1qtest".to_string(),
                     blind_sig_hash: [0u8; 32],
+                    script_pubkey: bitcoin::ScriptBuf::new(),
+                    value_sats: 150_000,
                 });
                 m
             },
@@ -413,6 +418,8 @@ mod tests {
                     utxo_str: "txabc:0".to_string(),
                     change_address: "addr".to_string(),
                     blind_sig_hash: [0u8; 32],
+                    script_pubkey: bitcoin::ScriptBuf::new(),
+                    value_sats: 150_000,
                 });
                 m
             },
@@ -484,9 +491,11 @@ mod tests {
         // 2 inputs, 1 output → missing output
         inner.registered_inputs.insert("tx1:0".to_string(), RegisteredInput {
             utxo_str: "tx1:0".to_string(), change_address: "a".into(), blind_sig_hash: [0u8; 32],
+            script_pubkey: bitcoin::ScriptBuf::new(), value_sats: 150_000,
         });
         inner.registered_inputs.insert("tx2:0".to_string(), RegisteredInput {
             utxo_str: "tx2:0".to_string(), change_address: "b".into(), blind_sig_hash: [0u8; 32],
+            script_pubkey: bitcoin::ScriptBuf::new(), value_sats: 150_000,
         });
         inner.registered_outputs.push(RegisteredOutput {
             address: "out1".into(), amount_sats: 100_000,

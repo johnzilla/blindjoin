@@ -157,7 +157,11 @@ pub async fn post_input(
 
     // Validate UTXO before acquiring write lock (AVAIL-01: RPC outside write lock).
     // On failure, return immediately — write lock is never taken for bad UTXOs.
-    crate::bitcoin::utxo::validate_utxo(
+    // Capture the real on-chain script_pubkey + value from gettxout so the signing
+    // phase can build a correct witness_utxo instead of synthesizing one from the
+    // participant's change address (the old bug that forced clients to overwrite
+    // witness_utxo locally with their own unverified --utxo-value-sats CLI arg).
+    let utxo_details = crate::bitcoin::utxo::validate_utxo(
         &state.rpc,
         &utxo,
         &registered_snapshot,
@@ -238,6 +242,8 @@ pub async fn post_input(
         &utxo,
         &blinded_token_bytes,
         &req.change_address,
+        utxo_details.script_pubkey.clone(),
+        utxo_details.value_sats,
         &round_id_str,
     ).map_err(|e| {
         let status = match e.code {
@@ -436,22 +442,24 @@ pub async fn get_tx(
 
     let bitcoin_network = parse_bitcoin_network(&state.config.network.bitcoin_network);
 
-    // Build participant inputs and outputs for PSBT
+    // Build participant inputs from the registered (real on-chain) values, not
+    // synthesized denomination+fee. The signing.rs assemble_and_broadcast path
+    // also reads reg.script_pubkey/reg.value_sats — get_tx and signing.rs MUST
+    // produce byte-identical PSBT inputs or the client signs against a different
+    // sighash than what gets broadcast.
     let mut participant_inputs: Vec<ParticipantInput> = Vec::new();
     for reg in inner.registered_inputs.values() {
         let outpoint = parse_outpoint(&reg.utxo_str).ok_or_else(|| {
             api_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
                 format!("Invalid outpoint: {}", reg.utxo_str), Some(&round_id_str))
         })?;
-        let n = inner.registered_inputs.len() as u32;
-        let fee_share = estimate_fee_share(n, fee_rate);
         let change_script = parse_address_to_script(&reg.change_address, bitcoin_network)
             .map_err(|e| api_error(StatusCode::BAD_REQUEST, "INVALID_ADDRESS",
                 e, Some(&round_id_str)))?;
         participant_inputs.push(ParticipantInput {
             outpoint,
-            value_sats: denomination_sats + fee_share,
-            script_pubkey: change_script.clone(),
+            value_sats: reg.value_sats,
+            script_pubkey: reg.script_pubkey.clone(),
             change_address: change_script,
         });
     }

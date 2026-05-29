@@ -1,4 +1,4 @@
-use bitcoin::OutPoint;
+use bitcoin::{OutPoint, ScriptBuf};
 use shared::errors::{ApiError, ErrorCode};
 use crate::round::state::{RegisteredInput, RoundState};
 use crate::round::manager::generate_session_token;
@@ -25,6 +25,8 @@ pub struct InputRegResult {
 /// - `utxo`               — the UTXO being registered (already validated by caller pre-lock)
 /// - `blinded_token_bytes`— base64-decoded blinded message from client
 /// - `change_address`     — bech32 change address string
+/// - `utxo_script_pubkey` — on-chain script_pubkey from validate_utxo's gettxout
+/// - `utxo_value_sats`    — on-chain value from validate_utxo's gettxout
 /// - `round_id_str`       — current round_id as string (for error messages)
 ///
 /// # TOCTOU
@@ -35,6 +37,8 @@ pub fn register_input(
     utxo: &OutPoint,
     blinded_token_bytes: &[u8],
     change_address: &str,
+    utxo_script_pubkey: ScriptBuf,
+    utxo_value_sats: u64,
     round_id_str: &str,
 ) -> Result<InputRegResult, ApiError> {
     use base64::Engine;
@@ -79,6 +83,8 @@ pub fn register_input(
         utxo_str: utxo_str.clone(),
         change_address: change_address.to_string(),
         blind_sig_hash,
+        script_pubkey: utxo_script_pubkey,
+        value_sats: utxo_value_sats,
     });
     inner.change_addresses.insert(utxo_str, change_address.to_string());
     state.participant_count += 1;
@@ -165,6 +171,8 @@ mod tests {
             &utxo,
             &blinded_bytes,
             "tb1qtest000000000000000000000000000000000000",
+            bitcoin::ScriptBuf::new(),
+            150_000,
             "test-round-id",
         );
 
@@ -199,6 +207,8 @@ mod tests {
                 utxo_str: utxo_str.clone(),
                 change_address: "tb1qother".to_string(),
                 blind_sig_hash: [0u8; 32],
+                script_pubkey: bitcoin::ScriptBuf::new(),
+                value_sats: 150_000,
             },
         );
 
@@ -210,6 +220,8 @@ mod tests {
             &utxo,
             &blinded_bytes,
             "tb1qdouble",
+            bitcoin::ScriptBuf::new(),
+            150_000,
             "test-round-id",
         );
 
