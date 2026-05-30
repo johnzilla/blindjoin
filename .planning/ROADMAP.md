@@ -84,8 +84,8 @@
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (`shared` changes are additive; existing P2WPKH witness-only path unchanged for v1.3-format inputs).
 **Plans**: 3 plans
 - [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
-- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
-- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
+- [x] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
+- [x] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate) (completed 2026-05-30)
 
 ### Phase 16: Coordinator Integration & Advertisement
 **Goal**: Coordinator accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs under an operator-configurable allowlist and advertises the supported set over PKARR + `/round/info` so clients can fail-fast before opening a Tor circuit.
@@ -100,7 +100,7 @@
 **Plans**: 3 plans
 - [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
 - [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
-- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
+- [x] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
 ### Phase 17: Client Multi-Script Wallet & Discovery
 **Goal**: A user with a v1.4 client can generate a wallet of any of three script types, sign BIP-322 ownership proofs for that type, and reject mismatched coordinators before any Tor circuit opens.
@@ -113,7 +113,7 @@
   4. A v1.4 client with a P2WPKH wallet successfully completes a full CoinJoin round against an unmodified v1.3 coordinator (the WALLET-04 compatibility shim correctly detects pre-`0.2.0` PKARR / missing `/round/info` field and emits the legacy witness-only `OwnershipProof` wire format).
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (the client's existing P2WPKH path is preserved as a code path, not removed in favor of the new dispatcher).
 **Plans**: 3 plans
-- [ ] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
+- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
 - [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
 - [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
 
@@ -160,7 +160,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 9. CI integration-test reliability | v1.3 | 5/5 | Complete | 2026-05-27 |
 | 10. full_round.rs decision + execution | v1.3 | 2/2 | Complete | 2026-05-28 |
 | 11-13. REPAIR-01 carry-forward (shipped as direct commits) | v1.3 | n/a | Closed-local | 2026-05-29 |
-| 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete | 2026-05-29 |
+| 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete    | 2026-05-30 |
 | 15. Shared Crate Multi-Script Contract | v1.4 | 0/0 | Not started | — |
 | 16. Coordinator Integration & Advertisement | v1.4 | 0/0 | Not started | — |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 0/0 | Not started | — |

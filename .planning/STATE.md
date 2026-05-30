@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
 current_plan: "Phase 14 complete; awaiting /gsd:plan-phase 15"
-status: "Phase 14 ADR ratified; Sprint-0-A and Sprint-0-B verdicts recorded; ready for Phase 15"
-stopped_at: "Phase 14 complete (ADR ratified)"
-last_updated: "2026-05-29"
+status: ready_to_plan
+stopped_at: Phase 14 complete (3/3) — ready to discuss Phase 15
+last_updated: 2026-05-30T00:03:12.006Z
 last_activity: "2026-05-29 — Phase 14 closed: v1.4 ADR ratified, Sprint-0 spikes recorded (sprint-0-A.md, sprint-0-B.md); D-21 structural invariant holds (no production code touched)"
 progress:
   total_phases: 5
@@ -21,23 +21,23 @@ progress:
 
 ## Current Position
 
-Phase: 14 (sprint-0-spikes-discuss-phase-decisions) — COMPLETE (3/3 plans)
+Phase: 15
 Plan: none — Phase 15 awaiting `/gsd:plan-phase 15`
-Status: Phase 14 ADR ratified at `.planning/decisions/v1.4-adr.md`; Sprint-0-A GO + Sprint-0-B PASS verdicts recorded; D-21 structural invariant holds (no production code touched by Phase 14)
-Last activity: 2026-05-29 — Phase 14 closed; ADR ratified; next: `/gsd:plan-phase 15`
+Status: Ready to plan
+Last activity: 2026-05-30
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 14 — sprint-0-spikes-discuss-phase-decisions
+**Current focus:** Phase 15 — shared crate multi script contract
 
 ## Progress
 
 **Phases Complete:** 1 of 5 (v1.4 milestone)
 **Plans Complete:** 3 of 3 (Phase 14)
-**Current Plan:** none — Phase 15 awaiting `/gsd:plan-phase 15`
+**Current Plan:** Not started
 
 **v1.4 phase map:**
 
