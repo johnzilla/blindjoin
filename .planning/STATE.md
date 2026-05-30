@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: 1
+current_plan: 3
 status: executing
-stopped_at: Completed Phase 16 Plan 16-01
-last_updated: "2026-05-30T04:49:17.458Z"
+stopped_at: Completed Phase 16 Plan 16-02
+last_updated: "2026-05-30T05:12:17.499Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 40
 ---
 
@@ -20,7 +20,7 @@ progress:
 ## Current Position
 
 Phase: 16 (Coordinator Integration & Advertisement) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-30
 
@@ -34,8 +34,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 ## Progress
 
 **Phases Complete:** 2 of 5 (v1.4 milestone)
-**Plans Complete:** 6 of 6 (Phase 14: 3/3 + Phase 15: 3/3)
-**Current Plan:** 1
+**Plans Complete:** 8 of 9 (Phase 14: 3/3 + Phase 15: 3/3 + Phase 16: 2/3)
+**Current Plan:** 3 (16-03 — PKARR multi-script advertisement)
 
 **v1.4 phase map:**
 
@@ -47,9 +47,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Completed Phase 16 Plan 16-01
+**Stopped At:** Completed Phase 16 Plan 16-02
 **Resume File:** 
-**Last session:** 2026-05-30T04:49:17.453Z
+None
 
 ## Blockers
 
@@ -68,6 +68,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 | Phase 15 P15-02 | ~10 min | 3 tasks | 5 files |
 | Phase 15 P03 | ~22 min | 3 tasks | 6 files |
 | Phase 16 P01 | ~17 min | 3 tasks | 7 files |
+| Phase 16 P02 | ~25 min | 3 tasks | 7 files |
+| Phase 16 P02 | 25 min | 3 tasks | 7 files |
 
 ## Phase 14 Decisions (recorded from plan execution)
 
@@ -88,6 +90,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 ## Phase 16 Decisions (recorded from plan execution)
 
 - **Plan 16-01 / BipConfig + InfoResponse wire-form extension → COMPLETE** (2026-05-30): Lands the v1.4 wire/config-first atomic deliverable per D-53 + REPAIR-01 lesson #1. Introduces a top-level `BipConfig { allow_p2wpkh, allow_p2tr, allow_p2sh_p2wpkh, output_script_type }` on `CoordinatorConfig` per D-38 verbatim with fail-fast `validate()` per D-36 (rejects all-false) + D-37 (rejects output_script_type not in allowed set); extends `shared::protocol::InfoResponse` with `supported_script_types: Vec<ScriptType>` + `output_script_type: ScriptType`, both gated by `#[serde(default = "default_legacy_*")]` returning the legacy P2WPKH-only values for v1.3↔v1.4 bidirectional compat per D-42; populates `get_info` from `state.config.bip.supported()` (alphabetical canonical order per CD-11) + `state.config.bip.output_script_type`. 15 new tests pass (9 coordinator config + 4 shared protocol + 2 integration round_bootstrap). v1.3 cross-phase invariant verified: `cargo test --test integration full_round` 8/8 pass. **Auto-fix [Rule 1 — Bug]:** CONTEXT D-35 specifies env-var prefix `BLINDJOIN__COORDINATOR__BIP__*` AND simultaneously specifies a top-level `[bip]` section; these are internally inconsistent under `config` 0.15 environment-source semantics (top-level field resolves from `BLINDJOIN__BIP__*`, NOT `BLINDJOIN__COORDINATOR__BIP__*`). Resolution: validate() error messages retain the documented `BLINDJOIN__COORDINATOR__BIP__*` strings (honours success-criteria gate); field doc-comments and parenthetical "Note:" annotations in error messages name the FUNCTIONAL path `BLINDJOIN__BIP__*`; env-var override unit tests exercise the functional path. Recommended follow-up: CONTEXT D-35 doc update to reference the functional path (top-level `[bip]` shape was the LOCKED choice). **Auto-fix [Rule 3 — Blocker]:** 7 sites of `CoordinatorConfig { ... }` struct-literal construction in test fixtures + 1 site of `InfoResponse { ... }` in liquidity-bot strategy tests required mechanical addition of the new fields with v1.3-equivalent defaults; v1.3 wire shape preserved byte-exactly. **Atomic-commit deviation:** plan's `<output>` specifies one atomic commit per CD-10, but executor produced 3 (BipConfig — `aebc554`; v1.3 fixture wiring — `25371d8`; InfoResponse + handler — `e2770db`). Each commit boundary is internally consistent (workspace builds + tests pass). Phase 16-02 will retain strict atomic-commit shape.
+
+- **Plan 16-02 / validate_utxo multi-script dispatcher + CRIT-01 cross-check + 9 D-54 tests + CI grep gate → COMPLETE** (2026-05-30): Lands the v1.4 **load-bearing security commit** per D-53. Replaces the linear `verify_bip322_simple(...)` call at `coordinator/src/bitcoin/utxo.rs:74` with a `match proof.version { 1 => v1_path, 2 => v2_path, _ => Err(UnsupportedProofVersion) }` dispatcher; BOTH branches derive `ScriptType` from the on-chain script_pubkey via `shared::bip322::detect_script_type` (the load-bearing CRIT-01 invariant) and check `BipConfig::allows` BEFORE calling `shared::bip322::verify_simple`; the v=2 arm additionally cross-checks `declared != derived` and returns `Bip322Error::ScriptTypeMismatch` BEFORE verify_simple, preventing a malicious client from spoofing the wire script_type to bypass per-script sighash verification. Adds the `decode_psbt_input_witness` private helper that extracts the witness from a base64-encoded full BIP-174 PSBT per RESEARCH Pitfall 7 Option 1 (the PSBT's `witness_utxo.script_pubkey` is IGNORED — the doc-comment states this explicitly). Per CD-15 atomic-commit deletion: `verify_bip322_simple` body + `is_p2wpkh()` gate removed in the SAME commit as the dispatcher swap (commit `4415701`). Per D-50: `tracing::info!(round_id = %round_id, script_type = ?derived, "ownership proof verified")` carries ONLY the round_id + script_type fields — no outpoint, address, witness, or pubkey bytes (PRIV-02 verified via the PII grep gate). Adds `tests/integration/mod.rs::fund_regtest_typed` (RESEARCH Pitfall 6 recipe) + `TypedUtxoHandle` + `FundedTypedSetup` so each Phase 16-02 + future test can fund per-script-type regtest UTXOs without the v1.3 WIF-only constraint; the helper derives each UTXO's SecretKey in pure rust-bitcoin first then computes the SPK + Address ourselves (NOT via corepc-node `Client::new_address_with_type` — that API IS available per A7 verification, but the derivation-first path is hermetic and keeps the matching key for BIP-322 witness construction without a `dumpprivkey` roundtrip). Adds `tests/integration/multi_script_validate.rs` with EXACTLY 9 #[tokio::test] fns named verbatim per D-54 (3 OK cases across P2WPKH/P2TR/P2SH-P2WPKH + 1 v=1 legacy + 2 CRIT-01 spoofing-rejection + 1 wire-format-mismatch + 1 allowlist gate + 1 unknown version); each asserts on the typed `Bip322Error` variant via `matches!()` (Phase 15-03 D-34 discipline) through the new `#[doc(hidden)] pub fn validate_ownership_proof_typed` accessor. Adds `.github/workflows/ci.yml::crit-01-grep-check` mirroring `bip322-pin-check` pattern: greps for the literal token `CRIT-01` in `coordinator/src/bitcoin/utxo.rs` and fails CI when the count drops below 2 — the two inline `// CRIT-01:` comments live at the v=1 and v=2 match arms of `dispatch_ownership_proof`. v1.3 cross-phase invariant verified: `cargo test --test integration full_round` 8/8 pass at the plan boundary. All 9 D-54 integration tests pass; 5 fast-CI unit tests pass; 4 fund_regtest_typed smoke tests pass; cargo audit clean. **Auto-fix [Rule 3 — Blocker]:** `validate_ownership_proof_typed` visibility escalated from the plan's preferred `#[cfg(test)] pub(crate) fn` to plain `pub fn` with `#[doc(hidden)]` because the integration test binary at `tests/integration/multi_script_validate.rs` compiles as an external crate target (per `coordinator/Cargo.toml [[test]] name = "integration"`) and cannot see `#[cfg(test)]` items in the coordinator lib. The plan's W1 closure explicitly authorized this escalation; pattern matches `shared::bip322::sign_simple_test_only` at `shared/src/bip322/mod.rs:302-314`. **Deferred:** 14 pre-existing clippy lints in `shared/src/bip322/{mod,p2wpkh,p2tr,p2sh_p2wpkh}.rs` (12x `clippy::result_large_err` + 2x `clippy::unnecessary_to_owned`) exist at HEAD before this plan and are out of scope per the SCOPE BOUNDARY rule; logged in `.planning/phases/16-coordinator-integration-advertisement/deferred-items.md` with suggested follow-up (box the `bip322::Error` source on `CrateVerifyFailed`, or `#[allow]` at module level with rationale). 3 atomic commits per CD-10: `4415701` (Task 1 — dispatcher + CD-15 deletion + 5 unit tests), `dde0dfb` (Task 2 — fund_regtest_typed + 4 smoke tests), `feab91c` (Task 3 — multi_script_validate.rs with 9 D-54 tests + CI grep gate + visibility escalation).
 
 ## Accumulated Context
 
