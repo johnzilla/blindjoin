@@ -210,3 +210,27 @@ jobs:
             echo "       Add 'features = [\"30_2\"]' (or whatever version pin is appropriate) to each declaration." >&2
             exit 1
           fi
+
+  bip322-pin-check:
+    name: bip322 exact-version pin check
+    runs-on: ubuntu-latest
+    # v1.4 ADR Decision #1 invariant: bip322 is pre-1.0; the API can change
+    # between patch releases. Pin must be EXACTLY =0.0.10 (note the `=` operator).
+    # The 26-LOC adapter at shared/src/bip322/mod.rs is verified against this
+    # version only; any drift requires the adapter to be re-verified per Phase 14
+    # carry-forward constraint #3 (exact-pin every dependency referenced in
+    # test fixtures; CI-enforce). Mirrors the corepc-node-feature-pin-check
+    # pattern above per RESEARCH Open Question #2 recommendation (one job per
+    # pinned dep for clearer PR check log output).
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Enforce exact bip322 pin
+        run: |
+          set -eu
+          if grep -rEn 'bip322\s*=' --include='Cargo.toml' . \
+             | grep -v '=\s*"=0\.0\.10"' \
+             | grep -v '^[^:]*:[0-9]*:#'; then
+            echo "ERROR: bip322 declaration(s) above lack the exact-version pin '=0.0.10'." >&2
+            echo "       The bip322 crate is pre-1.0; minor changes can break the adapter at shared/src/bip322/mod.rs." >&2
+            exit 1
+          fi
