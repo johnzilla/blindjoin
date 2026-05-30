@@ -332,14 +332,29 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let keypair = pkarr_keypair.clone();
         let denom = cfg.coordinator.denomination_sats;
         let min_p = cfg.coordinator.min_participants;
-        // W3: transient stub; Task 2 wires &cfg.bip
-        #[allow(unused_variables)]
-        let supported_default: &[&str] = &["p2wpkh"];
-        #[allow(unused_variables)]
-        let output_st_default: &str = "p2wpkh";
+        // Phase 16-03: derive PKARR advertisement args from cfg.bip per D-40 + D-41.
+        // `supported_strs` owns the strings; `supported_refs` borrows them for
+        // build_coordinator_packet's `&[&str]` arg. Map ScriptType -> wire-form
+        // kebab-case explicitly to keep the call site decoupled from any future
+        // changes to `ScriptType`'s Serialize impl (single source of truth for
+        // PKARR wire form lives at this match).
+        let supported_strs: Vec<String> = cfg.bip.supported()
+            .iter()
+            .map(|st| match st {
+                shared::bip322::ScriptType::P2wpkh => "p2wpkh".to_string(),
+                shared::bip322::ScriptType::P2tr => "p2tr".to_string(),
+                shared::bip322::ScriptType::P2shP2wpkh => "p2sh-p2wpkh".to_string(),
+            })
+            .collect();
+        let supported_refs: Vec<&str> = supported_strs.iter().map(|s| s.as_str()).collect();
+        let output_st: &str = match cfg.bip.output_script_type {
+            shared::bip322::ScriptType::P2wpkh => "p2wpkh",
+            shared::bip322::ScriptType::P2tr => "p2tr",
+            shared::bip322::ScriptType::P2shP2wpkh => "p2sh-p2wpkh",
+        };
         if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
             &keypair, &addr, denom, min_p, "idle",
-            supported_default, output_st_default,
+            &supported_refs, output_st,
         ) {
             tokio::spawn(async move {
                 if let Err(e) = p.publish_record(packet).await {
@@ -360,12 +375,31 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let min_p = cfg.coordinator.min_participants;
         let interval_secs = cfg.discovery.heartbeat_interval_secs;
 
+        // Phase 16-03: derive supported / output_script_type ONCE at heartbeat
+        // task spawn (BipConfig is static — does not change at runtime) and move
+        // the owned String vec into the async task. This matches the per-field
+        // clone-out style used immediately above for `denom` / `min_p` rather
+        // than capturing `cfg: Arc<CoordinatorConfig>` whole; keeps the task's
+        // capture surface minimal. W2: `status` continues to be derived
+        // dynamically from round_clone inside the loop — only the static
+        // BIP-322 fields are hoisted.
+        let supported_strs: Vec<String> = cfg.bip.supported()
+            .iter()
+            .map(|st| match st {
+                shared::bip322::ScriptType::P2wpkh => "p2wpkh".to_string(),
+                shared::bip322::ScriptType::P2tr => "p2tr".to_string(),
+                shared::bip322::ScriptType::P2shP2wpkh => "p2sh-p2wpkh".to_string(),
+            })
+            .collect();
+        let output_st_owned: String = match cfg.bip.output_script_type {
+            shared::bip322::ScriptType::P2wpkh => "p2wpkh".to_string(),
+            shared::bip322::ScriptType::P2tr => "p2tr".to_string(),
+            shared::bip322::ScriptType::P2shP2wpkh => "p2sh-p2wpkh".to_string(),
+        };
+
         tokio::spawn(async move {
-            // W3: transient stub; Task 2 wires &cfg.bip
-            #[allow(unused_variables)]
-            let supported_default: &[&str] = &["p2wpkh"];
-            #[allow(unused_variables)]
-            let output_st_default: &str = "p2wpkh";
+            let supported_refs: Vec<&str> = supported_strs.iter().map(|s| s.as_str()).collect();
+            let output_st: &str = output_st_owned.as_str();
             let mut ticker = tokio::time::interval(
                 Duration::from_secs(interval_secs),
             );
@@ -377,7 +411,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                 };
                 if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
                     &keypair, &addr, denom, min_p, &status,
-                    supported_default, output_st_default,
+                    &supported_refs, output_st,
                 ) {
                     if let Err(e) = p.publish_record(packet).await {
                         tracing::warn!("PKARR heartbeat publish failed: {e}");

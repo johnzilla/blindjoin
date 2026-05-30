@@ -32,3 +32,22 @@ module level with a rationale comment.
 **Scope status at this plan boundary:** Build (`cargo build --workspace`) and
 test (`cargo test --workspace` / integration suite) both pass. Only the strict
 clippy `-- -D warnings` gate exposes these warnings.
+
+## Plan 16-03 (re-confirmation)
+
+Plan 16-03 (PKARR record v0.2.0 + B3 compact-name rename + byte-budget tests)
+touches ONLY `coordinator/src/discovery/pkarr_pub.rs` and `coordinator/src/run.rs`.
+At the 16-03 commit boundary the same 14 shared/src/bip322/* clippy lints
+persist verbatim. They are demonstrably PRE-EXISTING (16-02 SUMMARY logged them
+at HEAD~3; 16-03 changes no shared/ files) and remain deferred per the SCOPE
+BOUNDARY rule.
+
+Per-package clippy scope coverage:
+- `cargo clippy -p coordinator --all-targets -- -D warnings` fails (transitively
+  compiles shared/ which has the 14 pre-existing lints).
+- The pkarr_pub.rs + run.rs edits themselves introduce ZERO new lints — the
+  failures all point to shared/src/bip322/{mod,p2wpkh,p2tr,p2sh_p2wpkh}.rs.
+- v1.3 cross-phase invariant (`cargo test --test integration full_round`) green
+  (8/8 pass) at the 16-03 boundary.
+
+No additional follow-up beyond the suggestion documented for 16-02 above.
