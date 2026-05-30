@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::bip322::ScriptType;
+
 // NO #[serde(deny_unknown_fields)] on any struct — forward compat per D-06 / T-01-04.
 // All structs silently drop unknown fields, allowing protocol evolution without breaking
 // older clients or coordinators.
@@ -25,6 +27,48 @@ pub struct InfoResponse {
     /// base64 DER SubjectPublicKeyInfo; None when Idle
     pub rsa_pubkey_der_b64: Option<String>,
     pub round_id: Option<uuid::Uuid>,
+    /// v1.4 ADVERT-01 wire-form extension (Phase 16 Plan 16-01 / D-42):
+    /// canonical list of script types this coordinator currently accepts on
+    /// input registration. Wire form: JSON array of kebab-case strings — e.g.
+    /// `["p2sh-p2wpkh", "p2tr", "p2wpkh"]` (alphabetical canonical order per
+    /// CD-11). Populated from `state.config.bip.supported()`.
+    ///
+    /// v1.3↔v1.4 bidirectional compat:
+    /// - A v1.3 wire `InfoResponse` OMITS this field; `#[serde(default =
+    ///   "default_legacy_supported")]` fires `vec![ScriptType::P2wpkh]` so a
+    ///   v1.4 coordinator decoding a v1.3 response sees the legacy P2WPKH-only
+    ///   set.
+    /// - A v1.3 client decoding a v1.4 wire response silently drops the field
+    ///   because `InfoResponse` does NOT carry `#[serde(deny_unknown_fields)]`
+    ///   per the file-top invariant.
+    #[serde(default = "default_legacy_supported")]
+    pub supported_script_types: Vec<ScriptType>,
+    /// v1.4 ADVERT-01 wire-form extension (Phase 16 Plan 16-01 / D-42):
+    /// the single script type this coordinator will use for the round-output
+    /// addresses it advertises (D-07 — one output script type per round, even
+    /// when inputs are mixed per D-06). Populated from
+    /// `state.config.bip.output_script_type`. Wire form: kebab-case string
+    /// (e.g. `"p2wpkh"`, `"p2tr"`, `"p2sh-p2wpkh"`).
+    ///
+    /// v1.3↔v1.4 bidirectional compat: same scheme as
+    /// `supported_script_types` — `#[serde(default = "default_legacy_output")]`
+    /// fires `ScriptType::P2wpkh` when a v1.3 response is decoded.
+    #[serde(default = "default_legacy_output")]
+    pub output_script_type: ScriptType,
+}
+
+/// Legacy default for `InfoResponse.supported_script_types` — locks v1.3
+/// wire-compat per D-42. A v1.3 coordinator emits no such field; a v1.4
+/// decoder reads `vec![ScriptType::P2wpkh]` (the only script type v1.3
+/// supported on the input-registration path).
+fn default_legacy_supported() -> Vec<ScriptType> {
+    vec![ScriptType::P2wpkh]
+}
+
+/// Legacy default for `InfoResponse.output_script_type` — locks v1.3
+/// wire-compat per D-42. v1.3 only produced P2WPKH outputs.
+fn default_legacy_output() -> ScriptType {
+    ScriptType::P2wpkh
 }
 
 /// POST /round/input request — register a UTXO for an upcoming CoinJoin round.
@@ -269,5 +313,174 @@ mod tests {
         let wire = r#"{"version":3,"witness_stack":[]}"#;
         let proof = OwnershipProof::from_json_hex_str(wire).expect("decode is permissive");
         assert_eq!(proof.version, 3);
+    }
+
+    // ---------- Phase 16 Plan 16-01 Task 2: InfoResponse v1.3↔v1.4 compat ----------
+
+    /// v1.4 coordinator decoding a v1.3 wire response: the 2 new fields are
+    /// absent, so the serde_default hooks fire and produce legacy P2WPKH-only
+    /// values. This is the load-bearing forward-compat invariant for D-42.
+    #[test]
+    fn info_response_v1_3_wire_decodes_with_legacy_defaults() {
+        let v1_3_wire = r#"{
+            "version": "0.1.0",
+            "network": "signet",
+            "denomination_sats": 1000000,
+            "min_participants": 3,
+            "max_participants": 20,
+            "round_state": "idle",
+            "participants_registered": 0,
+            "rsa_pubkey_hash": null,
+            "rsa_pubkey_der_b64": null,
+            "round_id": null
+        }"#;
+        let info: InfoResponse =
+            serde_json::from_str(v1_3_wire).expect("v1.3 wire must decode under v1.4");
+        assert_eq!(info.supported_script_types, vec![ScriptType::P2wpkh]);
+        assert_eq!(info.output_script_type, ScriptType::P2wpkh);
+        // Existing fields preserved
+        assert_eq!(info.version, "0.1.0");
+        assert_eq!(info.network, "signet");
+        assert_eq!(info.denomination_sats, 1_000_000);
+        assert_eq!(info.round_state, "idle");
+    }
+
+    /// v1.4 coordinator emitting + re-decoding a fully-populated v1.4
+    /// InfoResponse round-trips bit-exact on the 2 new fields.
+    #[test]
+    fn info_response_v1_4_roundtrip_preserves_new_fields() {
+        let original = InfoResponse {
+            version: "0.2.0".to_string(),
+            network: "signet".to_string(),
+            denomination_sats: 1_000_000,
+            min_participants: 3,
+            max_participants: 20,
+            round_state: "input_reg".to_string(),
+            participants_registered: 2,
+            rsa_pubkey_hash: None,
+            rsa_pubkey_der_b64: None,
+            round_id: None,
+            supported_script_types: vec![
+                ScriptType::P2shP2wpkh,
+                ScriptType::P2tr,
+                ScriptType::P2wpkh,
+            ],
+            output_script_type: ScriptType::P2tr,
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let decoded: InfoResponse =
+            serde_json::from_str(&json).expect("re-decode v1.4 wire");
+        assert_eq!(
+            decoded.supported_script_types,
+            vec![
+                ScriptType::P2shP2wpkh,
+                ScriptType::P2tr,
+                ScriptType::P2wpkh,
+            ]
+        );
+        assert_eq!(decoded.output_script_type, ScriptType::P2tr);
+    }
+
+    /// v1.4 wire JSON emits kebab-case for the P2SH-P2WPKH variant per Phase
+    /// 15's ScriptType serde rename. This locks the ADVERT-02 wire form on
+    /// the new InfoResponse fields.
+    #[test]
+    fn info_response_v1_4_emits_kebab_case_on_wire() {
+        let info = InfoResponse {
+            version: "0.2.0".to_string(),
+            network: "signet".to_string(),
+            denomination_sats: 1_000_000,
+            min_participants: 3,
+            max_participants: 20,
+            round_state: "idle".to_string(),
+            participants_registered: 0,
+            rsa_pubkey_hash: None,
+            rsa_pubkey_der_b64: None,
+            round_id: None,
+            supported_script_types: vec![
+                ScriptType::P2shP2wpkh,
+                ScriptType::P2tr,
+                ScriptType::P2wpkh,
+            ],
+            output_script_type: ScriptType::P2shP2wpkh,
+        };
+        let json = serde_json::to_string(&info).expect("serialize");
+        assert!(
+            json.contains("\"p2sh-p2wpkh\""),
+            "kebab-case rename must appear on the wire: {json}"
+        );
+        // Also assert the output_script_type field name appears (defensive
+        // — catches an accidental serde(skip) or rename on the field).
+        assert!(json.contains("\"output_script_type\""), "field name missing: {json}");
+        assert!(
+            json.contains("\"supported_script_types\""),
+            "field name missing: {json}"
+        );
+    }
+
+    /// v1.3 client decoding a v1.4 wire response: the 2 new fields are present
+    /// but the v1.3 struct doesn't know about them. The file-top invariant
+    /// (no `#[serde(deny_unknown_fields)]`) means unknown fields are silently
+    /// dropped, so deserialization succeeds. This locks T-16-MOD-01 wire-format
+    /// evolution mitigation.
+    #[test]
+    fn info_response_v1_3_decoder_against_v1_4_wire_tolerates_extras() {
+        // Local shadow struct mirroring the v1.3 shape (10 existing fields
+        // only — does NOT include supported_script_types / output_script_type).
+        // The name uses v1_3 (snake_case) to keep the v1.3-vs-v1.4 narrative
+        // visually obvious; allow the non-camel-case lint locally.
+        #[allow(non_camel_case_types)]
+        #[derive(Debug, Deserialize)]
+        struct V1_3_InfoResponse {
+            version: String,
+            network: String,
+            denomination_sats: u64,
+            min_participants: u32,
+            max_participants: u32,
+            round_state: String,
+            participants_registered: u32,
+            rsa_pubkey_hash: Option<String>,
+            rsa_pubkey_der_b64: Option<String>,
+            round_id: Option<uuid::Uuid>,
+        }
+
+        let v1_4_wire = serde_json::to_string(&InfoResponse {
+            version: "0.2.0".to_string(),
+            network: "signet".to_string(),
+            denomination_sats: 1_000_000,
+            min_participants: 3,
+            max_participants: 20,
+            round_state: "idle".to_string(),
+            participants_registered: 0,
+            rsa_pubkey_hash: None,
+            rsa_pubkey_der_b64: None,
+            round_id: None,
+            supported_script_types: vec![
+                ScriptType::P2shP2wpkh,
+                ScriptType::P2tr,
+                ScriptType::P2wpkh,
+            ],
+            output_script_type: ScriptType::P2tr,
+        })
+        .expect("serialize v1.4");
+
+        let v1_3: V1_3_InfoResponse =
+            serde_json::from_str(&v1_4_wire).expect("v1.3 decoder must tolerate extras");
+        // Existing fields preserved; new fields silently dropped.
+        assert_eq!(v1_3.version, "0.2.0");
+        assert_eq!(v1_3.network, "signet");
+        assert_eq!(v1_3.denomination_sats, 1_000_000);
+        assert_eq!(v1_3.round_state, "idle");
+        // Silence the dead-code lint for the otherwise-unused parsed-only
+        // fields; the test's purpose is decode-without-error, not field
+        // population verification beyond the spot-checks above.
+        let _ = (
+            v1_3.min_participants,
+            v1_3.max_participants,
+            v1_3.participants_registered,
+            &v1_3.rsa_pubkey_hash,
+            &v1_3.rsa_pubkey_der_b64,
+            &v1_3.round_id,
+        );
     }
 }

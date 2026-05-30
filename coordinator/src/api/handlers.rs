@@ -64,6 +64,15 @@ pub async fn get_info(State(state): State<AppState>) -> Json<InfoResponse> {
         rsa_pubkey_hash,
         rsa_pubkey_der_b64,
         round_id: Some(guard.round_id),
+        // Phase 16 Plan 16-01 Task 3: populate the v1.4 ADVERT-01 wire-form
+        // extension from the BipConfig the operator booted the coordinator
+        // with. `state.config.bip.supported()` returns the alphabetical
+        // canonical list of allowed input script types (CD-11);
+        // `state.config.bip.output_script_type` is the single round-output
+        // script type the operator advertised (D-07). Cheap copies — `Vec`
+        // ownership move; `ScriptType` is `Copy`.
+        supported_script_types: state.config.bip.supported(),
+        output_script_type: state.config.bip.output_script_type,
     })
 }
 

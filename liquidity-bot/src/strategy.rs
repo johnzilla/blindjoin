@@ -42,6 +42,11 @@ mod tests {
     use shared::protocol::InfoResponse;
 
     fn make_info(round_state: &str, denomination_sats: u64, participants_registered: u32) -> InfoResponse {
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): InfoResponse gained 2 new
+        // wire-format fields. Populate them with the legacy P2WPKH-only
+        // defaults so this test fixture reproduces the v1.3 InfoResponse
+        // shape byte-exactly (no behaviour change in the strategy under test).
+        use shared::bip322::ScriptType;
         InfoResponse {
             version: "0.1.0".to_string(),
             network: "signet".to_string(),
@@ -53,6 +58,8 @@ mod tests {
             rsa_pubkey_hash: None,
             rsa_pubkey_der_b64: None,
             round_id: None,
+            supported_script_types: vec![ScriptType::P2wpkh],
+            output_script_type: ScriptType::P2wpkh,
         }
     }
 

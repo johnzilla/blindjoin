@@ -208,3 +208,170 @@ async fn run_bootstraps_round_into_input_reg() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 16 Plan 16-01 Task 3: GET /info exposes BipConfig-derived
+// supported_script_types + output_script_type.
+//
+// These tests use `build_router` directly with a sentinel bitcoind RPC URL
+// (same pattern as `full_round::coordinator_info_endpoint_fields`) so no
+// bitcoind is required — GET /info reads only in-memory round state +
+// state.config.bip.
+// ---------------------------------------------------------------------------
+
+/// Helper: bring up an in-process coordinator router with a custom
+/// `CoordinatorConfig`, return its base URL + the temp dir owning the ban
+/// file path. No bitcoind required — sentinel RPC URL is intentionally
+/// unbindable (mirrors `full_round::coordinator_info_endpoint_fields`'s
+/// `invalid-rpc-not-running.localhost:1` rationale).
+async fn spawn_info_only_coordinator(
+    cfg: coordinator::config::CoordinatorConfig,
+) -> (String, tempfile::TempDir) {
+    use std::sync::Arc;
+    use coordinator::api::build_router;
+    use coordinator::bitcoin::rpc::BitcoinRpc;
+    use coordinator::round::state::RoundState;
+    use tokio::sync::RwLock;
+
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let sentinel_rpc_url = "http://invalid-rpc-not-running.localhost:1";
+    let rpc = Arc::new(BitcoinRpc::new(
+        sentinel_rpc_url.into(),
+        String::new(),
+        String::new(),
+    ));
+    let cfg_arc = Arc::new(cfg);
+    let round_state = Arc::new(RwLock::new(RoundState::new_idle()));
+    let app = build_router(round_state, rpc, cfg_arc);
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    // Wait for the server to come up before returning.
+    let http_client = reqwest::Client::new();
+    let base = format!("http://{}", addr);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let ok = http_client
+            .get(format!("{}/info", base))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+        if ok {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Phase 16 info-only coordinator did not start within 3s"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    (base, tmp)
+}
+
+/// Build the test config Phase 16-01 Task 3 needs: a default
+/// `CoordinatorConfig::with_defaults()` with the listen_addr / ban_file_path
+/// rewired for the test, and the `bip` field overridable by the caller.
+fn make_phase16_test_cfg(
+    tmp: &std::path::Path,
+    bip: coordinator::config::BipConfig,
+) -> coordinator::config::CoordinatorConfig {
+    use coordinator::config::CoordinatorConfig;
+
+    let ban_file_path = tmp
+        .join("ban_list.jsonl")
+        .to_string_lossy()
+        .into_owned();
+
+    let mut cfg = CoordinatorConfig::with_defaults();
+    // Rewire knobs that the test-only path needs:
+    cfg.coordinator.listen_addr = "127.0.0.1:0".into();
+    cfg.coordinator.ban_file_path = ban_file_path;
+    cfg.network.bitcoin_network = "regtest".into();
+    cfg.bip = bip;
+    cfg
+}
+
+/// Default-config /info: all 3 script types allowed (alphabetical canonical
+/// order per CD-11) + output_script_type defaults to P2WPKH.
+#[tokio::test]
+async fn get_info_supports_all_three_script_types_with_defaults() {
+    use coordinator::config::BipConfig;
+    use shared::bip322::ScriptType;
+
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let cfg = make_phase16_test_cfg(tmp.path(), BipConfig::default());
+
+    let (base, _tmp_dir_keep) = spawn_info_only_coordinator(cfg).await;
+    let http_client = reqwest::Client::new();
+    let info: shared::protocol::InfoResponse = http_client
+        .get(format!("{}/info", base))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        info.supported_script_types,
+        vec![
+            ScriptType::P2shP2wpkh,
+            ScriptType::P2tr,
+            ScriptType::P2wpkh,
+        ],
+        "CD-11 alphabetical canonical order: p2sh-p2wpkh < p2tr < p2wpkh"
+    );
+    assert_eq!(
+        info.output_script_type,
+        ScriptType::P2wpkh,
+        "default output_script_type per D-37"
+    );
+
+    // Keep tmp alive (ban_file_path lives in it) through the assertion.
+    drop(tmp);
+}
+
+/// Operator allowlist filters supported_script_types: setting
+/// `allow_p2tr = false` removes P2TR from the advertised set while
+/// preserving the alphabetical canonical order of the remaining types.
+#[tokio::test]
+async fn get_info_filters_supported_by_allowlist() {
+    use coordinator::config::BipConfig;
+    use shared::bip322::ScriptType;
+
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let bip = BipConfig {
+        allow_p2wpkh: true,
+        allow_p2tr: false,
+        allow_p2sh_p2wpkh: true,
+        output_script_type: ScriptType::P2wpkh,
+    };
+    let cfg = make_phase16_test_cfg(tmp.path(), bip);
+
+    let (base, _tmp_dir_keep) = spawn_info_only_coordinator(cfg).await;
+    let http_client = reqwest::Client::new();
+    let info: shared::protocol::InfoResponse = http_client
+        .get(format!("{}/info", base))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        info.supported_script_types,
+        vec![ScriptType::P2shP2wpkh, ScriptType::P2wpkh],
+        "P2tr filtered out; alphabetical canonical preserved"
+    );
+    assert_eq!(info.output_script_type, ScriptType::P2wpkh);
+
+    drop(tmp);
+}
