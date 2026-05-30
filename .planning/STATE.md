@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: Not started
+current_plan: 1
 status: executing
 stopped_at: Phase 15 context gathered
-last_updated: "2026-05-30T01:25:37.757Z"
-last_activity: 2026-05-30 -- Phase 15 planning complete
+last_updated: "2026-05-30T01:37:23.778Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
   percent: 20
 ---
 
@@ -19,23 +19,23 @@ progress:
 
 ## Current Position
 
-Phase: 15
-Plan: none — Phase 15 awaiting `/gsd:plan-phase 15`
+Phase: 15 (Shared Crate Multi-Script Contract) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-05-30 -- Phase 15 planning complete
+Last activity: 2026-05-30
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 15 — shared crate multi script contract
+**Current focus:** Phase 15 — Shared Crate Multi-Script Contract
 
 ## Progress
 
 **Phases Complete:** 1 of 5 (v1.4 milestone)
 **Plans Complete:** 3 of 3 (Phase 14)
-**Current Plan:** Not started
+**Current Plan:** 1
 
 **v1.4 phase map:**
 
@@ -48,7 +48,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 ## Session Continuity
 
 **Stopped At:** Phase 15 context gathered
-**Resume File:** .planning/phases/15-shared-crate-multi-script-contract/15-CONTEXT.md
+**Resume File:** None
 
 ## Blockers
 
@@ -63,6 +63,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 | 14 | 01 | ~5 min | 3 | 3 | Sprint-0-A cargo-tree + audit probe; verdict GO (< 2 hours, well under D-18 2-day cap) |
 | 14 | 02 | ~6 min | 3 | 2 | Sprint-0-B bdk_wallet 2.3 P2TR PoC; verdict PASS / bdk path; well within D-18 2-day cap |
 | 14 | 03 | ~10 min | 3 | 3 | v1.4 ADR ratification (4 decisions, Michael Nygard template); separate doc commit per CD-5; D-21 invariant holds |
+| Phase 15 P01 | ~9 minutes | 3 tasks | 5 files |
 
 ## Phase 14 Decisions (recorded from plan execution)
 

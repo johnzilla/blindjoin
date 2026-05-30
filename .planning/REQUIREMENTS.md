@@ -19,7 +19,7 @@
 - [ ] **ADVERT-01**: `BipConfig` section in `coordinator.toml` (plus `BLINDJOIN__COORDINATOR__BIP__*` env-var overrides) with `allow_p2wpkh`, `allow_p2tr`, `allow_p2sh_p2wpkh` flags (default all `true`); validated at startup via `CoordinatorConfig::validate()` — fail-fast at boot, never panic-at-first-request
 - [ ] **ADVERT-02**: Coordinator advertises `supported_script_types` over PKARR (bump record version `0.1.0` → `0.2.0`; CSV-encoded in TXT JSON to respect the 255-byte DNS limit and stay under the 220-byte warn threshold at `coordinator/src/discovery/pkarr_pub.rs:76`) and over `/round/info` (proper JSON array, no byte budget); `#[serde(default)]` on both ends enables v1.3↔v1.4 bidirectional deserialization (missing field interpreted as `["p2wpkh"]`)
 - [ ] **ADVERT-03**: Coordinator derives `ScriptType` from `txout.script_pubkey` at validate-utxo time and cross-checks against the client-declared `script_type` (if any) on the `OwnershipProof` — mismatch rejects with `UnsupportedScriptType`; CRIT-01 invariant "script type derived from chain, not declared by client" is non-negotiable and load-bearing
-- [ ] **ADVERT-04**: `OwnershipProof` wire format extended to carry P2SH-P2WPKH `final_script_sig` (discuss-phase decides B1 tagged-enum vs B2 PSBT-input shape per SUMMARY.md Open Decision #3); roundtrip serialization test in `shared/` ships BEFORE either coordinator or client uses the new shape (v1.3 REPAIR-01 lesson #1)
+- [x] **ADVERT-04**: `OwnershipProof` wire format extended to carry P2SH-P2WPKH `final_script_sig` (discuss-phase decides B1 tagged-enum vs B2 PSBT-input shape per SUMMARY.md Open Decision #3); roundtrip serialization test in `shared/` ships BEFORE either coordinator or client uses the new shape (v1.3 REPAIR-01 lesson #1)
 
 ### Client Wallet, Signing & Discovery
 
@@ -83,7 +83,7 @@ Explicitly excluded with reasoning to prevent re-adding later.
 | ADVERT-01 | Phase 16 | Pending |
 | ADVERT-02 | Phase 16 | Pending |
 | ADVERT-03 | Phase 16 | Pending |
-| ADVERT-04 | Phase 15 | Pending |
+| ADVERT-04 | Phase 15 | Complete |
 | WALLET-01 | Phase 17 | Pending |
 | WALLET-02 | Phase 17 | Pending |
 | WALLET-03 | Phase 17 | Pending |
