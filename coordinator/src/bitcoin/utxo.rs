@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use bitcoin::{OutPoint, Script, ScriptBuf, hashes::Hash};
 use bitcoin::secp256k1::{Secp256k1, Message as SecpMessage, ecdsa::Signature};
-use shared::bip322::{bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign};
+use shared::bip322::{bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign, Bip322Error};
 use shared::protocol::OwnershipProof;
 use crate::bitcoin::rpc::{BitcoinRpc, RpcError};
 
@@ -84,21 +84,19 @@ fn parse_script_pubkey_from_txout(txout: &corepc_types::v26::GetTxOut) -> Result
     Ok(ScriptBuf::from_bytes(bytes))
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum Bip322Error {
-    #[error("Unsupported script type")]
-    UnsupportedScriptType,
-    #[error("Invalid witness stack length: expected 2, got {0}")]
-    InvalidWitnessLength(usize),
-    #[error("ECDSA signature parse error")]
-    SigParseError,
-    #[error("Public key parse error")]
-    PubkeyParseError,
-    #[error("Signature verification failed")]
-    VerificationFailed,
-    #[error("Script mismatch: pubkey does not match script_pubkey")]
-    ScriptMismatch,
-}
+// v1.4 Phase 15 Plan 15-02: the local Bip322Error enum at this location was
+// deleted per CONTEXT D-29 / 15-PATTERNS.md "coordinator/src/bitcoin/utxo.rs:87-101"
+// section. The shared::bip322::Bip322Error import at the top of this file is
+// now the single source of truth for the verify_bip322_simple body's typed
+// errors. Wire mapping at coordinator/src/api/handlers.rs is unchanged —
+// every Bip322Error variant maps to ErrorCode::InvalidOwnershipProof per
+// D-32 (no per-script-type fingerprint leak).
+//
+// The verify_bip322_simple body below remains in place at Phase 15 and gets
+// its Err(...) returns remapped to the shared variant taxonomy. Phase 16
+// ADVERT-03 swaps the call site at lines 74-75 of validate_utxo to the new
+// shared::bip322::verify_simple dispatcher, at which point this whole
+// verify_bip322_simple body becomes dead code and is removed.
 
 /// BIP-322 Simple verification for P2WPKH outputs (~50 lines).
 ///
@@ -121,7 +119,10 @@ pub fn verify_bip322_simple(
     }
 
     if witness_stack.len() != 2 {
-        return Err(Bip322Error::InvalidWitnessLength(witness_stack.len()));
+        return Err(Bip322Error::InvalidWitnessLength {
+            expected: 2,
+            got: witness_stack.len(),
+        });
     }
 
     let sig_bytes = &witness_stack[0];
@@ -145,7 +146,7 @@ pub fn verify_bip322_simple(
         script_pubkey,
         Amount::from_sat(0),  // to_spend output value is 0 per spec
         EcdsaSighashType::All,
-    ).map_err(|_| Bip322Error::VerificationFailed)?;
+    ).map_err(|e| Bip322Error::DecodeError(format!("p2wpkh sighash: {e}")))?;
 
     // 5. Verify ECDSA signature
     let secp = Secp256k1::verification_only();
@@ -158,16 +159,16 @@ pub fn verify_bip322_simple(
         sig_bytes.as_slice()
     };
     let sig = Signature::from_der(sig_der)
-        .map_err(|_| Bip322Error::SigParseError)?;
+        .map_err(|e| Bip322Error::DecodeError(format!("ecdsa signature parse: {e}")))?;
     let pubkey = bitcoin::secp256k1::PublicKey::from_slice(pubkey_bytes)
-        .map_err(|_| Bip322Error::PubkeyParseError)?;
+        .map_err(|e| Bip322Error::DecodeError(format!("pubkey parse: {e}")))?;
     secp.verify_ecdsa(&secp_msg, &sig, &pubkey)
-        .map_err(|_| Bip322Error::VerificationFailed)?;
+        .map_err(|e| Bip322Error::DecodeError(format!("ecdsa verify: {e}")))?;
 
     // 6. Verify pubkey matches the script_pubkey (hash160 check for P2WPKH)
     let compressed = bitcoin::PublicKey::new(pubkey);
     let wpkh = compressed.wpubkey_hash()
-        .map_err(|_| Bip322Error::PubkeyParseError)?;
+        .map_err(|e| Bip322Error::DecodeError(format!("wpubkey_hash: {e}")))?;
     let expected_wpkh = ScriptBuf::new_p2wpkh(&wpkh);
     if expected_wpkh != *script_pubkey {
         return Err(Bip322Error::ScriptMismatch);
@@ -222,7 +223,10 @@ mod tests {
         let msg = "blindjoin:round:test:utxo:abc:0";
         let (script, _witness) = make_p2wpkh_and_witness(msg);
         let result = verify_bip322_simple(&script, &[vec![0x01]], msg);
-        assert!(matches!(result, Err(Bip322Error::InvalidWitnessLength(1))));
+        assert!(matches!(
+            result,
+            Err(Bip322Error::InvalidWitnessLength { expected: 2, got: 1 })
+        ));
     }
 
     #[test]
