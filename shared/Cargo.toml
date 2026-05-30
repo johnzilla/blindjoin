@@ -10,3 +10,4 @@ bitcoin = { workspace = true }
 sha2 = { workspace = true }
 uuid = { workspace = true }
 hex = "0.4"
+base64 = "0.22"
