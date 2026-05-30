@@ -9,9 +9,9 @@
 
 ### Cryptography & Verifier (BIP-322 dispatch + per-script paths)
 
-- [ ] **BIP322-01**: `shared` crate exposes `ScriptType` enum `{P2WPKH, P2TR, P2SH_P2WPKH}` with `detect_script_type(scriptPubKey) -> Result<ScriptType, UnsupportedScriptType>` (no fallthrough default arm; unknown patterns explicitly error)
-- [ ] **BIP322-02**: `shared::bip322::verify_simple` dispatches to per-script-type verifier impls — P2WPKH (BIP-143 ECDSA), P2TR (BIP-341 Schnorr keypath, accepting both SIGHASH_DEFAULT 64-byte and SIGHASH_ALL 65-byte sig forms), P2SH-P2WPKH (BIP-143 sighash over the unwrapped P2WPKH redeem script, with HASH160(redeemScript) cross-check)
-- [ ] **BIP322-03**: `shared::bip322::sign_simple` symmetric to `verify_simple` — produces a correct witness stack (and `final_script_sig` for P2SH-P2WPKH) for each script type from a signing key + message
+- [x] **BIP322-01**: `shared` crate exposes `ScriptType` enum `{P2WPKH, P2TR, P2SH_P2WPKH}` with `detect_script_type(scriptPubKey) -> Result<ScriptType, UnsupportedScriptType>` (no fallthrough default arm; unknown patterns explicitly error)
+- [x] **BIP322-02**: `shared::bip322::verify_simple` dispatches to per-script-type verifier impls — P2WPKH (BIP-143 ECDSA), P2TR (BIP-341 Schnorr keypath, accepting both SIGHASH_DEFAULT 64-byte and SIGHASH_ALL 65-byte sig forms), P2SH-P2WPKH (BIP-143 sighash over the unwrapped P2WPKH redeem script, with HASH160(redeemScript) cross-check)
+- [x] **BIP322-03**: `shared::bip322::sign_simple` symmetric to `verify_simple` — produces a correct witness stack (and `final_script_sig` for P2SH-P2WPKH) for each script type from a signing key + message
 - [ ] **BIP322-04**: Per-script property tests against the official BIP-322 `basic-test-vectors.json` (commit-SHA pinned from bitcoin/bips repo) — each verifier independently passes every vector in its class; cross-shape rejection tests for all 9 (script_pubkey × witness-shape) combinations confirm V1.4-CRIT-01 mitigation
 
 ### Coordinator Configuration & Advertisement
@@ -76,9 +76,9 @@ Explicitly excluded with reasoning to prevent re-adding later.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BIP322-01 | Phase 15 | Pending |
-| BIP322-02 | Phase 15 | Pending |
-| BIP322-03 | Phase 15 | Pending |
+| BIP322-01 | Phase 15 | Complete |
+| BIP322-02 | Phase 15 | Complete |
+| BIP322-03 | Phase 15 | Complete |
 | BIP322-04 | Phase 15 | Pending |
 | ADVERT-01 | Phase 16 | Pending |
 | ADVERT-02 | Phase 16 | Pending |

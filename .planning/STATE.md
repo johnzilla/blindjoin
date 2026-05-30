@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: 1
+current_plan: 3
 status: executing
-stopped_at: Phase 15 context gathered
-last_updated: "2026-05-30T01:37:23.778Z"
+stopped_at: Phase 15 Plan 02 complete; ready for Plan 03 (per-script property tests + 9-rejection matrix)
+last_updated: "2026-05-30T02:03:03.847Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 20
 ---
 
@@ -20,8 +20,8 @@ progress:
 ## Current Position
 
 Phase: 15 (Shared Crate Multi-Script Contract) — EXECUTING
-Plan: 2 of 3
-Status: Ready to execute
+Plan: 3 of 3 (15-01 ✅, 15-02 ✅, 15-03 ⏳)
+Status: Ready to execute Plan 15-03
 Last activity: 2026-05-30
 
 ## Project Reference
@@ -34,8 +34,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 ## Progress
 
 **Phases Complete:** 1 of 5 (v1.4 milestone)
-**Plans Complete:** 3 of 3 (Phase 14)
-**Current Plan:** 1
+**Plans Complete:** 5 of 6 (Phase 14: 3/3 + Phase 15: 2/3)
+**Current Plan:** 15-03
 
 **v1.4 phase map:**
 
@@ -47,8 +47,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Phase 15 context gathered
+**Stopped At:** Phase 15 Plan 02 complete (2026-05-30); ready for Plan 03 (per-script property tests + 9-rejection matrix, BIP322-04)
 **Resume File:** None
+**Last session:** 2026-05-30T02:00Z
 
 ## Blockers
 
@@ -64,6 +65,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 | 14 | 02 | ~6 min | 3 | 2 | Sprint-0-B bdk_wallet 2.3 P2TR PoC; verdict PASS / bdk path; well within D-18 2-day cap |
 | 14 | 03 | ~10 min | 3 | 3 | v1.4 ADR ratification (4 decisions, Michael Nygard template); separate doc commit per CD-5; D-21 invariant holds |
 | Phase 15 P01 | ~9 minutes | 3 tasks | 5 files |
+| Phase 15 P15-02 | ~10 min | 3 tasks | 5 files |
 
 ## Phase 14 Decisions (recorded from plan execution)
 
@@ -72,6 +74,12 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 - **Plan 14-02 / Sprint-0-B → PASS** (2026-05-29): bdk_wallet 2.3 PSBT signer produces a valid 64-byte Schnorr keypath witness for a BIP-322 P2TR descriptor (BIP-86 `tr(.../86'/1'/0'/0/*)`) when `SignOptions { trust_witness_utxo: true }` is set and `witness_utxo` is populated with the canonical BIP-322 to_spend output (value = 0, script_pubkey = P2TR SPK). `wallet.sign` returned `Ok(finalized=true)`; recovered the 64-byte sig from `psbt.inputs[0].final_script_witness[0]` (bdk cleared `tap_key_sig` during finalize); `secp256k1::verify_schnorr` returned `Ok(())`. **ADR Decision #4 STATUS → ACCEPTED (bdk path)** for Plan 14-03 to consume. Phase 17 WALLET-02 uses bdk path; D-15's 80-LOC manual fallback (`shared/src/bip322/p2tr.rs::sign_p2tr_keypath`) does not fire in v1.4. Phase 17 implementation note: bdk finalizes single-key taproot, so witness extraction must check both `tap_key_sig` and `final_script_witness` (parallels client/src/wallet.rs:277-285 P2WPKH branch). Spike branch `spike/14-B-bdk-p2tr-poc` pushed to `origin` (HEAD `9ff73cd`) for reproducibility per D-19; NOT merged to main per D-19/D-21.
 
 - **Plan 14-03 / ADR ratification → COMPLETE** (2026-05-29): v1.4 ADR at `.planning/decisions/v1.4-adr.md` ratifies all 4 Open Decisions per the Michael Nygard template (D-20): Decision #1 = ACCEPTED (ADOPT `bip322 = "=0.0.10"`) per Sprint-0-A GO; Decision #2 = ACCEPTED (mixed rounds, single output type per round, no per-script-type minimum-participant gate) per D-06..D-10; Decision #3 = ACCEPTED (B2 base64 PSBT-input shape with `version: u8` envelope) per D-11..D-13; Decision #4 = ACCEPTED (bdk path) per Sprint-0-B PASS. D-21 structural invariant verified empty at the ADR commit boundary — Phase 14 produces zero production-code commits (`git diff main -- coordinator/ client/ shared/ liquidity-bot/` empty). ADR committed alone per CD-5 (`58f477e`); STATE/ROADMAP flip in separate doc commit. Phase 15-17 planners read the ADR by anchor `#decision-1`, `#decision-2`, `#decision-3`, `#decision-4` for task derivation without re-litigating.
+
+## Phase 15 Decisions (recorded from plan execution)
+
+- **Plan 15-01 / OwnershipProof v2 envelope + ScriptType stub → COMPLETE** (2026-05-29): ScriptType enum added to shared::bip322 (3 variants: P2wpkh, P2tr, P2shP2wpkh) with snake_case + kebab-case serde wire form per ADVERT-02; OwnershipProof evolved from 2-field witness-only to 4-field v2 envelope (version + witness_stack + psbt_input_b64 + script_type) per ADR Decision #3 + CONTEXT D-22..D-25; CD-7 two-phase try-parse preserves bit-exact v1.3 wire compatibility. 5 D-13 cases + 1 sibling test pass at `shared/tests/ownership_proof_roundtrip.rs`. base64 = "0.22" added as the only new direct dep per RESEARCH A8.
+
+- **Plan 15-02 / shared::bip322 dispatcher + 26-LOC adapter + coordinator error swap + CI grep gate → COMPLETE** (2026-05-30): Split `shared/src/bip322.rs` (flat file) into the four-file directory module per D-04: `mod.rs` (dispatcher + 26-LOC adapter + 10-variant Bip322Error + ScriptType + script-NEUTRAL primitives) + `p2wpkh.rs` / `p2tr.rs` / `p2sh_p2wpkh.rs` (each pub(crate)-only `verify` + `sign` + `#[cfg(test)] sign_for_tests`). Dispatcher-only public surface per D-27 makes V1.4-CRIT-01 spoofing vector statically unreachable. 26-LOC `bip322 = "=0.0.10"` adapter ported from `sprint-0-A.md:145-175` verbatim per D-26 (with `bip322::error::Error` → `bip322::Error` public-path fix; runtime semantics identical). 10-variant Bip322Error taxonomy per D-31 verbatim. Coordinator-local Bip322Error at `coordinator/src/bitcoin/utxo.rs:87-101` deleted; coordinator imports `shared::bip322::Bip322Error`; 6 Err(...) returns in verify_bip322_simple remapped per the variant table while preserving wire shape (ErrorCode::InvalidOwnershipProof bucket unchanged per D-32). CI `bip322-pin-check` grep gate added to `.github/workflows/ci.yml` mirroring `corepc-node-feature-pin-check` per Phase 14 carry-forward constraint #3 + RESEARCH Open Question #2 recommendation. Three new transitives accepted into Cargo.lock per Sprint-0-A baseline: bip322 v0.0.10, snafu v0.8.9, snafu-derive v0.8.9 (lockfile dependency-count 707 → 710 = exactly +3). cargo audit clean (0 vulnerabilities, 0 warnings, advisory db `eaf48e7`). v1.3 cross-phase invariant verified: `cargo test --test integration -- full_round` 8/8 pass. 3 atomic commits per CD-10: `c873db1` (Task 1 — module split + adapter + deps), `777eaf6` (Task 2 — coordinator error swap), `cfea17c` (Task 3 — CI grep gate).
 
 ## Accumulated Context
 
