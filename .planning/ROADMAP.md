@@ -52,7 +52,7 @@
 - [x] **Phase 14: Sprint-0 Spikes + Discuss-Phase Decisions** — Two timeboxed spikes (`bip322` crate pin verification, bdk_wallet 2.3 P2TR sign PoC) produced a GO/PASS ADR resolving Open Decisions #1 (ADOPT `bip322 = "=0.0.10"`), #2 (mixed rounds), #3 (B2 PSBT-input wire format), #4 (bdk path for P2TR sign). ✅ completed 2026-05-29
 - [x] **Phase 15: Shared Crate Multi-Script Contract** — `shared/` exposes `ScriptType` dispatch, per-type BIP-322 sign/verify, extended `OwnershipProof` + `InfoResponse` wire types, and per-script-type property tests against the official BIP-322 vectors. (completed 2026-05-30)
 - [x] **Phase 16: Coordinator Integration & Advertisement** — Replace the `is_p2wpkh()` gate with a config-driven allowlist + dispatcher; advertise `supported_script_types` over PKARR and `/round/info`; cross-check declared script type against on-chain `scriptPubKey` (CRIT-01). (completed 2026-05-30)
-- [ ] **Phase 17: Client Multi-Script Wallet & Discovery** — Client wallet supports BIP-84 / BIP-86 / BIP-49 descriptors, signs ownership proofs for all three types, and rejects mismatched coordinators at discovery before opening a Tor circuit; ships v1.4→v1.3 compatibility shim.
+- [x] **Phase 17: Client Multi-Script Wallet & Discovery** — Client wallet supports BIP-84 / BIP-86 / BIP-49 descriptors, signs ownership proofs for all three types, and rejects mismatched coordinators at discovery before opening a Tor circuit; ships v1.4→v1.3 compatibility shim. (completed 2026-05-30)
 - [ ] **Phase 18: Mixed-Script E2E + Liquidity Bot** — Liquidity bot generates UTXOs across all enabled script types and rotates per round; mixed-script regtest integration test (1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH) completes a full CoinJoin round through BROADCAST.
 
 ## Phase Details
@@ -115,7 +115,7 @@
 **Plans**: 3 plans
 - [x] 17-01-PLAN.md — WALLET-01: --type CLI flag + BIP-84/86/49 descriptor templates + script_type field on BdkClientWallet + construction-time mismatch check
 - [x] 17-02-PLAN.md — WALLET-02 + WALLET-04 (encoder): Bip322SignedProof + sign_bip322 dispatcher (WIF→shared::bip322; descriptor→bdk PSBT path) + v1/v2 envelope branch + CRIT-01 client-side grep gate
-- [ ] 17-03-PLAN.md — WALLET-03 + WALLET-04 (discovery): CoordinatorCapabilities + DiscoveryError + extended discover_coordinator + Pitfall 5 BlindjoinRecord v-field rename + 9 D-78 acceptance-gate tests
+- [x] 17-03-PLAN.md — WALLET-03 + WALLET-04 (discovery): CoordinatorCapabilities + DiscoveryError + extended discover_coordinator + Pitfall 5 BlindjoinRecord v-field rename + 9 D-78 acceptance-gate tests
 
 ### Phase 18: Mixed-Script E2E + Liquidity Bot
 **Goal**: An operator running the v1.4 stack on signet sees the liquidity bot generate UTXOs across all enabled script types, and the v1.4 acceptance gate — a mixed-script CoinJoin round on regtest — completes and broadcasts a real txid.
@@ -163,7 +163,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete    | 2026-05-30 |
 | 15. Shared Crate Multi-Script Contract | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete   | 2026-05-30 |
-| 17. Client Multi-Script Wallet & Discovery | v1.4 | 2/3 | In Progress|  |
+| 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 0/0 | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`

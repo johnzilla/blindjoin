@@ -25,7 +25,7 @@
 
 - [x] **WALLET-01**: Client wallet supports three BIP descriptor templates — BIP-84 `wpkh(.../84'/...)` (P2WPKH, existing), BIP-86 `tr(.../86'/...)` (P2TR), BIP-49 `sh(wpkh(.../49'/...))` (P2SH-P2WPKH) — selected by `--type {p2wpkh|p2tr|p2sh-p2wpkh}` CLI flag at `generate-wallet`; defaults to `p2wpkh` for backwards compatibility
 - [x] **WALLET-02**: Client signs BIP-322 ownership proofs for all 3 script types via `shared::bip322::sign_simple` (Sprint-0-B Phase 14 spike verifies bdk_wallet 2.3 PSBT-sign path produces correct Taproot keypath witnesses; fallback to manual `secp256k1::Secp256k1::sign_schnorr` over direct sighash construction if bdk path unsuitable for P2TR — bdk_wallet/issues/150 means client signer is ours regardless)
-- [ ] **WALLET-03**: Client reads `supported_script_types` from `/round/info` BEFORE opening a Tor circuit for input registration; rejects coordinator at discovery time on script-type mismatch with a clear error naming both the coordinator and the missing script type (V1.4-MOD-03 fail-fast UX)
+- [x] **WALLET-03**: Client reads `supported_script_types` from `/round/info` BEFORE opening a Tor circuit for input registration; rejects coordinator at discovery time on script-type mismatch with a clear error naming both the coordinator and the missing script type (V1.4-MOD-03 fail-fast UX)
 - [x] **WALLET-04**: Client detects pre-`0.2.0` coordinator (legacy PKARR record `"0.1.0"` or missing `supported_script_types` field on `/round/info`) and falls back to witness-only `OwnershipProof` wire format for P2WPKH-only rounds — v1.4 client interoperates with v1.3 coordinators (one-direction compat shim, the v1.4→v1.3 cell of the compat matrix)
 
 ### Test Infrastructure & Liquidity
@@ -86,7 +86,7 @@ Explicitly excluded with reasoning to prevent re-adding later.
 | ADVERT-04 | Phase 15 | Complete |
 | WALLET-01 | Phase 17 | Complete |
 | WALLET-02 | Phase 17 | Complete |
-| WALLET-03 | Phase 17 | Pending |
+| WALLET-03 | Phase 17 | Complete |
 | WALLET-04 | Phase 17 | Complete |
 | INTEG-01 | Phase 18 | Pending |
 | INTEG-02 | Phase 18 | Pending |
