@@ -7,6 +7,10 @@ edition = "2021"
 name = "liquidity-bot"
 path = "src/main.rs"
 
+[lib]
+name = "liquidity_bot"
+path = "src/lib.rs"
+
 [dependencies]
 client = { path = "../client" }
 shared = { path = "../shared" }
@@ -15,3 +19,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 bitcoin = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

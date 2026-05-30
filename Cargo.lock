@@ -3132,6 +3132,7 @@ dependencies = [
  "bitcoin",
  "client",
  "shared",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
