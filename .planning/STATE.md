@@ -2,18 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: "Phase 14 complete; awaiting /gsd:plan-phase 15"
-status: ready_to_plan
-stopped_at: Phase 14 complete (3/3) — ready to discuss Phase 15
-last_updated: 2026-05-30T00:03:12.006Z
-last_activity: "2026-05-29 — Phase 14 closed: v1.4 ADR ratified, Sprint-0 spikes recorded (sprint-0-A.md, sprint-0-B.md); D-21 structural invariant holds (no production code touched)"
+current_plan: Not started
+status: planning
+stopped_at: Phase 15 context gathered
+last_updated: "2026-05-30T00:35:51.594Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 5
   completed_phases: 1
-  # total_plans: cumulative across phases planned-so-far in current milestone (not milestone-total preimage)
   total_plans: 3
   completed_plans: 3
-  # percent: computed from completed_phases / total_phases_in_milestone (1/5 = 20%), NOT completed_plans / total_plans
   percent: 20
 ---
 
@@ -49,8 +47,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Phase 14 complete (ADR ratified); next: `/gsd:plan-phase 15`
-**Resume File:** `.planning/decisions/v1.4-adr.md`
+**Stopped At:** Phase 15 context gathered
+**Resume File:** .planning/phases/15-shared-crate-multi-script-contract/15-CONTEXT.md
 
 ## Blockers
 
