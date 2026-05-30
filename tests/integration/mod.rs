@@ -18,10 +18,155 @@
 
 mod ban_list_persistence;
 mod full_round;
+mod mixed_script_e2e;
 mod multi_script_client;
 mod multi_script_validate;
 mod rate_limiting;
 mod round_bootstrap;
+
+// ---------------------------------------------------------------------------
+// Phase 18 18-01 promoted helpers — moved from full_round.rs to mod.rs so
+// mixed_script_e2e.rs can reuse them without touching full_round.rs.
+// Visibility upgraded from private (full_round.rs) to pub(crate).
+// Bodies are byte-exact copies; zero behaviour change.
+// ---------------------------------------------------------------------------
+
+/// Phase 17 17-03 synthetic v1.4 CoordinatorInfo for the P2WPKH WIF path.
+///
+/// The `full_round::*` tests and `mixed_script_e2e` P2WPKH client use this
+/// helper. It returns a synthetic CoordinatorInfo with `is_legacy: false`
+/// (v=2 envelope path) which preserves v1.3 cross-phase invariant
+/// byte-exactly.
+pub(crate) fn v14_p2wpkh_coordinator_info() -> client::discover::CoordinatorInfo {
+    client::discover::CoordinatorInfo {
+        coordinator_url: String::new(),
+        capabilities: client::discover::CoordinatorCapabilities {
+            record_version: "manual".to_string(),
+            is_legacy: false,
+            supported_script_types: vec![shared::bip322::ScriptType::P2wpkh],
+            output_script_type: shared::bip322::ScriptType::P2wpkh,
+        },
+    }
+}
+
+/// Phase 18 18-01 parameterised factory — returns a synthetic CoordinatorInfo
+/// for any script type. Used by `mixed_script_e2e` to bypass PKARR discovery
+/// (D-85): each client's synthetic info carries `supported_script_types` AND
+/// `output_script_type` equal to `st`, satisfying both the WALLET-03 input
+/// allowlist check AND the WALLET-04 output-type cross-check at
+/// `client/src/round/input.rs`.
+pub(crate) fn v14_coordinator_info(st: shared::bip322::ScriptType) -> client::discover::CoordinatorInfo {
+    client::discover::CoordinatorInfo {
+        coordinator_url: String::new(),
+        capabilities: client::discover::CoordinatorCapabilities {
+            record_version: "manual".to_string(),
+            is_legacy: false,
+            supported_script_types: vec![st],
+            output_script_type: st,
+        },
+    }
+}
+
+/// Bootstrap a fresh round in InputReg using the production code path.
+///
+/// Promoted from `full_round.rs` (was private). Body is byte-exact.
+pub(crate) fn build_input_reg_round_state() -> coordinator::round::state::RoundState {
+    use coordinator::round::manager::start_round;
+    use coordinator::round::state::RoundState;
+
+    let mut state = RoundState::new_idle();
+    start_round(&mut state).expect("start_round must succeed from Idle");
+    state
+}
+
+/// Spawn coordinator server in-process and return its listen URL plus a
+/// TempDir guard that owns the ban-file's parent directory.
+///
+/// Promoted from `full_round.rs` (was private). Body is byte-exact.
+pub(crate) async fn spawn_coordinator(
+    rpc_url: String,
+    rpc_user: String,
+    rpc_pass: String,
+) -> (String, tempfile::TempDir) {
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+    use coordinator::bitcoin::rpc::BitcoinRpc;
+    use coordinator::config::{CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let listen_addr = addr.to_string();
+
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let ban_file_path = tmp
+        .path()
+        .join("ban_list.jsonl")
+        .to_string_lossy()
+        .into_owned();
+
+    let cfg = Arc::new(CoordinatorConfig {
+        network: NetworkConfig {
+            bitcoin_network: "regtest".into(),
+            bitcoin_rpc_url: rpc_url.clone(),
+            bitcoin_rpc_user: rpc_user.clone(),
+            bitcoin_rpc_pass: rpc_pass.clone(),
+        },
+        coordinator: CoordinatorSection {
+            denomination_sats: 100_000,
+            min_participants: 3,
+            max_participants: 3,
+            round_timeout_input_reg_secs: 30,
+            round_timeout_output_reg_secs: 30,
+            round_timeout_signing_secs: 15,
+            blame_ban_duration_secs: 60,
+            fee_rate_sat_per_vbyte: 1,
+            listen_addr: listen_addr.clone(),
+            ban_file_path,
+            rate_limit_info_per_min: 60,
+            rate_limit_writes_per_min: 30,
+            request_timeout_secs: 30,
+            max_concurrent_connections: 256,
+            tor_mode: false,
+        },
+        discovery: DiscoveryConfig::default(),
+        bip: coordinator::config::BipConfig::default(),
+    });
+
+    let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
+    let round_state = Arc::new(RwLock::new(build_input_reg_round_state()));
+    let app = coordinator::api::build_router(round_state, rpc, cfg);
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    (format!("http://{}", addr), tmp)
+}
+
+/// Wait for coordinator /info to return 200 OK.
+///
+/// Promoted from `full_round.rs` (was private). Body is byte-exact.
+pub(crate) async fn wait_for_coordinator(coordinator_url: &str) {
+    use std::time::Duration;
+    let http_client = reqwest::Client::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let ok = http_client
+            .get(format!("{}/info", coordinator_url))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+        if ok {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "Coordinator did not start within 5 seconds"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
 
 /// Inner bitcoind-discovery accessor — returns `Some(path)` when the daemon
 /// is available, `None` when it is not but the test should skip.
