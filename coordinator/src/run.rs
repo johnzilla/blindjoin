@@ -332,8 +332,14 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let keypair = pkarr_keypair.clone();
         let denom = cfg.coordinator.denomination_sats;
         let min_p = cfg.coordinator.min_participants;
+        // W3: transient stub; Task 2 wires &cfg.bip
+        #[allow(unused_variables)]
+        let supported_default: &[&str] = &["p2wpkh"];
+        #[allow(unused_variables)]
+        let output_st_default: &str = "p2wpkh";
         if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
             &keypair, &addr, denom, min_p, "idle",
+            supported_default, output_st_default,
         ) {
             tokio::spawn(async move {
                 if let Err(e) = p.publish_record(packet).await {
@@ -355,6 +361,11 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let interval_secs = cfg.discovery.heartbeat_interval_secs;
 
         tokio::spawn(async move {
+            // W3: transient stub; Task 2 wires &cfg.bip
+            #[allow(unused_variables)]
+            let supported_default: &[&str] = &["p2wpkh"];
+            #[allow(unused_variables)]
+            let output_st_default: &str = "p2wpkh";
             let mut ticker = tokio::time::interval(
                 Duration::from_secs(interval_secs),
             );
@@ -366,6 +377,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                 };
                 if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
                     &keypair, &addr, denom, min_p, &status,
+                    supported_default, output_st_default,
                 ) {
                     if let Err(e) = p.publish_record(packet).await {
                         tracing::warn!("PKARR heartbeat publish failed: {e}");
