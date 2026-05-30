@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: 15-03
+current_plan: 15-03 (complete; ready for verification)
 status: verifying
-stopped_at: Plan 15-03 complete; Phase 15 ready for verification
-last_updated: "2026-05-30T02:31:55.904Z"
+stopped_at: Phase 16 context gathered (auto)
+last_updated: "2026-05-30T03:06:56.825Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 5
@@ -47,9 +47,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Plan 15-03 complete; Phase 15 ready for verification
-**Resume File:** None
-**Last session:** 2026-05-30T02:31:35.855Z
+**Stopped At:** Phase 16 context gathered (auto)
+**Resume File:** .planning/phases/16-coordinator-integration-advertisement/16-CONTEXT.md
+**Last session:** 2026-05-30T03:06:56.811Z
 
 ## Blockers
 
