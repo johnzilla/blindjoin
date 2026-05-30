@@ -31,6 +31,7 @@ anyhow = "1"
 base64 = "0.22"
 pkarr = { workspace = true }
 hex = { workspace = true }
+thiserror = { workspace = true }
 rand = "0.8"
 arti-client = { version = "0.41", default-features = false, features = ["onion-service-client", "tokio", "rustls", "compression"] }
 tor-rtcompat = "0.41"
