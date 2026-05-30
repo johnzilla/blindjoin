@@ -12,6 +12,8 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 ## Current State
 
+v1.4 Phase 14 (Sprint-0 Spikes + Discuss-Phase Decisions) complete 2026-05-30 — gating ADR phase. Two timeboxed spikes on quarantined branches resolved all 4 v1.4 Open Decisions: Decision #1 ACCEPTED ADOPT `bip322 = "=0.0.10"` (transitive `bitcoin v0.32.8` at depth 1, `cargo audit` clean, 26-LOC adapter sketch with zero lossy conversions); Decision #2 ACCEPTED mixed rounds; Decision #3 ACCEPTED B2 PSBT-input wire shape with `version: u8` envelope; Decision #4 ACCEPTED bdk path (bdk_wallet 2.3 produces a valid 64-byte Schnorr keypath witness in `psbt.inputs[0].final_script_witness[0]` and verifies via `secp256k1::verify_schnorr` against the BIP-341 keyspend sighash). v1.4 ADR ratified at `.planning/decisions/v1.4-adr.md`. D-21 structural invariant held: zero production-code commits on main from Phase 14 — spike branches `spike/14-A-bip322-cargo-tree` and `spike/14-B-bdk-p2tr-poc` pushed to origin for reproducibility and never merged. Phase 15 (Shared Crate Multi-Script Contract) unblocked.
+
 v1.3 Test Infrastructure & Operational Hardening shipped 2026-05-29 (5 phases, 13 plans, 4 days). Made the integration test feedback loop trustworthy: CI now installs a pinned bitcoind v30.2 (`actions/cache@v4` + PGP-verified install), the entire `tests/integration/` tree has zero `Box::leak` (clean process lifecycle via `BitcoindGuard` RAII + `require_bitcoind!()` macro), `CONTRIBUTING.md` documents the canonical invocation, and any test using corepc-node's typed `Client` must declare an explicit `features = ["NN_M"]` (CI grep gate). REPAIR-01 closed locally — all 8 `full_round::*` tests green on pinned brew bitcoind v31 via a chain of direct fixes (RSA SPKI handshake, bdk_wallet 2.3 `trust_witness_utxo`, wire-format `Witness` consensus encoding, real on-chain `witness_utxo` values, ban-check ordering, error-body surfacing). Full PR observation closure pending v1.4 cut.
 
 Shipped to date: v1.0 MVP → v1.1 Security & Availability → v1.2 Production Readiness → v1.3 Test Infrastructure (10 phases total across 4 milestones; 6,490 Rust LOC across coordinator/client/shared).
@@ -170,4 +172,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after v1.4 milestone (BIP-322 Multi-Script Support) started*
+*Last updated: 2026-05-30 after v1.4 Phase 14 (Sprint-0 Spikes + Discuss-Phase Decisions) complete*
