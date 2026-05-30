@@ -18,6 +18,7 @@
 
 mod ban_list_persistence;
 mod full_round;
+mod multi_script_client;
 mod multi_script_validate;
 mod rate_limiting;
 mod round_bootstrap;
