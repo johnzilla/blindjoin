@@ -236,6 +236,40 @@ pub fn sign_simple(
 }
 
 // ---------------------------------------------------------------------------
+// #[cfg(test)] sign_simple_test_only — integration-test dispatcher mirror.
+//
+// Plan 15-03 BIP322-04 scope: per-script positive vectors + sign↔verify
+// roundtrips MUST run end-to-end against the dispatcher API so a future
+// dispatcher regression surfaces in CI. Production `sign_simple` for P2TR
+// and P2SH-P2WPKH is `todo!()` per CD-6 (Phase 17 WALLET-02 wires bdk),
+// so this `#[cfg(test)] pub fn` provides the test-only path: routes P2WPKH
+// to the fully-implemented production `p2wpkh::sign`, and routes P2TR +
+// P2SH-P2WPKH to the per-script `sign_for_tests` helpers that produce
+// canonical witnesses without depending on `bdk_wallet` from `shared/`.
+//
+// Visibility: `#[cfg(test)]` gating means this fn is compiled ONLY when
+// `shared/` is built as a test target (lib tests + integration tests in
+// `shared/tests/*.rs`). It does NOT add to the production API surface, so
+// D-27's dispatcher-only invariant for production code is preserved. The
+// V1.4-CRIT-01 spoofing vector remains statically unreachable in
+// production binaries.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+pub fn sign_simple_test_only(
+    script_type: ScriptType,
+    spk: &Script,
+    key: &bitcoin::secp256k1::SecretKey,
+    message: &[u8],
+) -> Result<Witness, Bip322Error> {
+    match script_type {
+        ScriptType::P2wpkh => p2wpkh::sign(spk, key, message),
+        ScriptType::P2tr => Ok(p2tr::sign_for_tests(spk, key, message)),
+        ScriptType::P2shP2wpkh => Ok(p2sh_p2wpkh::sign_for_tests(spk, key, message)),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 26-LOC bip322 crate adapter — Sprint-0-A:145-175 verbatim per D-26.
 // Wraps `bip322::verify_simple(&Address, message, Witness)` into our
 // `(spk, witness, message, network)` wire shape. Error mapping preserves

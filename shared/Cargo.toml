@@ -19,3 +19,11 @@ base64 = "0.22"
 # pin on every PR.
 bip322 = "=0.0.10"
 thiserror = { workspace = true }
+
+[dev-dependencies]
+# v1.4 Phase 15 Plan 15-03 adds proptest as the property-test scaffolding for
+# the BIP-322 per-script vector tests (BIP322-04) + future cross-impl
+# differential fixtures (TEST-EXT-01 v1.5 candidate). Workspace pins
+# `proptest = "1"` at root Cargo.toml:28; this declaration re-exports per
+# Phase 14 carry-forward constraint #3 + Shared Pattern 4.
+proptest = { workspace = true }
