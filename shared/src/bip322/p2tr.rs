@@ -50,7 +50,13 @@ pub(crate) fn sign(
 /// tap_tweak → taproot_key_spend_signature_hash → sign_schnorr_no_aux_rand →
 /// push 64 bytes into Witness. This is the load-bearing test signer that
 /// Plan 15-03 consumes for per-script positive-vector tests.
-#[cfg(test)]
+///
+/// Plan 15-03 promotes this from `#[cfg(test)] pub(crate)` to `pub(crate)`
+/// (no cfg gate) so the integration-test dispatcher mirror
+/// `super::sign_simple_test_only` (a `#[doc(hidden)] pub fn` in `mod.rs`)
+/// can reach it from external test crates at `shared/tests/*.rs`. Production
+/// callers cannot invoke this fn directly because the per-script module is
+/// `pub(crate)`-only per D-27.
 pub(crate) fn sign_for_tests(spk: &Script, key: &SecretKey, message: &[u8]) -> Witness {
     use bitcoin::hashes::Hash;
     use bitcoin::key::{Keypair, TapTweak};

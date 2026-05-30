@@ -58,7 +58,13 @@ pub(crate) fn sign(
 /// `_spk` is the OUTER P2SH SPK (kept in the signature for symmetry with the
 /// other per-script signers); we don't use it directly because the sighash
 /// uses the inner P2WPKH SPK derived from the pubkey.
-#[cfg(test)]
+///
+/// Plan 15-03 promotes this from `#[cfg(test)] pub(crate)` to `pub(crate)`
+/// (no cfg gate) so the integration-test dispatcher mirror
+/// `super::sign_simple_test_only` (a `#[doc(hidden)] pub fn` in `mod.rs`)
+/// can reach it from external test crates at `shared/tests/*.rs`. Production
+/// callers cannot invoke this fn directly because the per-script module is
+/// `pub(crate)`-only per D-27.
 pub(crate) fn sign_for_tests(_spk: &Script, key: &SecretKey, message: &[u8]) -> Witness {
     use bitcoin::hashes::Hash;
     use bitcoin::secp256k1::{Message, Secp256k1};

@@ -78,7 +78,14 @@ pub(crate) fn sign(
 /// implemented per CD-6); the alias exists for symmetry with `p2tr` /
 /// `p2sh_p2wpkh` where the production body is `todo!()` but the test signer
 /// is load-bearing.
-#[cfg(test)]
+///
+/// Plan 15-03 promotes this from `#[cfg(test)] pub(crate)` to `pub(crate)`
+/// (no cfg gate) so the integration-test dispatcher mirror
+/// `super::sign_simple_test_only` (a `#[doc(hidden)] pub fn` in `mod.rs`)
+/// can reach it from external test crates at `shared/tests/*.rs`. Production
+/// callers cannot invoke this fn directly because the per-script module is
+/// `pub(crate)`-only per D-27.
+#[allow(dead_code)]
 pub(crate) fn sign_for_tests(
     spk: &Script,
     key: &SecretKey,

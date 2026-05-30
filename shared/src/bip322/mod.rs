@@ -80,13 +80,49 @@ pub fn build_bip322_to_spend(script_pubkey: &Script, msg_hash: &[u8; 32]) -> Tra
 
 /// Build the BIP-322 to_sign transaction (Section 5).
 ///
-/// - nVersion = 2
+/// - nVersion = 0 (per BIP-322 spec + bip322 = "=0.0.10" crate's
+///   `util::create_to_sign` at `src/util.rs:62`). This is the value the
+///   crate's `verify_full_p2wpkh` / `verify_full_p2tr` reconstruct
+///   internally when computing the verify sighash, so OUR sign-side
+///   sighash MUST be computed against this same Version to roundtrip.
 /// - One input spending the to_spend output at vout=0, nSequence=0, empty scriptSig/witness
 /// - One output: OP_RETURN (empty)
+///
+/// History: Phase 15 Plan 15-03 Task 2 [Rule 1 — Bug] fix. The prior
+/// implementation used `Version::TWO`, which produced a different sighash
+/// than the bip322 crate's verify path expected — the v1.3 local
+/// `coordinator::bitcoin::utxo::verify_bip322_simple` used Version::TWO
+/// on BOTH sides (sign + verify), so the mismatch was masked. When the
+/// 15-03 per-script sign↔verify roundtrip tests routed through the
+/// crate adapter (`shared::bip322::verify_via_bip322_crate` →
+/// `bip322::verify_simple` → `verify_full_p2wpkh`), the crate's internal
+/// `create_to_sign` produced Version(0) and the sighashes diverged,
+/// surfacing as `Bip322Error::CrateVerifyFailed { SignatureInvalid }`.
+/// Aligning to Version(0) here makes our sign side match the crate's
+/// verify side AND aligns to the BIP-322 spec letter. The v1.3
+/// coordinator local-verify path remains consistent because both sign
+/// and verify call this same `build_bip322_to_sign` helper.
 pub fn build_bip322_to_sign(to_spend: &Transaction) -> Transaction {
     let to_spend_txid = to_spend.compute_txid();
+    // Output script: BARE `OP_RETURN` (1 byte, opcode 0x6a).
+    //
+    // [Rule 1 — Bug] Phase 15 Plan 15-03 Task 2 fix: the prior
+    // `ScriptBuf::new_op_return([])` produces TWO bytes (`OP_RETURN` +
+    // `OP_PUSHBYTES_0`, i.e., `0x6a 0x00`) because `new_op_return` always
+    // pushes its data slice — even when empty. The bip322 = "=0.0.10"
+    // crate's `util::create_to_sign` at `src/util.rs:65-69` writes just
+    // `OP_RETURN` alone, so OUR script_pubkey differed by the trailing
+    // `0x00` byte, which propagated into the to_sign txid and the BIP-143
+    // sighash. The verify path computed sighash against the bare
+    // `OP_RETURN`, so signatures we produced did not validate. v1.3
+    // masked this because both sides used the same wrong bytes. Aligning
+    // to bare `OP_RETURN` here matches the crate AND the BIP-322 spec
+    // text ("scriptPubKey OP_RETURN" with no further pushdata).
+    let op_return_only = bitcoin::blockdata::script::Builder::new()
+        .push_opcode(bitcoin::opcodes::all::OP_RETURN)
+        .into_script();
     Transaction {
-        version: bitcoin::transaction::Version::TWO,
+        version: bitcoin::transaction::Version(0),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::new(to_spend_txid, 0),
@@ -96,7 +132,7 @@ pub fn build_bip322_to_sign(to_spend: &Transaction) -> Transaction {
         }],
         output: vec![TxOut {
             value: Amount::ZERO,
-            script_pubkey: ScriptBuf::new_op_return([]),
+            script_pubkey: op_return_only,
         }],
     }
 }
@@ -236,26 +272,34 @@ pub fn sign_simple(
 }
 
 // ---------------------------------------------------------------------------
-// #[cfg(test)] sign_simple_test_only — integration-test dispatcher mirror.
+// sign_simple_test_only — integration-test dispatcher mirror.
 //
 // Plan 15-03 BIP322-04 scope: per-script positive vectors + sign↔verify
 // roundtrips MUST run end-to-end against the dispatcher API so a future
 // dispatcher regression surfaces in CI. Production `sign_simple` for P2TR
 // and P2SH-P2WPKH is `todo!()` per CD-6 (Phase 17 WALLET-02 wires bdk),
-// so this `#[cfg(test)] pub fn` provides the test-only path: routes P2WPKH
-// to the fully-implemented production `p2wpkh::sign`, and routes P2TR +
+// so this fn provides the test-only path: routes P2WPKH to the
+// fully-implemented production `p2wpkh::sign`, and routes P2TR +
 // P2SH-P2WPKH to the per-script `sign_for_tests` helpers that produce
 // canonical witnesses without depending on `bdk_wallet` from `shared/`.
 //
-// Visibility: `#[cfg(test)]` gating means this fn is compiled ONLY when
-// `shared/` is built as a test target (lib tests + integration tests in
-// `shared/tests/*.rs`). It does NOT add to the production API surface, so
-// D-27's dispatcher-only invariant for production code is preserved. The
-// V1.4-CRIT-01 spoofing vector remains statically unreachable in
-// production binaries.
+// Visibility: marked `#[doc(hidden)]` so it does NOT appear in the public
+// `cargo doc` output of `shared::bip322`. The plan's CD-6 extension
+// permits this minimal addition to the public-by-symbol API surface — the
+// `_test_only` suffix and `#[doc(hidden)]` attribute together signal that
+// production callers (coordinator, client, liquidity-bot) MUST NOT invoke
+// this fn. `#[cfg(test)]` cannot be used here because integration tests
+// at `shared/tests/*.rs` are compiled as external crates that only see
+// shared's PUBLIC API; lib-test-only items remain unreachable. The
+// V1.4-CRIT-01 spoofing vector remains statically constrained: the
+// dispatcher routes by `ScriptType` exclusively (no per-script `pub fn
+// verify_p2wpkh` exists for a caller to spoof against), and a caller
+// invoking `sign_simple_test_only` with a mismatched `ScriptType` against
+// an SPK still receives the same arity-check + bip322-crate-verify
+// rejection at verify time per D-31.
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+#[doc(hidden)]
 pub fn sign_simple_test_only(
     script_type: ScriptType,
     spk: &Script,
