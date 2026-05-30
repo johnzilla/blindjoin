@@ -7,7 +7,9 @@ use clap::Parser;
 /// on the `P2shP2wpkh` variant) so the accepted tokens are the SINGLE source of
 /// truth — no manual string match in the client crate. Per CD-17 only lowercase
 /// kebab-case forms are accepted (`p2wpkh`, `p2tr`, `p2sh-p2wpkh`).
-fn parse_script_type(s: &str) -> Result<shared::bip322::ScriptType, String> {
+/// Public re-export for external crates (liquidity-bot) that need the same
+/// single source of truth for script-type token parsing (Phase 18 18-02).
+pub fn parse_script_type(s: &str) -> Result<shared::bip322::ScriptType, String> {
     // Wrap string in JSON quotes so serde_json::from_str fires the enum's serde impl.
     let quoted = format!("\"{}\"", s);
     serde_json::from_str::<shared::bip322::ScriptType>(&quoted)

@@ -33,5 +33,9 @@ ENTRYPOINT ["/usr/local/bin/client"]
 
 FROM runtime-base AS liquidity-bot
 WORKDIR /app
+# Create /app/data directory for the rotation counter file (BLINDJOIN_BOT_COUNTER_FILE).
+# The Docker named volume `bot-data` overlays this directory at runtime, but the mkdir
+# ensures the mount-point exists when Docker does not auto-create it (Pitfall 6).
+RUN mkdir -p /app/data
 COPY --from=builder /app/target/release/liquidity-bot /usr/local/bin/liquidity-bot
 ENTRYPOINT ["/usr/local/bin/liquidity-bot"]

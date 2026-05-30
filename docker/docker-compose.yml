@@ -83,17 +83,35 @@ services:
     environment:
       BLINDJOIN_COORDINATOR_URL: "http://coordinator:8080"
       BLINDJOIN_NETWORK: "signet"
-      # These must be set via .env file or docker compose --env-file.
-      # The bot will exit with a clear error if these are missing.
-      BLINDJOIN_UTXO: "${BOT_UTXO}"
-      BLINDJOIN_UTXO_VALUE_SATS: "${BOT_UTXO_VALUE_SATS}"
-      BLINDJOIN_UTXO_WIF: "${BOT_WIF}"
+      # Phase 18 multi-script rotation env vars.
+      # CSV of script types the bot rotates across (default: p2wpkh = v1.3 compat).
+      # Set to "p2wpkh,p2tr,p2sh-p2wpkh" for full rotation. Accepted tokens: lowercase kebab-case.
+      BLINDJOIN_BOT_SCRIPT_TYPES: "${BOT_SCRIPT_TYPES:-p2wpkh}"
+      # Per-type tuples — only required when the matching type is in BLINDJOIN_BOT_SCRIPT_TYPES.
+      BLINDJOIN_BOT_P2WPKH_UTXO: "${BOT_P2WPKH_UTXO:-}"
+      BLINDJOIN_BOT_P2WPKH_WIF: "${BOT_P2WPKH_WIF:-}"
+      BLINDJOIN_BOT_P2TR_UTXO: "${BOT_P2TR_UTXO:-}"
+      BLINDJOIN_BOT_P2TR_DESCRIPTOR: "${BOT_P2TR_DESCRIPTOR:-}"
+      BLINDJOIN_BOT_P2TR_UTXO_ADDRESS: "${BOT_P2TR_UTXO_ADDRESS:-}"
+      BLINDJOIN_BOT_P2SH_P2WPKH_UTXO: "${BOT_P2SH_P2WPKH_UTXO:-}"
+      BLINDJOIN_BOT_P2SH_P2WPKH_DESCRIPTOR: "${BOT_P2SH_P2WPKH_DESCRIPTOR:-}"
+      BLINDJOIN_BOT_P2SH_P2WPKH_UTXO_ADDRESS: "${BOT_P2SH_P2WPKH_UTXO_ADDRESS:-}"
+      # Rotation counter persists across restarts via bot-data volume (D-94 / CD-28).
+      BLINDJOIN_BOT_COUNTER_FILE: "/app/data/bot_round_counter"
+      # Legacy v1.3 env vars — still honoured when BLINDJOIN_BOT_SCRIPT_TYPES=p2wpkh
+      # and BLINDJOIN_BOT_P2WPKH_UTXO is unset (D-98 backwards-compat fallthrough).
+      BLINDJOIN_UTXO: "${BOT_UTXO:-}"
+      BLINDJOIN_UTXO_WIF: "${BOT_WIF:-}"
       BLINDJOIN_TARGET_DENOMINATION_SATS: "1000000"
+    volumes:
+      # bot-data volume stores the rotation counter file (BLINDJOIN_BOT_COUNTER_FILE).
+      # Survives container restarts so the bot advances type on each Docker restart cycle.
+      - bot-data:/app/data
     depends_on:
       coordinator:
         condition: service_healthy
     # Bot exits after each successful round (UTXO spent).
-    # restart: unless-stopped re-launches it; operator must update .env with new UTXO.
+    # restart: unless-stopped re-launches it; the rotation counter advances on restart.
     restart: unless-stopped
 
 volumes:
@@ -104,3 +122,5 @@ volumes:
     # IMPORTANT: do not delete this volume — it is the coordinator's DHT identity.
   coordinator-data:
     # Stores the append-only ban file (BLAME-05). Survives container restarts.
+  bot-data:
+    # Stores the bot rotation counter (BLINDJOIN_BOT_COUNTER_FILE). Survives container restarts.

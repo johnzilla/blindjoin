@@ -1,26 +1,29 @@
-//! Liquidity bot for blindjoin.
+//! Liquidity bot binary — single-shot runner.
 //!
-//! Polls a coordinator and auto-joins CoinJoin rounds using pre-funded signet UTXOs.
-//! All configuration via environment variables (Docker-friendly, no config file).
+//! This file is a thin wrapper: it parses env vars into BotConfig and calls
+//! `liquidity_bot::run(config).await`. The main loop lives in lib.rs so
+//! integration tests can drive 3 sequential in-process runs without spawning
+//! a process (Pitfall 4 mitigation per Phase 18 18-02).
 //!
-//! Required env vars:
-//!   BLINDJOIN_COORDINATOR_URL   — coordinator HTTP URL (e.g. "http://coordinator:8080")
-//!   BLINDJOIN_NETWORK           — must be "signet" (safety guard)
-//!   BLINDJOIN_UTXO              — UTXO to register (format: "txid:vout")
-//!   BLINDJOIN_UTXO_VALUE_SATS   — UTXO value in satoshis
-//!   BLINDJOIN_UTXO_WIF          — WIF private key for the UTXO
-//!
-//! Optional:
-//!   BLINDJOIN_TARGET_DENOMINATION_SATS — denomination to join (default: 1000000)
-//!   BLINDJOIN_JOIN_THRESHOLD           — stop joining above this participant count (default: 10)
+//! Env vars (Phase 18 multi-script + rotation):
+//!   BLINDJOIN_BOT_SCRIPT_TYPES         — CSV (kebab-case); default "p2wpkh" (v1.3 compat)
+//!   BLINDJOIN_BOT_COUNTER_FILE         — counter path; default /app/data/bot_round_counter
+//!   BLINDJOIN_BOT_P2WPKH_UTXO          — txid:vout (default empty)
+//!   BLINDJOIN_BOT_P2WPKH_WIF           — WIF (default empty)
+//!   BLINDJOIN_BOT_P2TR_UTXO            — txid:vout (default empty)
+//!   BLINDJOIN_BOT_P2TR_DESCRIPTOR      — descriptor string (default empty)
+//!   BLINDJOIN_BOT_P2TR_UTXO_ADDRESS    — bech32m (default empty)
+//!   BLINDJOIN_BOT_P2SH_P2WPKH_UTXO          — txid:vout (default empty)
+//!   BLINDJOIN_BOT_P2SH_P2WPKH_DESCRIPTOR    — descriptor string (default empty)
+//!   BLINDJOIN_BOT_P2SH_P2WPKH_UTXO_ADDRESS  — base58 (default empty)
+//!   BLINDJOIN_UTXO + BLINDJOIN_UTXO_WIF — LEGACY (v1.3 fallthrough; D-98)
+//!   BLINDJOIN_NETWORK           — must be "signet" (safety guard preserved from v1.3)
+//!   BLINDJOIN_COORDINATOR_URL   — coordinator HTTP URL
 
-mod strategy;
-
-use std::time::Duration;
-use anyhow::{bail, Context, Result};
-use tracing::{error, info, warn};
-use client::http::CoordinatorClient;
-use client::wallet::ClientWallet;
+use anyhow::{bail, Result};
+use liquidity_bot::{run, BotConfig, DescriptorTuple, P2wpkhTuple};
+use shared::bip322::ScriptType;
+use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -31,15 +34,9 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    // --- Configuration from environment ---
-    let coordinator_url = std::env::var("BLINDJOIN_COORDINATOR_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
-
+    // --- Network safety guard (preserved verbatim from v1.3 main.rs:43-49) ---
     let network_str = std::env::var("BLINDJOIN_NETWORK")
         .unwrap_or_else(|_| "signet".to_string());
-
-    // SAFETY GUARD: refuse to run on non-signet.
-    // The bot is a testing tool; running with mainnet keys would risk real funds.
     if network_str != "signet" {
         bail!(
             "Liquidity bot refuses to start: BLINDJOIN_NETWORK='{}' is not 'signet'. \
@@ -49,161 +46,165 @@ async fn main() -> Result<()> {
     }
     let network = bitcoin::Network::Signet;
 
-    let utxo = std::env::var("BLINDJOIN_UTXO")
-        .context("BLINDJOIN_UTXO env var required (format: txid:vout)")?;
-    // BLINDJOIN_UTXO_VALUE_SATS no longer required: coordinator queries gettxout
-    // and supplies the real value via the PSBT's witness_utxo. Env var is read
-    // for backward compat but ignored.
-    let _ = std::env::var("BLINDJOIN_UTXO_VALUE_SATS");
-    let utxo_wif = std::env::var("BLINDJOIN_UTXO_WIF")
-        .context("BLINDJOIN_UTXO_WIF env var required")?;
+    // --- CSV parse for BLINDJOIN_BOT_SCRIPT_TYPES (default "p2wpkh" for v1.3 compat) ---
+    let script_types_csv = std::env::var("BLINDJOIN_BOT_SCRIPT_TYPES")
+        .unwrap_or_else(|_| "p2wpkh".to_string());
+    let enabled_types: Vec<ScriptType> = script_types_csv
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|token| {
+            client::config::parse_script_type(token).map_err(|e| anyhow::anyhow!(
+                "BLINDJOIN_BOT_SCRIPT_TYPES = '{}' has unparseable token '{}': {} \
+                 (expected lowercase kebab-case: p2wpkh, p2tr, p2sh-p2wpkh)",
+                script_types_csv, token, e
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if enabled_types.is_empty() {
+        bail!(
+            "BLINDJOIN_BOT_SCRIPT_TYPES = '{}' parsed to zero entries (CSV empty)",
+            script_types_csv
+        );
+    }
+    // Reject duplicates — rotation must be over distinct types (D-96).
+    let mut seen = std::collections::HashSet::new();
+    for st in &enabled_types {
+        if !seen.insert(format!("{:?}", st)) {
+            bail!(
+                "BLINDJOIN_BOT_SCRIPT_TYPES = '{}' contains duplicate '{:?}' \
+                 (rotation must be deterministic across distinct types)",
+                script_types_csv, st
+            );
+        }
+    }
 
-    let target_denomination_sats: u64 = std::env::var("BLINDJOIN_TARGET_DENOMINATION_SATS")
-        .unwrap_or_else(|_| "1000000".to_string())
-        .parse()
-        .context("BLINDJOIN_TARGET_DENOMINATION_SATS must be a u64")?;
-
-    let join_threshold: u32 = std::env::var("BLINDJOIN_JOIN_THRESHOLD")
-        .unwrap_or_else(|_| "10".to_string())
-        .parse()
-        .context("BLINDJOIN_JOIN_THRESHOLD must be a u32")?;
-
-    // --- Setup ---
-    let mut join_strategy = strategy::JoinStrategy::new(target_denomination_sats);
-    join_strategy.join_threshold = join_threshold;
-
-    let http = CoordinatorClient::new(coordinator_url.clone());
-
-    info!(
-        coordinator_url = %coordinator_url,
-        utxo = %utxo,
-        target_denomination_sats,
-        "Liquidity bot starting (signet only)"
+    // --- Counter file path (BLINDJOIN_BOT_COUNTER_FILE; default /app/data/bot_round_counter) ---
+    let counter_file = PathBuf::from(
+        std::env::var("BLINDJOIN_BOT_COUNTER_FILE")
+            .unwrap_or_else(|_| "/app/data/bot_round_counter".to_string()),
     );
 
-    // --- Main polling loop ---
-    // NOTE (RESEARCH.md Pitfall 3 — UTXO rotation):
-    // After a successful round the bot's UTXO is spent. For Phase 4, the bot
-    // performs ONE join attempt per run and then exits. Docker Compose restarts it
-    // (restart: unless-stopped) which re-reads env vars. The operator must update
-    // BLINDJOIN_UTXO/WIF after each round. A future enhancement (FAUCET-01) could
-    // auto-detect the change UTXO from the broadcast tx.
-    let mut consecutive_failures: u32 = 0;
-    loop {
-        // Respect long backoff after repeated failures
-        if consecutive_failures >= join_strategy.max_consecutive_failures {
-            warn!(
-                consecutive_failures,
-                "Too many consecutive failures — sleeping 300s before retry"
-            );
-            tokio::time::sleep(Duration::from_secs(300)).await;
-            consecutive_failures = 0;
-        }
+    // --- Per-type tuple loading ---
+    let p2wpkh_tuple = build_p2wpkh_tuple_with_legacy_fallthrough()?;
+    let p2tr_tuple = build_descriptor_tuple("P2TR")?;
+    let p2sh_p2wpkh_tuple = build_descriptor_tuple("P2SH_P2WPKH")?;
 
-        // Poll coordinator info
-        let info = match http.get_info().await {
-            Ok(i) => i,
-            Err(e) => {
-                warn!(error = %e, "Failed to GET /info — coordinator may be starting up");
-                consecutive_failures += 1;
-                tokio::time::sleep(Duration::from_secs(join_strategy.poll_interval_secs)).await;
-                continue;
+    // --- Startup validation: each enabled type must have a populated tuple ---
+    for st in &enabled_types {
+        match st {
+            ScriptType::P2wpkh => {
+                if p2wpkh_tuple.is_none() {
+                    bail!(
+                        "BLINDJOIN_BOT_SCRIPT_TYPES enables p2wpkh but neither \
+                         BLINDJOIN_BOT_P2WPKH_{{UTXO,WIF}} nor legacy \
+                         BLINDJOIN_UTXO + BLINDJOIN_UTXO_WIF are set"
+                    );
+                }
             }
-        };
-
-        if !join_strategy.should_join(&info) {
-            // Not the right time to join; poll again
-            tokio::time::sleep(Duration::from_secs(join_strategy.poll_interval_secs)).await;
-            continue;
-        }
-
-        info!(
-            round_state = %info.round_state,
-            participants_registered = info.participants_registered,
-            denomination_sats = info.denomination_sats,
-            "Joining round"
-        );
-
-        // Build wallet for this round. Re-created each loop to handle UTXO state reset.
-        let wallet = match ClientWallet::from_wif(&utxo_wif, &utxo, network) {
-            Ok(w) => w,
-            Err(e) => {
-                error!(error = %e, "Failed to build wallet from WIF");
-                consecutive_failures += 1;
-                tokio::time::sleep(Duration::from_secs(join_strategy.poll_interval_secs)).await;
-                continue;
+            ScriptType::P2tr => {
+                if p2tr_tuple.is_none() {
+                    bail!(
+                        "BLINDJOIN_BOT_SCRIPT_TYPES enables p2tr but \
+                         BLINDJOIN_BOT_P2TR_{{UTXO,DESCRIPTOR,UTXO_ADDRESS}} are not all set"
+                    );
+                }
             }
-        };
-
-        // Full round participation using client library
-        match participate_in_round(&http, &wallet, &info).await {
-            Ok(()) => {
-                info!("Round participation complete");
-                // Exit after one successful round (UTXO is now spent).
-                // Docker Compose restart policy will re-launch with updated env vars.
-                info!("Bot exiting — UTXO spent. Update BLINDJOIN_UTXO/WIF and restart.");
-                return Ok(());
-            }
-            Err(e) => {
-                warn!(error = %e, "Round participation failed");
-                consecutive_failures += 1;
+            ScriptType::P2shP2wpkh => {
+                if p2sh_p2wpkh_tuple.is_none() {
+                    bail!(
+                        "BLINDJOIN_BOT_SCRIPT_TYPES enables p2sh-p2wpkh but \
+                         BLINDJOIN_BOT_P2SH_P2WPKH_{{UTXO,DESCRIPTOR,UTXO_ADDRESS}} are not all set"
+                    );
+                }
             }
         }
+    }
 
-        tokio::time::sleep(Duration::from_secs(join_strategy.poll_interval_secs)).await;
+    let coordinator_url = std::env::var("BLINDJOIN_COORDINATOR_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+
+    let config = BotConfig {
+        coordinator_url,
+        network,
+        enabled_types,
+        counter_file,
+        p2wpkh_tuple,
+        p2tr_tuple,
+        p2sh_p2wpkh_tuple,
+    };
+
+    run(config).await
+}
+
+/// Build a P2WPKH tuple from env vars, with v1.3 legacy fallthrough (D-98).
+///
+/// Priority:
+///   1. BLINDJOIN_BOT_P2WPKH_UTXO + BLINDJOIN_BOT_P2WPKH_WIF (new-style)
+///   2. BLINDJOIN_UTXO + BLINDJOIN_UTXO_WIF (legacy v1.3 env vars)
+///   3. None (P2WPKH disabled or will fail startup validation)
+fn build_p2wpkh_tuple_with_legacy_fallthrough() -> Result<Option<P2wpkhTuple>> {
+    let new_utxo = std::env::var("BLINDJOIN_BOT_P2WPKH_UTXO")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let new_wif = std::env::var("BLINDJOIN_BOT_P2WPKH_WIF")
+        .ok()
+        .filter(|s| !s.is_empty());
+
+    match (new_utxo, new_wif) {
+        (Some(utxo), Some(wif)) => {
+            tracing::info!("Using BLINDJOIN_BOT_P2WPKH_{{UTXO,WIF}} env vars for P2WPKH");
+            Ok(Some(P2wpkhTuple { utxo, wif }))
+        }
+        (Some(_), None) | (None, Some(_)) => bail!(
+            "BLINDJOIN_BOT_P2WPKH_UTXO and BLINDJOIN_BOT_P2WPKH_WIF must be set \
+             together (only one was set)"
+        ),
+        (None, None) => {
+            // Legacy fallthrough (D-98): try BLINDJOIN_UTXO + BLINDJOIN_UTXO_WIF.
+            let legacy_utxo = std::env::var("BLINDJOIN_UTXO")
+                .ok()
+                .filter(|s| !s.is_empty());
+            let legacy_wif = std::env::var("BLINDJOIN_UTXO_WIF")
+                .ok()
+                .filter(|s| !s.is_empty());
+            match (legacy_utxo, legacy_wif) {
+                (Some(utxo), Some(wif)) => {
+                    tracing::info!(
+                        "Using legacy BLINDJOIN_UTXO + BLINDJOIN_UTXO_WIF env vars for \
+                         P2WPKH (D-98 fallthrough)"
+                    );
+                    Ok(Some(P2wpkhTuple { utxo, wif }))
+                }
+                _ => Ok(None),
+            }
+        }
     }
 }
 
-async fn participate_in_round(
-    http: &CoordinatorClient,
-    wallet: &ClientWallet,
-    info: &shared::protocol::InfoResponse,
-) -> Result<()> {
-    // Input registration
-    //
-    // Phase 17 17-03: register_input now takes &CoordinatorInfo (replaces
-    // the 17-02 transitional bool). The liquidity-bot points at
-    // --coordinator-url directly (no PKARR discovery), so it constructs a
-    // synthetic CoordinatorInfo defaulting `is_legacy: false` (v=2
-    // envelope) per operator out-of-band trust (T-17-03-05). The bot's
-    // WIF wallet is P2WPKH-only per D-61 so the wallet's script_type
-    // populates the synthetic capabilities cleanly.
-    let synthetic_info = client::discover::CoordinatorInfo {
-        coordinator_url: String::new(), // not consumed by register_input
-        capabilities: client::discover::CoordinatorCapabilities {
-            record_version: "manual".to_string(),
-            is_legacy: false,
-            supported_script_types: vec![
-                shared::bip322::ScriptType::P2wpkh,
-                shared::bip322::ScriptType::P2tr,
-                shared::bip322::ScriptType::P2shP2wpkh,
-            ],
-            output_script_type: wallet.script_type(),
-        },
-    };
-    let state = client::round::input::register_input(http, wallet, info, &synthetic_info).await
-        .context("Input registration failed")?;
-    info!("Input registered");
+/// Build a descriptor-mode tuple for P2TR or P2SH-P2WPKH.
+///
+/// `prefix` must be "P2TR" or "P2SH_P2WPKH" (maps to BLINDJOIN_BOT_{prefix}_{UTXO,DESCRIPTOR,UTXO_ADDRESS}).
+/// Returns None when all three vars are unset. Bails when only a partial set is present.
+fn build_descriptor_tuple(prefix: &str) -> Result<Option<DescriptorTuple>> {
+    let utxo = std::env::var(format!("BLINDJOIN_BOT_{}_UTXO", prefix))
+        .ok()
+        .filter(|s| !s.is_empty());
+    let descriptor = std::env::var(format!("BLINDJOIN_BOT_{}_DESCRIPTOR", prefix))
+        .ok()
+        .filter(|s| !s.is_empty());
+    let utxo_address = std::env::var(format!("BLINDJOIN_BOT_{}_UTXO_ADDRESS", prefix))
+        .ok()
+        .filter(|s| !s.is_empty());
 
-    // Wait for output_reg phase
-    http.poll_until_phase("output_reg", 1000, tokio::time::Duration::from_secs(600)).await
-        .context("Timeout waiting for output_reg phase")?;
-    info!("OUTPUT_REG phase detected");
-
-    // Output registration
-    client::round::output::register_output(http, wallet, &state, info).await
-        .context("Output registration failed")?;
-    info!("Output registered");
-
-    // Wait for signing phase
-    http.poll_until_phase("signing", 1000, tokio::time::Duration::from_secs(600)).await
-        .context("Timeout waiting for signing phase")?;
-    info!("SIGNING phase detected");
-
-    // Verify PSBT and sign
-    client::round::sign::verify_and_sign(http, wallet, &state, 1000).await
-        .context("Sign phase failed")?;
-    info!("Signed successfully");
-
-    Ok(())
+    match (utxo, descriptor, utxo_address) {
+        (Some(utxo), Some(descriptor), Some(utxo_address)) => {
+            Ok(Some(DescriptorTuple { utxo, descriptor, utxo_address }))
+        }
+        (None, None, None) => Ok(None),
+        _ => bail!(
+            "BLINDJOIN_BOT_{prefix}_{{UTXO,DESCRIPTOR,UTXO_ADDRESS}} must all be set \
+             together (partial set detected)"
+        ),
+    }
 }
