@@ -2,26 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: 3
-status: executing
-stopped_at: Phase 15 Plan 02 complete; ready for Plan 03 (per-script property tests + 9-rejection matrix)
-last_updated: "2026-05-30T02:03:03.847Z"
+current_plan: 15-03
+status: verifying
+stopped_at: Plan 15-03 complete; Phase 15 ready for verification
+last_updated: "2026-05-30T02:31:55.904Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 20
+  completed_plans: 6
+  percent: 40
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 15 (Shared Crate Multi-Script Contract) — EXECUTING
-Plan: 3 of 3 (15-01 ✅, 15-02 ✅, 15-03 ⏳)
-Status: Ready to execute Plan 15-03
+Phase: 15 (Shared Crate Multi-Script Contract) — COMPLETE (ready for verification)
+Plan: 3 of 3 (15-01 ✅, 15-02 ✅, 15-03 ✅)
+Status: Phase complete — ready for verification
 Last activity: 2026-05-30
 
 ## Project Reference
@@ -33,23 +33,23 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Progress
 
-**Phases Complete:** 1 of 5 (v1.4 milestone)
-**Plans Complete:** 5 of 6 (Phase 14: 3/3 + Phase 15: 2/3)
-**Current Plan:** 15-03
+**Phases Complete:** 2 of 5 (v1.4 milestone)
+**Plans Complete:** 6 of 6 (Phase 14: 3/3 + Phase 15: 3/3)
+**Current Plan:** 15-03 (complete; ready for verification)
 
 **v1.4 phase map:**
 
 - ✅ Phase 14 — Sprint-0 Spikes + Discuss-Phase Decisions (closed 2026-05-29; ADR ratified)
-- Phase 15 — Shared Crate Multi-Script Contract (BIP322-01..04, ADVERT-04)
+- ✅ Phase 15 — Shared Crate Multi-Script Contract (BIP322-01..04, ADVERT-04 closed 2026-05-30; ready for verification)
 - Phase 16 — Coordinator Integration & Advertisement (ADVERT-01, ADVERT-02, ADVERT-03)
 - Phase 17 — Client Multi-Script Wallet & Discovery (WALLET-01, WALLET-02, WALLET-03, WALLET-04)
 - Phase 18 — Mixed-Script E2E + Liquidity Bot (INTEG-01, INTEG-02)
 
 ## Session Continuity
 
-**Stopped At:** Phase 15 Plan 02 complete (2026-05-30); ready for Plan 03 (per-script property tests + 9-rejection matrix, BIP322-04)
+**Stopped At:** Plan 15-03 complete; Phase 15 ready for verification
 **Resume File:** None
-**Last session:** 2026-05-30T02:00Z
+**Last session:** 2026-05-30T02:31:35.855Z
 
 ## Blockers
 
@@ -66,6 +66,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 | 14 | 03 | ~10 min | 3 | 3 | v1.4 ADR ratification (4 decisions, Michael Nygard template); separate doc commit per CD-5; D-21 invariant holds |
 | Phase 15 P01 | ~9 minutes | 3 tasks | 5 files |
 | Phase 15 P15-02 | ~10 min | 3 tasks | 5 files |
+| Phase 15 P03 | ~22 min | 3 tasks | 6 files |
 
 ## Phase 14 Decisions (recorded from plan execution)
 
@@ -80,6 +81,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 - **Plan 15-01 / OwnershipProof v2 envelope + ScriptType stub → COMPLETE** (2026-05-29): ScriptType enum added to shared::bip322 (3 variants: P2wpkh, P2tr, P2shP2wpkh) with snake_case + kebab-case serde wire form per ADVERT-02; OwnershipProof evolved from 2-field witness-only to 4-field v2 envelope (version + witness_stack + psbt_input_b64 + script_type) per ADR Decision #3 + CONTEXT D-22..D-25; CD-7 two-phase try-parse preserves bit-exact v1.3 wire compatibility. 5 D-13 cases + 1 sibling test pass at `shared/tests/ownership_proof_roundtrip.rs`. base64 = "0.22" added as the only new direct dep per RESEARCH A8.
 
 - **Plan 15-02 / shared::bip322 dispatcher + 26-LOC adapter + coordinator error swap + CI grep gate → COMPLETE** (2026-05-30): Split `shared/src/bip322.rs` (flat file) into the four-file directory module per D-04: `mod.rs` (dispatcher + 26-LOC adapter + 10-variant Bip322Error + ScriptType + script-NEUTRAL primitives) + `p2wpkh.rs` / `p2tr.rs` / `p2sh_p2wpkh.rs` (each pub(crate)-only `verify` + `sign` + `#[cfg(test)] sign_for_tests`). Dispatcher-only public surface per D-27 makes V1.4-CRIT-01 spoofing vector statically unreachable. 26-LOC `bip322 = "=0.0.10"` adapter ported from `sprint-0-A.md:145-175` verbatim per D-26 (with `bip322::error::Error` → `bip322::Error` public-path fix; runtime semantics identical). 10-variant Bip322Error taxonomy per D-31 verbatim. Coordinator-local Bip322Error at `coordinator/src/bitcoin/utxo.rs:87-101` deleted; coordinator imports `shared::bip322::Bip322Error`; 6 Err(...) returns in verify_bip322_simple remapped per the variant table while preserving wire shape (ErrorCode::InvalidOwnershipProof bucket unchanged per D-32). CI `bip322-pin-check` grep gate added to `.github/workflows/ci.yml` mirroring `corepc-node-feature-pin-check` per Phase 14 carry-forward constraint #3 + RESEARCH Open Question #2 recommendation. Three new transitives accepted into Cargo.lock per Sprint-0-A baseline: bip322 v0.0.10, snafu v0.8.9, snafu-derive v0.8.9 (lockfile dependency-count 707 → 710 = exactly +3). cargo audit clean (0 vulnerabilities, 0 warnings, advisory db `eaf48e7`). v1.3 cross-phase invariant verified: `cargo test --test integration -- full_round` 8/8 pass. 3 atomic commits per CD-10: `c873db1` (Task 1 — module split + adapter + deps), `777eaf6` (Task 2 — coordinator error swap), `cfea17c` (Task 3 — CI grep gate).
+
+- **Plan 15-03 / BIP322-04 + V1.4-CRIT-01 + V1.4-CRIT-02 → COMPLETE** (2026-05-30): Closes BIP322-04 (per-script positive vectors via the dispatcher API) + V1.4-CRIT-01 (script-type spoofing) + V1.4-CRIT-02 (silent sighash regressions) at the shared/ crate boundary. Created `shared/tests/bip322_cross_shape.rs` with EXACTLY 9 #[test] fns per D-34 verbatim, each asserting a specific Bip322Error variant via matches!() per RESEARCH A3 (variant table: 7 cells use InvalidWitnessLength with specific expected/got; 2 cells (p2wpkh+p2sh_p2wpkh and p2sh_p2wpkh+p2wpkh) use CrateVerifyFailed — both predicted variants matched the bip322 crate's runtime behaviour exactly on first green-path run). Created `shared/tests/per_script_vectors.rs` with 7 #[test] fns covering P2WPKH + P2TR + P2SH-P2WPKH positive vectors against the vendored fixture + supplement AND sign↔verify roundtrips via the dispatcher API (P2WPKH via production `sign_simple`; P2TR + P2SH-P2WPKH via the new `#[doc(hidden)] pub fn sign_simple_test_only` mirror that routes to per-script sign_for_tests helpers). Vendored basic-test-vectors.json at upstream SHA `d77863fb9e` per D-33 (verbatim) + supplement at `p2sh_p2wpkh_supplement.json` with canonical P2SH-P2WPKH from bip322 v0.0.10 crate `lib.rs:46-48` + `:300-304` AND canonical P2WPKH lifted from earlier SHA `3ab70c98a7` to recover from the May 2026 upstream P2WPKH encoding anomaly (3-byte 0xb2 0x6a 0x40 prefix that fails canonical Witness consensus decode; defensively skipped by the harness with eprintln! note; documented in fixtures/bip322/README.md). Added `proptest = { workspace = true }` to shared/Cargo.toml [dev-dependencies] per Phase 14 carry-forward #3. **Auto-fixed 2 Rule 1 bugs** in `build_bip322_to_sign`: Version::TWO → Version(0) AND ScriptBuf::new_op_return([]) (2 bytes) → bare OP_RETURN (1 byte) — both required to align our sign-side sighash with the bip322 crate's verify-side internal `util::create_to_sign` byte-for-byte. v1.3 masked these bugs because both sign + verify in the coordinator's local path used the same wrong values; routing through the crate's verify exposed them. v1.3 cross-phase invariant verified: `cargo test --test integration -- full_round` 8/8 pass. **Auto-fixed 1 Rule 3 visibility constraint**: #[cfg(test)] items in lib.rs are invisible to integration tests at shared/tests/*.rs (those are compiled as separate external crates); switched the test-only dispatcher mirror to `#[doc(hidden)] pub fn sign_simple_test_only` and promoted the per-script `sign_for_tests` helpers from `#[cfg(test)] pub(crate)` to plain `pub(crate)` so the mirror can reach them. CONTEXT D-27 dispatcher-only invariant at the TYPE level preserved: V1.4-CRIT-01 spoofing vector remains statically constrained because sign_simple_test_only routes through ScriptType exactly like sign_simple. cargo audit clean (718 deps total; +8 transitives from proptest). 3 atomic commits per CD-10: `705fd30` (Task 1 — vendor fixtures + supplement + provenance README + proptest dev-dep + sign_simple_test_only mirror), `51af5a3` (Task 2 — per_script_vectors.rs + Rule 1 spec-letter to_sign fix), `07ed198` (Task 3 — bip322_cross_shape.rs with 9 D-34 verbatim test fns).
 
 ## Accumulated Context
 
