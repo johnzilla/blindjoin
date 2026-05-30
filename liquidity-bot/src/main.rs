@@ -160,7 +160,13 @@ async fn participate_in_round(
     info: &shared::protocol::InfoResponse,
 ) -> Result<()> {
     // Input registration
-    let state = client::round::input::register_input(http, wallet, info).await
+    //
+    // Phase 17 17-02 TRANSITIONAL: 17-03 replaces this `false` literal with
+    // `info.capabilities.is_legacy` from the extended CoordinatorInfo
+    // (PKARR discovery). The liquidity-bot uses a WIF wallet (P2WPKH-only
+    // per D-61); against legacy coordinators the discovery rejection path
+    // does not need to trigger so `false` (v=2 envelope) is currently safe.
+    let state = client::round::input::register_input(http, wallet, info, false).await
         .context("Input registration failed")?;
     info!("Input registered");
 

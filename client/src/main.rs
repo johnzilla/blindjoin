@@ -84,7 +84,11 @@ async fn main() -> anyhow::Result<()> {
     let info = client.poll_until_phase("input_reg", cfg.poll_interval_ms, phase_timeout).await?;
     info!(round_id = ?info.round_id, "INPUT_REG phase detected");
 
-    let reg_result = round::input::register_input(&client, &wallet, &info).await?;
+    // 17-02 TRANSITIONAL: 17-03 replaces this `false` literal with
+    // `info.capabilities.is_legacy` from the extended CoordinatorInfo
+    // (PKARR discovery). Default `false` keeps v1.4 clients posting v=2
+    // envelopes to v1.4 coordinators by default.
+    let reg_result = round::input::register_input(&client, &wallet, &info, false).await?;
     info!("Input registered successfully");
 
     client.poll_until_phase("output_reg", cfg.poll_interval_ms, phase_timeout).await?;

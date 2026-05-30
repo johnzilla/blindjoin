@@ -30,7 +30,6 @@ use shared::bip322::ScriptType;
 ///   would allow a CLI-misconfigured user to declare P2TR over an on-chain
 ///   P2WPKH SPK and bypass per-script sighash verification).
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // consumed by 17-02 Task 2 (register_input swap) + external tests
 pub struct Bip322SignedProof {
     pub witness_stack: Vec<Vec<u8>>,
     pub witness: bitcoin::Witness,
@@ -346,6 +345,13 @@ impl BdkClientWallet {
     }
 
     /// Returns the script_pubkey (P2WPKH / P2TR / P2SH-P2WPKH) for the UTXO being registered.
+    ///
+    /// Phase 17 17-02 Task 2 (CD-20): the prior in-bin consumer
+    /// (`client/src/round/input.rs::generate_bip322_witness`) was deleted;
+    /// callers now reach the SPK through `sign_bip322` internally. The
+    /// accessor is still load-bearing for external integration tests
+    /// (`client/tests/wallet_sign_roundtrip.rs`), hence the dead_code allow.
+    #[allow(dead_code)]
     pub fn script_pubkey(&self) -> ScriptBuf {
         self.utxo_script_pubkey.clone()
     }
@@ -450,7 +456,6 @@ impl BdkClientWallet {
     /// integration-test crates at `client/tests/*.rs` only see `pub` items, so
     /// this is `pub` for test reach. Documented as a Rule-3 visibility
     /// escalation in Plan 17-02 Task 1 SUMMARY.
-    #[allow(dead_code)] // consumed by 17-02 Task 2 (register_input swap) + external tests
     pub fn sign_bip322(&self, message: &str) -> Result<Bip322SignedProof> {
         if self.wif_key.is_some() {
             // D-61: WIF wallets are always P2WPKH.

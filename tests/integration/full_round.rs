@@ -229,7 +229,7 @@ async fn full_round_three_clients() {
                     .await
                     .expect("poll for input_reg");
 
-                let reg = round::input::register_input(&coordinator_client, &wallet, &info)
+                let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
                     .await
                     .expect("register_input");
 
@@ -526,7 +526,7 @@ async fn blame_non_signer_timeout() {
                 .await
                 .expect("poll for input_reg");
 
-            let reg = round::input::register_input(&coordinator_client, &wallet, &info)
+            let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
                 .await
                 .expect("register_input");
 
@@ -812,7 +812,7 @@ async fn adversarial_replay_token() {
             .await
             .expect("poll for input_reg");
 
-        let reg = round::input::register_input(&coordinator_client, &wallet, &info)
+        let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
             .await
             .expect("register_input");
 
@@ -991,7 +991,7 @@ async fn adversarial_wrong_denomination() {
             .await
             .expect("poll for input_reg");
 
-        let reg = round::input::register_input(&coordinator_client, &wallet, &info)
+        let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
             .await
             .expect("register_input");
 
@@ -1330,7 +1330,7 @@ async fn round_restart_and_completion_after_blame() {
                 .await
                 .expect("poll for input_reg");
 
-            let reg = round::input::register_input(&coordinator_client, &wallet, &info)
+            let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
                 .await
                 .expect("register_input");
 
@@ -1469,7 +1469,7 @@ async fn round_restart_and_completion_after_blame() {
                 .await
                 .expect("round 2 poll for input_reg");
 
-            let reg = round::input::register_input(&coordinator_client, &wallet, &info)
+            let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
                 .await
                 .expect("round 2 register_input");
 
