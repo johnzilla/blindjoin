@@ -68,8 +68,13 @@ mod tests {
             vec![0x30u8, 0x45, 0x02, 0x21],
             vec![0x02u8, 0xab, 0xcd, 0xef],
         ];
+        // v1.4 Phase 15 Plan 15-01: v2 four-field envelope; v1 path stays
+        // bit-exact on the wire via the CD-7 to_json_hex_str branch.
         let proof = OwnershipProof {
+            version: 1,
             witness_stack: stack.clone(),
+            psbt_input_b64: None,
+            script_type: None,
         };
         let encoded = proof.to_json_hex_str();
         let decoded = OwnershipProof::from_json_hex_str(&encoded).unwrap();

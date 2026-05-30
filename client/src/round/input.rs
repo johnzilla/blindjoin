@@ -61,7 +61,17 @@ pub async fn register_input(
         wallet.utxo_outpoint.vout,
     );
     let witness_stack = generate_bip322_witness(wallet, &bip322_message)?;
-    let ownership_proof_obj = shared::protocol::OwnershipProof { witness_stack };
+    // v1.4 Phase 15 Plan 15-01: OwnershipProof evolved to the v2 four-field flat
+    // envelope (CONTEXT D-22). The v1 path stays bit-exact on the wire because
+    // to_json_hex_str's CD-7 branch emits the v1.3 array-of-hex form when
+    // (version == 1 && psbt_input_b64.is_none() && script_type.is_none()).
+    // Phase 17 WALLET-02 swaps this to descriptor-aware v2 construction.
+    let ownership_proof_obj = shared::protocol::OwnershipProof {
+        version: 1,
+        witness_stack,
+        psbt_input_b64: None,
+        script_type: None,
+    };
     let ownership_proof = ownership_proof_obj.to_json_hex_str();
 
     // 5. POST /round/input
