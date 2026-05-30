@@ -831,22 +831,24 @@ Phase 16 has zero environment-side risk. Every required tool is already in CI; t
 
 **All assumptions are LOW-MEDIUM risk and have explicit mitigation paths.** No HIGH-risk assumption blocks plan-phase from proceeding.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three open questions resolved at plan-phase boundary 2026-05-30; resolutions applied across `16-01/02/03-PLAN.md` per the references below.
 
 1. **Should v=2 path's `psbt_input_b64` decode tolerate the PSBT having BOTH `witness_utxo` and `non_witness_utxo` populated (oversize transmission)?**
    - What we know: BIP-174 says either is valid for SegWit-spending inputs; the rust-bitcoin `bitcoin::psbt::Psbt::deserialize` accepts both.
    - What's unclear: whether Phase 16 should warn on `non_witness_utxo` being present (it's overspecified for SegWit witnesses) or silently accept.
-   - Recommendation: silently accept — neither field is consulted by the dispatcher; only `final_script_witness` is read. Plan-phase may choose to add a defensive log if `non_witness_utxo.is_some()`, but it's optional.
+   - **RESOLVED:** Silently accept — neither field is consulted by the dispatcher; only `final_script_witness` is read. The CRIT-01 SPK derivation always uses `gettxout` (chain), never the PSBT-supplied `witness_utxo` or `non_witness_utxo`. Applied in `16-02-PLAN.md` Task 1 (dispatcher decode step ignores PSBT-supplied utxo fields).
 
 2. **Should the byte-budget inline test parameterize over operator-configured `denomination_sats` and `min_participants` to catch edge cases at large values?**
    - What we know: D-44 specifies `denomination=1_000_000, min_participants=3` — modest values producing modest JSON.
    - What's unclear: a coordinator with `denomination_sats=10_000_000_000_000_000` (16 digits) costs ~7 extra bytes vs. the 7-digit baseline.
-   - Recommendation: keep the test at the spec-default values for now (matches what the operator typically configures). If a Phase 17+ debugging session uncovers a real edge-case breach, parameterize then. Default config is the realistic worst case.
+   - **RESOLVED:** Keep the test at the spec-default values; default config is the realistic worst case. v1.5 may parameterize if a real edge case surfaces. Applied in `16-03-PLAN.md` Task 1 byte-budget test.
 
 3. **For the `multi_script_validate.rs` test, should ALL 9 cases share a single regtest bitcoind boot, or boot one per test?**
    - What we know: existing `full_round` uses one bitcoind per test (`#[tokio::test]` semantics); `BitcoindGuard` ensures clean shutdown per test.
    - What's unclear: 9 bitcoind boots costs ~20 seconds of CI time vs. ~3 seconds for a shared one. But sharing requires `OnceCell` + a test-scope module-level harness.
-   - Recommendation: one per test (matches existing pattern; isolates test failures cleanly; the 20-second CI cost is acceptable on the current `cargo test --workspace --all-targets` job which already runs `full_round` similarly).
+   - **RESOLVED:** One bitcoind per test (matches existing `full_round` pattern; isolates test failures cleanly; 20-second CI cost acceptable). Applied in `16-02-PLAN.md` Task 3.
 
 ## Phase 16-specific risks (beyond inherited carry-forwards)
 

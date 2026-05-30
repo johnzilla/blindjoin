@@ -40,9 +40,9 @@ Phase 16 wires the v1.4 multi-script support into the coordinator:
 LOCKED upstream. Plan-phase consumes verbatim — no re-litigation.
 
 - **ADR #2 (#decision-2) / D-06:** MIXED rounds. One round queue accepts heterogeneous P2WPKH + P2TR + P2SH-P2WPKH inputs. Round-state machine carries v1.3 shape forward unchanged.
-- **D-07:** Outputs single-script-type per round; operator-configured via `[bip] output_script_type` (default `p2wpkh`).
-- **D-08:** No per-script-type minimum participants gate.
-- **D-09:** Coordinator advertises SUPPORTED SET only. Does NOT advertise per-round per-script-type registration counts.
+- **D-07** [informational — Phase 14 ADR inheritance]: Outputs single-script-type per round; operator-configured via `[bip] output_script_type` (default `p2wpkh`).
+- **D-08** [informational — Phase 14 ADR inheritance]: No per-script-type minimum participants gate.
+- **D-09** [informational — Phase 14 ADR inheritance]: Coordinator advertises SUPPORTED SET only. Does NOT advertise per-round per-script-type registration counts.
 - **D-10 / CRIT-01:** Coordinator MUST derive `script_type` from on-chain `txout.script_pubkey` and cross-check against client-declared `script_type` at validate-utxo time. Non-negotiable, load-bearing, code-review checked.
 - **D-12:** `OwnershipProof.version: u8` envelope. v=1 = v1.3 witness-only, v=2 = v1.4 PSBT-input. Coordinator branches `match proof.version`; unknown version → `UnsupportedProofVersion`.
 - **Phase 15 outputs (LOCKED API surface):** `shared::bip322::{ScriptType, Bip322Error, detect_script_type, verify_simple(script_type, spk, witness, message, network), sign_simple(script_type, spk, key, message)}` — Phase 16 calls into this API exclusively; per-script files (`p2wpkh.rs / p2tr.rs / p2sh_p2wpkh.rs`) are `pub(crate)` and unreachable from coordinator.
