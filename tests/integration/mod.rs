@@ -17,6 +17,7 @@
 //! `$crate::require_bitcoind!()` inside the macro itself).
 
 mod ban_list_persistence;
+mod bot_rotation;            // Phase 18 18-02 — INTEG-02 bot rotation test
 mod full_round;
 mod mixed_script_e2e;
 mod multi_script_client;

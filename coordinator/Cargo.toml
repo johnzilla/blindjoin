@@ -65,6 +65,8 @@ futures-util = "0.3"
 corepc-node = { version = "0.12", features = ["30_2"] }
 client = { path = "../client" }
 shared = { path = "../shared" }
+# Phase 18 18-02: bot_rotation.rs integration test drives liquidity_bot::run via [lib] target.
+liquidity-bot = { path = "../liquidity-bot" }
 reqwest = { workspace = true }
 tempfile = "3"
 
