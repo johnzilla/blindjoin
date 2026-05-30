@@ -128,7 +128,7 @@
   4. v1.3 `full_round::*` P2WPKH-only integration tests still pass alongside the new mixed-script test — both suites green in a single `cargo test` run, providing the rollback safety net at the milestone boundary.
   5. The v1.3-client ↔ v1.4-coordinator compatibility cell of the backwards-compat matrix is verified inline (a v1.3 client binary registers a P2WPKH UTXO against the v1.4 coordinator and the round completes), discharging the WALLET-04 compatibility shim against a real v1.3 build artifact.
 **Plans**: 3 plans
-- [ ] 18-01-PLAN.md — INTEG-01 mixed-script E2E test (1 P2WPKH WIF + 1 P2TR descriptor + 1 P2SH-P2WPKH descriptor through INPUT_REG → BROADCAST; helpers promoted to mod.rs)
+- [x] 18-01-PLAN.md — INTEG-01 mixed-script E2E test (1 P2WPKH WIF + 1 P2TR descriptor + 1 P2SH-P2WPKH descriptor through INPUT_REG → BROADCAST; helpers promoted to mod.rs)
 - [ ] 18-02-PLAN.md — INTEG-02 liquidity bot multi-script via BLINDJOIN_BOT_SCRIPT_TYPES CSV + per-round rotation counter file + per-type wallet dispatch + bot_rotation integration test
 - [ ] 18-03-PLAN.md — v1.3-client binary compat gate (pinned SHA 05f21438) + README §Privacy Considerations prose + 18-VERIFICATION.md milestone-cut readiness checklist
 
@@ -164,7 +164,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 15. Shared Crate Multi-Script Contract | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete   | 2026-05-30 |
-| 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 0/0 | Not started | — |
+| 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 1/3 | In Progress|  |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
