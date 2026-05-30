@@ -44,7 +44,7 @@ async fn reserve_free_port() -> u16 {
 #[tokio::test]
 async fn run_bootstraps_round_into_input_reg() {
     use coordinator::config::{
-        CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
+        BipConfig, CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
     };
 
     // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
@@ -115,6 +115,11 @@ async fn run_bootstraps_round_into_input_reg() {
             heartbeat_interval_secs: 3600,
             coordinator_public_addr: "127.0.0.1:0".into(),
         },
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
+        // a top-level `bip` field. Use BipConfig::default() to opt into the
+        // all-allowed + p2wpkh-output defaults so this test's bootstrap path
+        // behaves identically to the v1.3 byte-shape (cross-phase invariant).
+        bip: BipConfig::default(),
     };
 
     // ----- Spawn the production startup path -----

@@ -133,7 +133,7 @@ async fn wait_http_ready(
 #[tokio::test]
 async fn info_endpoint_returns_429_when_flooded() {
     use coordinator::config::{
-        CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
+        BipConfig, CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
     };
 
     // ----- Skip gracefully if bitcoind is unavailable (local-dev); panic in CI -----
@@ -202,6 +202,12 @@ async fn info_endpoint_returns_429_when_flooded() {
             heartbeat_interval_secs: 3600,
             coordinator_public_addr: "127.0.0.1:0".into(),
         },
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
+        // a top-level `bip` field. Existing v1.3 test fixtures need to opt
+        // into the default all-allowed + p2wpkh-output BipConfig to keep
+        // compiling. This matches the v1.3 behavior byte-exactly (all 3
+        // script types allowed, output_script_type = p2wpkh).
+        bip: BipConfig::default(),
     };
 
     // ----- Spawn coordinator::run in-process (D-06 mandate) -----
@@ -317,7 +323,7 @@ async fn info_endpoint_returns_429_when_flooded() {
 #[tokio::test]
 async fn request_timeout_returns_408() {
     use coordinator::config::{
-        CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
+        BipConfig, CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig,
     };
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -383,6 +389,12 @@ async fn request_timeout_returns_408() {
             heartbeat_interval_secs: 3600,
             coordinator_public_addr: "127.0.0.1:0".into(),
         },
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
+        // a top-level `bip` field. Existing v1.3 test fixtures need to opt
+        // into the default all-allowed + p2wpkh-output BipConfig to keep
+        // compiling. This matches the v1.3 behavior byte-exactly (all 3
+        // script types allowed, output_script_type = p2wpkh).
+        bip: BipConfig::default(),
     };
 
     // ----- Spawn coordinator::run in-process -----

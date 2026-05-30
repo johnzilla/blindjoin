@@ -106,6 +106,13 @@ async fn spawn_coordinator(
             tor_mode: false,
         },
         discovery: DiscoveryConfig::default(),
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
+        // a top-level `bip` field. BipConfig::default() opts into the
+        // all-allowed + p2wpkh-output defaults so the v1.3 P2WPKH-only
+        // round behaviour is preserved byte-exactly (cross-phase invariant).
+        // This is the minimal mechanical change required by the additive
+        // struct extension; no other test logic changes.
+        bip: coordinator::config::BipConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
@@ -400,6 +407,13 @@ async fn spawn_coordinator_with_blame(
             tor_mode: false,
         },
         discovery: DiscoveryConfig::default(),
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
+        // a top-level `bip` field. BipConfig::default() opts into the
+        // all-allowed + p2wpkh-output defaults so the v1.3 P2WPKH-only
+        // round behaviour is preserved byte-exactly (cross-phase invariant).
+        // This is the minimal mechanical change required by the additive
+        // struct extension; no other test logic changes.
+        bip: coordinator::config::BipConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
@@ -662,6 +676,13 @@ async fn spawn_coordinator_with_blame_and_restart(
             tor_mode: false,
         },
         discovery: DiscoveryConfig::default(),
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
+        // a top-level `bip` field. BipConfig::default() opts into the
+        // all-allowed + p2wpkh-output defaults so the v1.3 P2WPKH-only
+        // round behaviour is preserved byte-exactly (cross-phase invariant).
+        // This is the minimal mechanical change required by the additive
+        // struct extension; no other test logic changes.
+        bip: coordinator::config::BipConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
@@ -1170,6 +1191,13 @@ async fn coordinator_info_endpoint_fields() {
             tor_mode: false,
         },
         discovery: DiscoveryConfig::default(),
+        // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
+        // a top-level `bip` field. BipConfig::default() opts into the
+        // all-allowed + p2wpkh-output defaults so the v1.3 P2WPKH-only
+        // round behaviour is preserved byte-exactly (cross-phase invariant).
+        // This is the minimal mechanical change required by the additive
+        // struct extension; no other test logic changes.
+        bip: coordinator::config::BipConfig::default(),
     });
 
     let rpc = Arc::new(BitcoinRpc::new(
