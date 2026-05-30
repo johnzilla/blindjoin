@@ -408,9 +408,46 @@ impl BdkClientWallet {
         // the real on-chain UTXO and rejects mismatched signatures — the attacker gets DoS,
         // not theft). The deprecation marker stays until a future migration to non_witness_utxo
         // (requires an RPC client in the wallet — out of scope for v1.x CLI).
+        //
+        // Mixed-script PSBT guard [Rule 1 fix]:
+        //
+        // In a mixed-script CoinJoin round the coordinator's PSBT contains inputs from
+        // participants with different script types (e.g. P2WPKH, P2TR, P2SH-P2WPKH).
+        // bdk_wallet's sign() iterates ALL signers against ALL inputs:
+        //   - An ECDSA signer (P2WPKH/P2SH-P2WPKH) calls psbt.sighash_ecdsa(i) on EVERY
+        //     input, which errors on Taproot inputs ("attempt to sign with the wrong signing
+        //     algorithm").
+        //   - finalize_psbt() errors on P2SH inputs without redeem_script ("missing redeem
+        //     script") when called by a wallet that doesn't own those inputs.
+        //
+        // Fix: temporarily mark inputs we DON'T own as "already finalized" by setting
+        // final_script_witness = Some(Witness::new()) (an empty witness, which signals to
+        // bdk_wallet's sign_input that the input is done and should be skipped). After
+        // signing, we clear those markers so the PSBT reflects only real witnesses.
+        //
+        // This preserves the correct sighash computation: bdk_wallet still receives the FULL
+        // PSBT (all inputs/outputs) when computing the sighash for OUR input, which is
+        // required for segwit sighash (BIP-143 / BIP-341 commit to all inputs).
+        let guard_indices: Vec<usize> = (0..psbt.inputs.len())
+            .filter(|&i| i != input_idx
+                && psbt.inputs[i].final_script_sig.is_none()
+                && psbt.inputs[i].final_script_witness.is_none())
+            .collect();
+
+        // Temporarily mark non-owned inputs as finalized (empty witness = skip signal).
+        for &i in &guard_indices {
+            psbt.inputs[i].final_script_witness = Some(bitcoin::Witness::new());
+        }
+
         #[allow(deprecated)]
-        self.inner.sign(psbt, SignOptions { trust_witness_utxo: true, ..SignOptions::default() })
-            .map_err(|e| anyhow!("bdk_wallet signing failed: {e}"))?;
+        let sign_result = self.inner.sign(psbt, SignOptions { trust_witness_utxo: true, ..SignOptions::default() });
+
+        // Remove our temporary markers regardless of sign result.
+        for &i in &guard_indices {
+            psbt.inputs[i].final_script_witness = None;
+        }
+
+        sign_result.map_err(|e| anyhow!("bdk_wallet signing failed: {e}"))?;
 
         // Encode the signed witness as consensus-serialized bytes so the coordinator's
         // bitcoin::consensus::deserialize::<Witness> round-trips. bdk_wallet finalizes

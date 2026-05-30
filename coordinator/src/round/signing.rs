@@ -163,6 +163,42 @@ async fn assemble_and_broadcast(
             match bitcoin::consensus::deserialize::<bitcoin::Witness>(sig_bytes) {
                 Ok(witness) => {
                     psbt.inputs[i].final_script_witness = Some(witness);
+
+                    // Rule 2 (missing critical functionality): P2SH-P2WPKH inputs require
+                    // BOTH a witness (sig + pubkey) AND a scriptSig (the redeem script push).
+                    // The client submits only the witness; the coordinator reconstructs the
+                    // scriptSig from the witness pubkey element and the P2SH outer script.
+                    //
+                    // Detection: psbt.inputs[i].witness_utxo.script_pubkey.is_p2sh() AND
+                    // the witness has 2 items (ECDSA sig, compressed pubkey — standard
+                    // P2SH-P2WPKH structure).
+                    //
+                    // Reconstruction: compressed_pubkey → hash160 → OP_0 <hash160> is the
+                    // inner P2WPKH redeem script. script_sig = push(redeem_script).
+                    // This is deterministic from the pubkey alone; no key material needed.
+                    if let Some(ref witness_utxo) = psbt.inputs[i].witness_utxo {
+                        let spk = &witness_utxo.script_pubkey;
+                        let witness_ref = psbt.inputs[i].final_script_witness.as_ref().unwrap();
+                        if spk.is_p2sh() && witness_ref.len() == 2 {
+                            // witness[1] is the compressed pubkey (33 bytes).
+                            let pubkey_bytes = witness_ref.nth(1);
+                            if let Some(pk_bytes) = pubkey_bytes {
+                                if pk_bytes.len() == 33 {
+                                    use bitcoin::hashes::{hash160, Hash};
+                                    let wpkh = hash160::Hash::hash(pk_bytes);
+                                    // Redeem script: OP_0 OP_PUSHBYTES_20 <20-byte-hash>
+                                    let mut redeem = vec![0x00u8, 0x14];
+                                    redeem.extend_from_slice(wpkh.as_byte_array());
+                                    // scriptSig: push of the 22-byte redeem script
+                                    // OP_PUSHBYTES_22 = 0x16
+                                    let mut script_sig_bytes = vec![0x16u8];
+                                    script_sig_bytes.extend_from_slice(&redeem);
+                                    psbt.inputs[i].final_script_sig =
+                                        Some(bitcoin::ScriptBuf::from_bytes(script_sig_bytes));
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     let preview: String = sig_bytes.iter().take(16)
