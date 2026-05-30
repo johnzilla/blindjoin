@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: 1
-status: verifying
-stopped_at: Phase 17 context gathered
-last_updated: "2026-05-30T14:55:16.454Z"
-last_activity: 2026-05-30
+current_plan: "ready for /gsd:verify-phase 17 + /gsd:plan-phase 18"
+status: completed
+stopped_at: Phase 17 complete — Plan 17-03 closed; WALLET-01..04 all satisfied
+last_updated: "2026-05-30T15:05:50.132Z"
+last_activity: 2026-05-30 -- Phase 17 marked complete
 progress:
   total_phases: 5
   completed_phases: 4
@@ -19,10 +19,10 @@ progress:
 
 ## Current Position
 
-Phase: 17 (Client Multi-Script Wallet & Discovery) — COMPLETE
+Phase: 17 — COMPLETE
 Plan: 3 of 3 — all closed
-Status: Phase complete — ready for /gsd:verify-phase 17 + /gsd:plan-phase 18
-Last activity: 2026-05-30
+Status: Phase 17 complete
+Last activity: 2026-05-30 -- Phase 17 marked complete
 
 ## Project Reference
 
