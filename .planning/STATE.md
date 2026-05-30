@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
-current_plan: 3 (16-03 — PKARR multi-script advertisement — COMPLETE)
+current_plan: Phase 16 complete; ready for phase verification; Phase 17 next.
 status: verifying
-stopped_at: Completed Phase 16 Plan 16-03 (Phase 16 closed)
-last_updated: "2026-05-30T05:28:30.327Z"
+stopped_at: Phase 17 context gathered
+last_updated: "2026-05-30T13:21:24.640Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 5
@@ -47,9 +47,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Completed Phase 16 Plan 16-03 (Phase 16 closed)
+**Stopped At:** Phase 17 context gathered
 **Resume File:** 
-None
+.planning/phases/17-client-multi-script-wallet-discovery/17-CONTEXT.md
 
 ## Blockers
 
