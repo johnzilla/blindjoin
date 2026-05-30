@@ -28,6 +28,7 @@ pub struct BdkClientWallet {
     /// truth for downstream consumers (Phase 17 17-02 sign dispatcher + 17-03
     /// discovery check). Per D-62 the wallet KNOWS its type — never re-detected
     /// at sign-time. Per D-61 from_wif always sets P2wpkh.
+    #[allow(dead_code)] // consumed by 17-02 sign dispatcher + 17-03 discovery check
     script_type: ScriptType,
     inner: Wallet,
     /// Test-only mirror of the generated/loaded external descriptor string, so
@@ -322,6 +323,7 @@ impl BdkClientWallet {
     /// downstream consumers (Phase 17 17-02 sign dispatcher + 17-03 discovery
     /// fail-fast + the v=2 OwnershipProof CRIT-01 wire source). ScriptType
     /// derives Copy so the accessor returns by value.
+    #[allow(dead_code)] // consumed by 17-02 sign dispatcher + 17-03 discovery check
     pub fn script_type(&self) -> ScriptType {
         self.script_type
     }

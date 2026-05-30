@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     // --generate-wallet: print descriptors and exit (no round participation needed)
     if cfg.generate_wallet {
         let utxo = cfg.utxo.as_deref().unwrap_or("0000000000000000000000000000000000000000000000000000000000000000:0");
-        ClientWallet::generate(utxo, network)?;
+        ClientWallet::generate(utxo, network, cfg.script_type)?;
         std::process::exit(0);
     }
 
@@ -45,9 +45,12 @@ async fn main() -> anyhow::Result<()> {
         // --descriptor path: requires --utxo-address
         let utxo_address = cfg.utxo_address.as_deref()
             .ok_or_else(|| anyhow::anyhow!("--utxo-address is required when using --descriptor"))?;
-        ClientWallet::from_descriptor(descriptor, utxo, utxo_address, network)?
+        ClientWallet::from_descriptor(descriptor, utxo, utxo_address, network, cfg.script_type)?
     } else {
-        // WIF path (backward compat, default for testing)
+        // WIF path (backward compat, default for testing). Per Phase 17 D-61
+        // from_wif takes NO script_type parameter; the wallet's script_type is
+        // hardcoded to P2WPKH inside from_wif so the v1.3 cross-phase invariant
+        // (tests/integration/full_round.rs) stays bit-exact unchanged.
         let wif = cfg.utxo_wif.as_deref()
             .ok_or_else(|| anyhow::anyhow!("--utxo-wif is required when not using --descriptor or --generate-wallet"))?;
         ClientWallet::from_wif(wif, utxo, network)?
