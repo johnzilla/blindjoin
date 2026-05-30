@@ -18,6 +18,7 @@
 
 mod ban_list_persistence;
 mod full_round;
+mod multi_script_validate;
 mod rate_limiting;
 mod round_bootstrap;
 
@@ -531,4 +532,372 @@ pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
     })
     .await
     .expect("fund_regtest spawn_blocking panicked")
+}
+
+// ---------------------------------------------------------------------------
+// v1.4 Phase 16 Plan 16-02 Task 2 — fund_regtest_typed
+//
+// Multi-script regtest UTXO funding helper. Generates funded UTXOs of any of
+// the three supported script types (P2WPKH / P2TR / P2SH-P2WPKH) for use by
+// the Phase 16 Plan 16-02 Task 3 integration tests at
+// tests/integration/multi_script_validate.rs.
+//
+// Compared to fund_regtest (above), this helper:
+//   1. Accepts a typed request slice `&[(ScriptType, usize)]` so each test
+//      can isolate the script type(s) it needs.
+//   2. Derives the on-chain SPK purely from rust-bitcoin primitives (per
+//      Phase 15-03 fixtures + RESEARCH §Pitfall 6 recipe), so the helper is
+//      independent of the bitcoind wallet's `getnewaddress` address-type
+//      defaults (RESEARCH §A7 fallback — does not require
+//      `corepc_node::Client::new_address_with_type`, which IS available in
+//      0.12 but is bypassed here for symmetry with the pure-rust P2TR /
+//      P2SH-P2WPKH derivation path).
+//   3. Carries the per-UTXO SecretKey + (for P2SH-P2WPKH) the inner
+//      P2WPKH redeem script in the returned handle so the integration tests
+//      can construct valid v=2 ownership-proof witnesses via
+//      shared::bip322::sign_simple_test_only.
+//
+// fund_regtest remains in place and untouched — the v1.3 cross-phase
+// invariant tests (full_round.rs) continue to use it unchanged.
+// ---------------------------------------------------------------------------
+
+/// One funded UTXO of a specific script type, with the secret key needed to
+/// produce a BIP-322 ownership proof against it.
+#[derive(Clone, Debug)]
+pub struct TypedUtxoHandle {
+    pub script_type: shared::bip322::ScriptType,
+    pub outpoint: bitcoin::OutPoint,
+    pub script_pubkey: bitcoin::ScriptBuf,
+    pub value_sats: u64,
+    /// Secret key matching the address — used by the integration tests to
+    /// construct valid BIP-322 v=2 witnesses via
+    /// shared::bip322::sign_simple_test_only.
+    pub secret_key: bitcoin::secp256k1::SecretKey,
+    /// For P2SH-P2WPKH only: the inner P2WPKH redeem script that gets
+    /// HASH160'd into the P2SH SPK. None for P2WPKH and P2TR.
+    pub p2sh_redeem_script: Option<bitcoin::ScriptBuf>,
+}
+
+/// Handoff struct from `fund_regtest_typed` to consumers.
+///
+/// Carries Bitcoin Core RPC creds + the ordered Vec<TypedUtxoHandle> in
+/// caller-requested order.
+#[derive(Clone, Debug)]
+pub struct FundedTypedSetup {
+    pub rpc_url: String,
+    pub rpc_user: String,
+    pub rpc_pass: String,
+    /// One TypedUtxoHandle per (script_type, n) tuple in the request,
+    /// flattened in request order: e.g. for `[(P2wpkh, 2), (P2tr, 1)]`
+    /// the returned Vec is `[p2wpkh_0, p2wpkh_1, p2tr_0]`.
+    pub utxos: Vec<TypedUtxoHandle>,
+}
+
+/// Spin up a regtest bitcoind and fund per-script-type test UTXOs.
+///
+/// **Caller contract:** same as `fund_regtest` — call `require_bitcoind!()`
+/// first to obtain the binary path, then forward it here. Hold the returned
+/// `BitcoindGuard` for the test's full duration; dropping it kills bitcoind.
+///
+/// **Address derivation strategy:** for each requested `(script_type, n)`
+/// pair, deterministically derive `n` distinct SecretKeys, build the
+/// per-script address inline (rust-bitcoin only), and fund via
+/// `send_to_address` (script-type-agnostic on the wallet's side). The
+/// `secret_key` is captured in each returned TypedUtxoHandle so the
+/// integration tests can construct the matching BIP-322 witness.
+///
+/// **Why not use `Client::new_address_with_type`:** the v23 AddressType
+/// enum exposed via `corepc-node 0.12 + 30_2` feature flag works for the
+/// regtest wallet's own addresses (Bech32m, P2shSegwit, etc.). But the
+/// returned address is wallet-managed — the integration test would have to
+/// extract the matching key via `dumpprivkey` to sign for it. Deriving the
+/// key first and computing the SPK ourselves is simpler, keeps the test
+/// hermetic, and matches the Phase 15-03 `fixture_*_spk` recipes.
+pub async fn fund_regtest_typed(
+    exe: String,
+    requested: &[(shared::bip322::ScriptType, usize)],
+) -> (BitcoindGuard, FundedTypedSetup) {
+    use shared::bip322::ScriptType;
+
+    // Shared bootstrap: bitcoind + 101-block mine + cookie creds.
+    let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
+    let RpcCreds {
+        url: rpc_url,
+        user: rpc_user,
+        pass: rpc_pass,
+    } = creds;
+
+    // Clone the request slice into an owned Vec so the spawn_blocking closure
+    // can take it by value (no borrow needs to outlive the closure).
+    let requested_owned: Vec<(ScriptType, usize)> = requested.to_vec();
+
+    tokio::task::spawn_blocking(move || {
+        use std::str::FromStr;
+
+        use bitcoin::key::TapTweak;
+        use bitcoin::secp256k1::{Keypair, Secp256k1, SecretKey, XOnlyPublicKey};
+        use bitcoin::{Address, Amount, CompressedPublicKey, Network, PublicKey, ScriptBuf, Txid};
+
+        let node = bitcoind_guard.node();
+        let secp = Secp256k1::new();
+
+        // Each funded UTXO carries `denomination + 50_000 sats` so the
+        // dispatcher's value-check (denomination + fee_share) passes with
+        // headroom. Matches fund_regtest above.
+        let denomination: u64 = 100_000;
+        let fund_sats: u64 = denomination + 50_000;
+        let fund_btc = Amount::from_sat(fund_sats);
+
+        // Mining address for confirmation block (reused — wallet's default).
+        let mine_addr: Address = node.client.new_address().expect("get new address");
+
+        // Per-UTXO derivation:
+        //   - Salt the SecretKey bytes with a per-(script_type, index)
+        //     seed so concurrent test invocations don't collide. The salt
+        //     is deterministic so a failing test's funded outpoints are
+        //     reproducible from the test source alone.
+        //   - For each script type, build the SPK + Address inline.
+        struct Pending {
+            script_type: ScriptType,
+            secret_key: SecretKey,
+            script_pubkey: ScriptBuf,
+            address: Address,
+            p2sh_redeem_script: Option<ScriptBuf>,
+        }
+        let mut pending: Vec<Pending> = Vec::new();
+        for (st_idx, (script_type, n)) in requested_owned.iter().enumerate() {
+            for i in 0..*n {
+                // Deterministic seed: nibble-encode the script_type in
+                // high bytes, the request index in low bytes. Distinct from
+                // the fixture key (0x42…) used by the unit tests so they
+                // never compete for the same UTXO.
+                let mut seed = [0u8; 32];
+                seed[0] = match script_type {
+                    ScriptType::P2wpkh => 0x10,
+                    ScriptType::P2tr => 0x20,
+                    ScriptType::P2shP2wpkh => 0x30,
+                };
+                seed[1] = st_idx as u8;
+                seed[2] = i as u8;
+                // Fill remaining bytes with a deterministic non-zero pattern
+                // so the SecretKey constructor doesn't get a structurally
+                // weak key.
+                for (j, byte) in seed.iter_mut().enumerate().skip(3) {
+                    *byte = (j as u8).wrapping_mul(0x11) ^ 0x55;
+                }
+                let secret_key =
+                    SecretKey::from_slice(&seed).expect("seeded SecretKey is valid");
+
+                let (script_pubkey, address, p2sh_redeem_script) = match script_type {
+                    ScriptType::P2wpkh => {
+                        let raw_pk = bitcoin::secp256k1::PublicKey::from_secret_key(
+                            &secp,
+                            &secret_key,
+                        );
+                        let cpk = CompressedPublicKey(raw_pk);
+                        let addr = Address::p2wpkh(&cpk, Network::Regtest);
+                        let compressed = PublicKey::new(raw_pk);
+                        let spk = ScriptBuf::new_p2wpkh(
+                            &compressed
+                                .wpubkey_hash()
+                                .expect("compressed pubkey -> wpkh"),
+                        );
+                        (spk, addr, None)
+                    }
+                    ScriptType::P2tr => {
+                        // BIP-341 keyspend-only output (no merkle root).
+                        let keypair = Keypair::from_secret_key(&secp, &secret_key);
+                        let (_untweaked, _parity) = XOnlyPublicKey::from_keypair(&keypair);
+                        let tweaked = keypair.tap_tweak(&secp, None);
+                        let tweaked_xonly = tweaked.to_keypair().x_only_public_key().0;
+                        let spk = ScriptBuf::new_p2tr_tweaked(
+                            tweaked_xonly.dangerous_assume_tweaked(),
+                        );
+                        let addr = Address::p2tr_tweaked(
+                            tweaked_xonly.dangerous_assume_tweaked(),
+                            Network::Regtest,
+                        );
+                        (spk, addr, None)
+                    }
+                    ScriptType::P2shP2wpkh => {
+                        // Inner: P2WPKH redeem script.
+                        let raw_pk = bitcoin::secp256k1::PublicKey::from_secret_key(
+                            &secp,
+                            &secret_key,
+                        );
+                        let compressed = PublicKey::new(raw_pk);
+                        let wpkh = compressed
+                            .wpubkey_hash()
+                            .expect("compressed pubkey -> wpkh");
+                        let redeem = ScriptBuf::new_p2wpkh(&wpkh);
+                        // Outer: P2SH wrapping the redeem.
+                        let spk = ScriptBuf::new_p2sh(&redeem.script_hash());
+                        let addr =
+                            Address::p2sh(redeem.as_script(), Network::Regtest).expect("p2sh");
+                        (spk, addr, Some(redeem))
+                    }
+                };
+
+                pending.push(Pending {
+                    script_type: *script_type,
+                    secret_key,
+                    script_pubkey,
+                    address,
+                    p2sh_redeem_script,
+                });
+            }
+        }
+
+        // Fund each address; capture the funding txid.
+        let mut funding_txids: Vec<String> = Vec::with_capacity(pending.len());
+        for p in &pending {
+            let send = node
+                .client
+                .send_to_address(&p.address, fund_btc)
+                .expect("send_to_address failed");
+            funding_txids.push(send.0.clone());
+        }
+
+        // Wallet-agnostic vout discovery: walk each funding tx, find the
+        // output whose script_pubkey BYTES match the pending SPK.
+        //
+        // RESEARCH §Pitfall 6 warning: do NOT compare via address string —
+        // Address::p2tr_tweaked's `Display` form can diverge slightly from
+        // what Bitcoin Core's verbose-tx output names the address. Compare
+        // ScriptBuf bytes via the hex form on the wire.
+        //
+        // ORDERING: read BEFORE confirming via generate_to_address, to keep
+        // the helper txindex-agnostic on Bitcoin Core v30+ (same constraint
+        // as fund_regtest above).
+        let utxos: Vec<TypedUtxoHandle> = funding_txids
+            .iter()
+            .zip(pending.iter())
+            .map(|(funding_txid_str, p)| {
+                let txid = Txid::from_str(funding_txid_str).expect("valid funding txid hex");
+                let tx = node
+                    .client
+                    .get_raw_transaction_verbose(txid)
+                    .expect("get_raw_transaction_verbose");
+                let target_spk_hex = hex::encode(p.script_pubkey.as_bytes());
+                let out = tx
+                    .outputs
+                    .iter()
+                    .find(|o| o.script_pubkey.hex.eq_ignore_ascii_case(&target_spk_hex))
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "funding tx {} has no output matching SPK {} (script_type={:?})",
+                            funding_txid_str, target_spk_hex, p.script_type
+                        )
+                    });
+
+                let outpoint = bitcoin::OutPoint::new(txid, out.index as u32);
+                let value_sats = (out.value * 100_000_000.0).round() as u64;
+                TypedUtxoHandle {
+                    script_type: p.script_type,
+                    outpoint,
+                    script_pubkey: p.script_pubkey.clone(),
+                    value_sats,
+                    secret_key: p.secret_key,
+                    p2sh_redeem_script: p.p2sh_redeem_script.clone(),
+                }
+            })
+            .collect();
+
+        // Confirm the funding block.
+        node.client
+            .generate_to_address(1, &mine_addr)
+            .expect("generate confirmation block");
+
+        let setup = FundedTypedSetup {
+            rpc_url,
+            rpc_user,
+            rpc_pass,
+            utxos,
+        };
+
+        (bitcoind_guard, setup)
+    })
+    .await
+    .expect("fund_regtest_typed spawn_blocking panicked")
+}
+
+// ---------------------------------------------------------------------------
+// fund_regtest_typed smoke tests (Plan 16-02 Task 2).
+// Each test calls require_bitcoind!() first so it gracefully skips on
+// developer machines without bitcoind in PATH.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod fund_regtest_typed_smoke {
+    use super::*;
+    use shared::bip322::ScriptType;
+
+    #[tokio::test]
+    async fn fund_regtest_typed_generates_p2wpkh_utxo() {
+        let exe = require_bitcoind!();
+        let (_guard, setup) = fund_regtest_typed(exe, &[(ScriptType::P2wpkh, 1)]).await;
+        assert_eq!(setup.utxos.len(), 1, "expected exactly 1 UTXO");
+        let handle = &setup.utxos[0];
+        assert_eq!(handle.script_type, ScriptType::P2wpkh);
+        assert!(
+            handle.script_pubkey.is_p2wpkh(),
+            "expected P2WPKH script_pubkey, got bytes {:?}",
+            handle.script_pubkey.as_bytes()
+        );
+        assert!(handle.p2sh_redeem_script.is_none());
+    }
+
+    #[tokio::test]
+    async fn fund_regtest_typed_generates_p2tr_utxo() {
+        let exe = require_bitcoind!();
+        let (_guard, setup) = fund_regtest_typed(exe, &[(ScriptType::P2tr, 1)]).await;
+        assert_eq!(setup.utxos.len(), 1);
+        let handle = &setup.utxos[0];
+        assert_eq!(handle.script_type, ScriptType::P2tr);
+        assert!(
+            handle.script_pubkey.is_p2tr(),
+            "expected P2TR script_pubkey, got bytes {:?}",
+            handle.script_pubkey.as_bytes()
+        );
+        assert!(handle.p2sh_redeem_script.is_none());
+    }
+
+    #[tokio::test]
+    async fn fund_regtest_typed_generates_p2sh_p2wpkh_utxo() {
+        let exe = require_bitcoind!();
+        let (_guard, setup) = fund_regtest_typed(exe, &[(ScriptType::P2shP2wpkh, 1)]).await;
+        assert_eq!(setup.utxos.len(), 1);
+        let handle = &setup.utxos[0];
+        assert_eq!(handle.script_type, ScriptType::P2shP2wpkh);
+        assert!(
+            handle.script_pubkey.is_p2sh(),
+            "expected P2SH script_pubkey, got bytes {:?}",
+            handle.script_pubkey.as_bytes()
+        );
+        assert!(
+            handle.p2sh_redeem_script.is_some(),
+            "P2SH-P2WPKH handle must carry the inner redeem script"
+        );
+    }
+
+    #[tokio::test]
+    async fn fund_regtest_typed_generates_mixed_set() {
+        let exe = require_bitcoind!();
+        let (_guard, setup) = fund_regtest_typed(
+            exe,
+            &[
+                (ScriptType::P2wpkh, 1),
+                (ScriptType::P2tr, 1),
+                (ScriptType::P2shP2wpkh, 1),
+            ],
+        )
+        .await;
+        assert_eq!(setup.utxos.len(), 3, "expected 3 UTXOs in request order");
+        assert_eq!(setup.utxos[0].script_type, ScriptType::P2wpkh);
+        assert!(setup.utxos[0].script_pubkey.is_p2wpkh());
+        assert_eq!(setup.utxos[1].script_type, ScriptType::P2tr);
+        assert!(setup.utxos[1].script_pubkey.is_p2tr());
+        assert_eq!(setup.utxos[2].script_type, ScriptType::P2shP2wpkh);
+        assert!(setup.utxos[2].script_pubkey.is_p2sh());
+    }
 }
