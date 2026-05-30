@@ -5,3 +5,9 @@
 
 # Temporary sqlite3 symlink dir for builds on systems without sqlite-devel
 .sqlite-lib/
+
+# BdkClientWallet::generate writes mnemonic + descriptors here (mode 0600);
+# emitted into cwd whenever generate() runs in tests / smoke runs. Master key
+# material — NEVER commit. Phase 17 17-02 added test paths that exercise this.
+descriptors.txt
+**/descriptors.txt

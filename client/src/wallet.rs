@@ -6,6 +6,38 @@ use bdk_wallet::{KeychainKind, Wallet};
 use bdk_wallet::signer::SignOptions;
 use shared::bip322::ScriptType;
 
+/// BIP-322 ownership proof produced by [`BdkClientWallet::sign_bip322`].
+///
+/// Phase 17 17-02 D-64 / CD-18 / CD-19: a non-wire intermediate carrying the
+/// signed witness plus a few auxiliary fields needed by the round-input
+/// envelope builder (`client/src/round/input.rs::register_input`). NOT a wire
+/// type — no `Serialize`/`Deserialize` derives; the struct only crosses module
+/// boundaries within the `client` crate.
+///
+/// Fields:
+/// - `witness_stack`: flat `Vec<Vec<u8>>` form for the v=1 envelope (D-70 — populated
+///   in BOTH envelopes for symmetry; the v=2 envelope uses it as a discoverability hint
+///   while the load-bearing witness bytes travel in `psbt_input_b64`).
+/// - `witness`: the bare `bitcoin::Witness` used by the v=2 envelope's
+///   `build_v2_psbt_input_b64` helper.
+/// - `final_script_sig`: P2SH-P2WPKH only (per RESEARCH Pitfall 7). For P2WPKH
+///   and P2TR this is always `None`; for P2SH-P2WPKH `Some(redeem_script_sig)`
+///   carries the P2SH unlocking scriptSig that bdk_wallet writes alongside the
+///   final_script_witness when finalising `sh(wpkh(...))`.
+/// - `script_type`: the wallet's stored descriptor outer-wrapper type. Used by
+///   `register_input` as the CRIT-01 wire source — the v=2 envelope's
+///   `script_type` field reads from here, NEVER from `cfg.script_type` (which
+///   would allow a CLI-misconfigured user to declare P2TR over an on-chain
+///   P2WPKH SPK and bypass per-script sighash verification).
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // consumed by 17-02 Task 2 (register_input swap) + external tests
+pub struct Bip322SignedProof {
+    pub witness_stack: Vec<Vec<u8>>,
+    pub witness: bitcoin::Witness,
+    pub final_script_sig: Option<ScriptBuf>,
+    pub script_type: ScriptType,
+}
+
 /// HD-wallet backed CoinJoin client using bdk_wallet 2.3.
 ///
 /// Replaces the Phase 1 raw-WIF implementation (D-14). Supports three construction paths:
@@ -390,6 +422,142 @@ impl BdkClientWallet {
         }
 
         Err(anyhow!("bdk_wallet did not produce a witness for our input"))
+    }
+
+    /// Produce a BIP-322 Simple ownership proof over `message` for this
+    /// wallet's UTXO (Phase 17 17-02 D-64 / D-65 / CD-19 / CD-24).
+    ///
+    /// Two dispatch arms, branching on `self.wif_key.is_some()`:
+    ///
+    /// - **WIF wallets** (legacy carry-forward): route through
+    ///   `shared::bip322::sign_simple(P2wpkh, ...)`. Phase 15 confirmed this is
+    ///   bit-exact equivalent to the prior hand-rolled
+    ///   `client/src/round/input.rs::generate_bip322_witness` (deleted in
+    ///   Plan 17-02 Task 2 per CD-20). Per D-61 from_wif is P2WPKH-only.
+    ///
+    /// - **Descriptor wallets** (P2WPKH / P2TR / P2SH-P2WPKH uniformly per
+    ///   CD-24): build the BIP-322 to_sign PSBT (script-neutral primitives in
+    ///   `shared::bip322`) and route through bdk_wallet 2.3's PSBT signer
+    ///   (Sprint-0-B PoC PASS, ADR Decision #4). Witness extraction is
+    ///   script-type-specific:
+    ///   - P2TR: prefer `psbt.inputs[0].final_script_witness` (Sprint-0-B
+    ///     finding — bdk_wallet 2.3 clears `tap_key_sig` at finalisation).
+    ///   - P2SH-P2WPKH (RESEARCH Pitfall 7): MUST extract BOTH
+    ///     `final_script_witness` AND `final_script_sig`; missing
+    ///     `final_script_sig` is an error.
+    ///
+    /// Visibility note (CD-19): the plan preferred `pub(crate)` but external
+    /// integration-test crates at `client/tests/*.rs` only see `pub` items, so
+    /// this is `pub` for test reach. Documented as a Rule-3 visibility
+    /// escalation in Plan 17-02 Task 1 SUMMARY.
+    #[allow(dead_code)] // consumed by 17-02 Task 2 (register_input swap) + external tests
+    pub fn sign_bip322(&self, message: &str) -> Result<Bip322SignedProof> {
+        if self.wif_key.is_some() {
+            // D-61: WIF wallets are always P2WPKH.
+            debug_assert_eq!(
+                self.script_type,
+                ScriptType::P2wpkh,
+                "from_wif must construct ScriptType::P2wpkh (D-61)"
+            );
+            let sk = self.secret_key_for_signing();
+            let witness = shared::bip322::sign_simple(
+                ScriptType::P2wpkh,
+                &self.utxo_script_pubkey,
+                &sk,
+                message.as_bytes(),
+            )
+            .map_err(|e| anyhow!("shared::bip322::sign_simple failed: {e}"))?;
+            let witness_stack = witness.iter().map(|s| s.to_vec()).collect::<Vec<_>>();
+            return Ok(Bip322SignedProof {
+                witness_stack,
+                witness,
+                final_script_sig: None,
+                script_type: ScriptType::P2wpkh,
+            });
+        }
+
+        // Descriptor branch — uniform bdk PSBT-sign path per CD-24, covering
+        // P2WPKH / P2TR / P2SH-P2WPKH. Mirrors sign_psbt_input above:
+        // trust_witness_utxo: true is required because the BIP-322 to_spend
+        // output has value=0 and no on-chain provenance — the malicious-
+        // -coordinator-lies-about-value reasoning at sign_psbt_input does not
+        // apply here because BIP-322 has no value to lie about.
+        let msg_hash = shared::bip322::bip322_message_hash(message.as_bytes());
+        let to_spend = shared::bip322::build_bip322_to_spend(&self.utxo_script_pubkey, &msg_hash);
+        let to_sign = shared::bip322::build_bip322_to_sign(&to_spend);
+        let mut psbt = bitcoin::psbt::Psbt::from_unsigned_tx(to_sign)
+            .map_err(|e| anyhow!("Psbt::from_unsigned_tx (BIP-322 to_sign): {e}"))?;
+        psbt.inputs[0].witness_utxo = Some(bitcoin::TxOut {
+            value: bitcoin::Amount::ZERO,
+            script_pubkey: self.utxo_script_pubkey.clone(),
+        });
+        #[allow(deprecated)]
+        self.inner
+            .sign(
+                &mut psbt,
+                SignOptions { trust_witness_utxo: true, ..SignOptions::default() },
+            )
+            .map_err(|e| anyhow!("bdk_wallet BIP-322 sign failed: {e}"))?;
+
+        // Witness extraction — per-script branch.
+        let (witness, final_script_sig) = match self.script_type {
+            ScriptType::P2wpkh => {
+                let input = &psbt.inputs[0];
+                let w = if let Some(w) = input.final_script_witness.clone() {
+                    w
+                } else if let Some((pk, sig)) = input.partial_sigs.iter().next() {
+                    // Single-key fallback (mirrors sign_psbt_input lines 385-389).
+                    let mut w = bitcoin::Witness::new();
+                    w.push(sig.to_vec());
+                    w.push(pk.to_bytes());
+                    w
+                } else {
+                    return Err(anyhow!(
+                        "bdk_wallet did not produce a P2WPKH BIP-322 witness"
+                    ));
+                };
+                (w, None)
+            }
+            ScriptType::P2tr => {
+                // Sprint-0-B finding: bdk_wallet 2.3 puts the keyspend sig in
+                // final_script_witness[0]; tap_key_sig is cleared at
+                // finalisation. Dual-path for future bdk-version resilience.
+                let input = &psbt.inputs[0];
+                let w = if let Some(w) = input.final_script_witness.clone() {
+                    w
+                } else if let Some(tap_key_sig) = input.tap_key_sig {
+                    let mut w = bitcoin::Witness::new();
+                    w.push(tap_key_sig.serialize());
+                    w
+                } else {
+                    return Err(anyhow!(
+                        "bdk_wallet did not produce a P2TR witness (neither final_script_witness nor tap_key_sig populated)"
+                    ));
+                };
+                (w, None)
+            }
+            ScriptType::P2shP2wpkh => {
+                // RESEARCH Pitfall 7: bdk_wallet finalises sh(wpkh(...)) by
+                // populating BOTH final_script_witness AND final_script_sig.
+                // Extract BOTH; missing final_script_sig is an error.
+                let input = &psbt.inputs[0];
+                let w = input.final_script_witness.clone().ok_or_else(|| {
+                    anyhow!("bdk_wallet did not produce a P2SH-P2WPKH final_script_witness")
+                })?;
+                let ssig = input.final_script_sig.clone().ok_or_else(|| {
+                    anyhow!("bdk_wallet did not produce a P2SH-P2WPKH final_script_sig")
+                })?;
+                (w, Some(ssig))
+            }
+        };
+
+        let witness_stack = witness.iter().map(|s| s.to_vec()).collect::<Vec<_>>();
+        Ok(Bip322SignedProof {
+            witness_stack,
+            witness,
+            final_script_sig,
+            script_type: self.script_type,
+        })
     }
 }
 
