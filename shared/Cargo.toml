@@ -11,3 +11,11 @@ sha2 = { workspace = true }
 uuid = { workspace = true }
 hex = "0.4"
 base64 = "0.22"
+# v1.4 Phase 15 Plan 15-02 adds bip322 as the BIP-322 multi-script verify
+# adapter (Sprint-0-A:145-175, ADR Decision #1). The EXACT-equals pin is a
+# Phase 14 carry-forward constraint #3 invariant; bip322 is pre-1.0 and minor
+# version bumps can break the 26-LOC adapter at shared/src/bip322/mod.rs.
+# A CI grep gate (.github/workflows/ci.yml::bip322-pin-check) enforces the
+# pin on every PR.
+bip322 = "=0.0.10"
+thiserror = { workspace = true }
