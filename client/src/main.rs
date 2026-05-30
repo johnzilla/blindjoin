@@ -57,14 +57,55 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // CLI-01: If --pkarr-pubkey is provided, resolve coordinator URL from DHT.
-    let coordinator_url = if let Some(ref pkarr_key) = cfg.pkarr_pubkey {
-        let info = discover::discover_coordinator(pkarr_key)
+    //
+    // WALLET-03: fail-fast runs here, BEFORE any Tor branch. Structural
+    // ordering, not a runtime hack — the `discover::discover_coordinator`
+    // call site runs UNCONDITIONALLY at this line, before the
+    // `if cfg.use_tor` branch below at the `tor::init_tor` call site. Per
+    // RESEARCH Pitfall 4 + D-74 a future refactor that moves the discover
+    // call inside the Tor branch would silently break WALLET-03; this
+    // comment is the in-source proof of the structural invariant.
+    let coordinator_info = if let Some(ref pkarr_key) = cfg.pkarr_pubkey {
+        let info = discover::discover_coordinator(pkarr_key, wallet.script_type())
             .await
             .map_err(|e| anyhow::anyhow!("PKARR discovery failed: {e}"))?;
-        info.coordinator_url
+        if info.capabilities.is_legacy {
+            // CD-21 legacy-coordinator detection log — `coordinator_pubkey`
+            // is public DHT data, `record_version` is the wire schema
+            // version. No PII; symmetric with the structured-field
+            // logging discipline elsewhere in the project.
+            tracing::warn!(
+                coordinator_pubkey = %pkarr_key,
+                record_version = %info.capabilities.record_version,
+                "Detected legacy v1.3 coordinator — using v1 OwnershipProof shim (WALLET-04)"
+            );
+        }
+        info
     } else {
-        cfg.coordinator_url.clone()
+        // Non-PKARR path: the user pointed the client at --coordinator-url
+        // directly (out-of-band trust per T-17-03-05). Construct a synthetic
+        // v1.4 CoordinatorInfo that defaults `is_legacy: false` + supports
+        // all 3 script types + output_script_type matching the wallet. The
+        // operator is responsible for matching the wallet to a compatible
+        // coordinator; a v1.4 client pointed at a v1.3 coordinator via
+        // --coordinator-url will emit a v=2 envelope which the v1.3
+        // coordinator rejects (graceful UX downgrade vs silent compat
+        // failure).
+        discover::CoordinatorInfo {
+            coordinator_url: cfg.coordinator_url.clone(),
+            capabilities: discover::CoordinatorCapabilities {
+                record_version: "manual".to_string(),
+                is_legacy: false,
+                supported_script_types: vec![
+                    shared::bip322::ScriptType::P2wpkh,
+                    shared::bip322::ScriptType::P2tr,
+                    shared::bip322::ScriptType::P2shP2wpkh,
+                ],
+                output_script_type: wallet.script_type(),
+            },
+        }
     };
+    let coordinator_url = coordinator_info.coordinator_url.clone();
     // CLI-05: when --tor is set, use two isolated Tor circuits (alice for input reg,
     // bob for output reg). Otherwise fall back to plain clearnet reqwest.
     let client = if cfg.use_tor {
@@ -84,11 +125,10 @@ async fn main() -> anyhow::Result<()> {
     let info = client.poll_until_phase("input_reg", cfg.poll_interval_ms, phase_timeout).await?;
     info!(round_id = ?info.round_id, "INPUT_REG phase detected");
 
-    // 17-02 TRANSITIONAL: 17-03 replaces this `false` literal with
-    // `info.capabilities.is_legacy` from the extended CoordinatorInfo
-    // (PKARR discovery). Default `false` keeps v1.4 clients posting v=2
-    // envelopes to v1.4 coordinators by default.
-    let reg_result = round::input::register_input(&client, &wallet, &info, false).await?;
+    // Phase 17 17-03: register_input now takes &CoordinatorInfo (replaces
+    // the 17-02 transitional `is_legacy_coordinator: bool` 4th arg). The
+    // v1/v2 envelope branch reads `coordinator_info.capabilities.is_legacy`.
+    let reg_result = round::input::register_input(&client, &wallet, &info, &coordinator_info).await?;
     info!("Input registered successfully");
 
     client.poll_until_phase("output_reg", cfg.poll_interval_ms, phase_timeout).await?;

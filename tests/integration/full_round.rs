@@ -35,6 +35,30 @@ use tokio::sync::RwLock;
 use crate::{bootstrap_regtest_bitcoind, fund_regtest, require_bitcoind, BitcoindGuard, FundedSetup, RpcCreds};
 
 // ---------------------------------------------------------------------------
+// Helper: synthetic v1.4 CoordinatorInfo for v1.3 cross-phase invariant tests.
+// ---------------------------------------------------------------------------
+/// Phase 17 17-03: `register_input` now takes `&CoordinatorInfo` (replaces
+/// the 17-02 transitional `is_legacy_coordinator: bool` 4th arg). The
+/// `full_round::*` tests use the v1.3 WIF wallet (P2WPKH-only per D-61) and
+/// drive coordinator I/O directly via the in-process server — they do NOT
+/// exercise the PKARR discovery path. This helper returns a synthetic
+/// CoordinatorInfo defaulting `is_legacy: false` (v=2 envelope path) which
+/// preserves the v1.3 cross-phase invariant bit-exactly (the v=2 envelope
+/// flows through the same `shared::bip322::sign_simple(P2wpkh, ...)` →
+/// `OwnershipProof::to_json_hex_str` CD-7 byte-identity branch).
+fn v14_p2wpkh_coordinator_info() -> client::discover::CoordinatorInfo {
+    client::discover::CoordinatorInfo {
+        coordinator_url: String::new(),
+        capabilities: client::discover::CoordinatorCapabilities {
+            record_version: "manual".to_string(),
+            is_legacy: false,
+            supported_script_types: vec![shared::bip322::ScriptType::P2wpkh],
+            output_script_type: shared::bip322::ScriptType::P2wpkh,
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helper: initialise a round state in InputReg with a fresh RSA key.
 // ---------------------------------------------------------------------------
 /// Bootstrap a fresh round in InputReg using the production code path —
@@ -229,7 +253,7 @@ async fn full_round_three_clients() {
                     .await
                     .expect("poll for input_reg");
 
-                let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
+                let reg = round::input::register_input(&coordinator_client, &wallet, &info, &v14_p2wpkh_coordinator_info())
                     .await
                     .expect("register_input");
 
@@ -526,7 +550,7 @@ async fn blame_non_signer_timeout() {
                 .await
                 .expect("poll for input_reg");
 
-            let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
+            let reg = round::input::register_input(&coordinator_client, &wallet, &info, &v14_p2wpkh_coordinator_info())
                 .await
                 .expect("register_input");
 
@@ -812,7 +836,7 @@ async fn adversarial_replay_token() {
             .await
             .expect("poll for input_reg");
 
-        let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
+        let reg = round::input::register_input(&coordinator_client, &wallet, &info, &v14_p2wpkh_coordinator_info())
             .await
             .expect("register_input");
 
@@ -991,7 +1015,7 @@ async fn adversarial_wrong_denomination() {
             .await
             .expect("poll for input_reg");
 
-        let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
+        let reg = round::input::register_input(&coordinator_client, &wallet, &info, &v14_p2wpkh_coordinator_info())
             .await
             .expect("register_input");
 
@@ -1330,7 +1354,7 @@ async fn round_restart_and_completion_after_blame() {
                 .await
                 .expect("poll for input_reg");
 
-            let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
+            let reg = round::input::register_input(&coordinator_client, &wallet, &info, &v14_p2wpkh_coordinator_info())
                 .await
                 .expect("register_input");
 
@@ -1469,7 +1493,7 @@ async fn round_restart_and_completion_after_blame() {
                 .await
                 .expect("round 2 poll for input_reg");
 
-            let reg = round::input::register_input(&coordinator_client, &wallet, &info, /* is_legacy_coordinator: */ false)
+            let reg = round::input::register_input(&coordinator_client, &wallet, &info, &v14_p2wpkh_coordinator_info())
                 .await
                 .expect("round 2 register_input");
 

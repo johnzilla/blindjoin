@@ -60,15 +60,14 @@ pub async fn register_input(
     client: &CoordinatorClient,
     wallet: &ClientWallet,
     info: &InfoResponse,
-    // 17-02 TRANSITIONAL: 17-03 will replace this 4th parameter with
-    // `info.capabilities.is_legacy` read off the extended CoordinatorInfo
-    // (PKARR discovery layer). For 17-02 main.rs passes `false` so a v1.4
-    // client posts a v=2 OwnershipProof envelope to v1.4 coordinators by
-    // default — matching the cross-impl interop assumption. When 17-03 lands
-    // the discovery rejection path for legacy coordinators against non-P2WPKH
-    // wallets executes BEFORE this fn is reached, so the legacy arm below
-    // remains structurally unreachable for non-P2WPKH script types.
-    is_legacy_coordinator: bool,
+    // Phase 17 17-03 D-68: replaces the 17-02 transitional bool parameter
+    // (named in 17-02 SUMMARY for grep-locatability) with the real
+    // `CoordinatorInfo` from the extended discovery layer. The v1/v2
+    // envelope branch below reads `coordinator_info.capabilities.is_legacy`.
+    // The synthetic CoordinatorInfo on the --coordinator-url direct path in
+    // main.rs defaults `is_legacy: false` (v=2 envelope) per operator
+    // out-of-band trust (T-17-03-05).
+    coordinator_info: &crate::discover::CoordinatorInfo,
 ) -> Result<InputRegState> {
     // 1. Decode and verify coordinator RSA public key (T-05-01 mitigation: D-02)
     let pk_der_b64 = info.rsa_pubkey_der_b64.as_ref()
@@ -114,13 +113,16 @@ pub async fn register_input(
     );
     let signed: crate::wallet::Bip322SignedProof = wallet.sign_bip322(&bip322_message)?;
 
-    // Phase 17 17-02 D-68: envelope branch on the (transitional) is_legacy
-    // flag. v1 (legacy) emits byte-identical-to-v1.3 via OwnershipProof's
-    // CD-7 two-phase serializer; v2 (default for v1.4 coordinators) carries
-    // the corrected full-PSBT shape per Pitfall 1 + final_script_sig for
-    // P2SH-P2WPKH per Pitfall 7 + script_type from wallet per CRIT-01.
-    let ownership_proof_obj = if is_legacy_coordinator {
-        // Legacy coordinator: pin v=1. 17-03's discovery layer rejects
+    // Phase 17 17-03 D-68: envelope branch on the real
+    // `coordinator_info.capabilities.is_legacy` flag (replaces the 17-02
+    // transitional bool). v1 (legacy) emits byte-identical-to-v1.3 via
+    // OwnershipProof's CD-7 two-phase serializer; v2 (default for v1.4
+    // coordinators) carries the corrected full-PSBT shape per Pitfall 1 +
+    // final_script_sig for P2SH-P2WPKH per Pitfall 7 + script_type from
+    // wallet per CRIT-01.
+    let ownership_proof_obj = if coordinator_info.capabilities.is_legacy {
+        // Legacy coordinator: pin v=1. The discovery layer at
+        // `client/src/discover.rs::discover_coordinator` (17-03) rejects
         // non-P2WPKH wallets against legacy coordinators BEFORE register_input
         // is reached, so this branch is structurally unreachable for
         // non-P2WPKH; the debug_assert documents the precondition and traps
@@ -128,7 +130,7 @@ pub async fn register_input(
         debug_assert_eq!(
             signed.script_type,
             ScriptType::P2wpkh,
-            "unreachable: discovery layer must reject non-P2wpkh against legacy coordinator (17-03)"
+            "unreachable: discovery layer must reject non-P2wpkh against legacy coordinator"
         );
         OwnershipProof {
             version: 1,

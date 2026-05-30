@@ -161,12 +161,27 @@ async fn participate_in_round(
 ) -> Result<()> {
     // Input registration
     //
-    // Phase 17 17-02 TRANSITIONAL: 17-03 replaces this `false` literal with
-    // `info.capabilities.is_legacy` from the extended CoordinatorInfo
-    // (PKARR discovery). The liquidity-bot uses a WIF wallet (P2WPKH-only
-    // per D-61); against legacy coordinators the discovery rejection path
-    // does not need to trigger so `false` (v=2 envelope) is currently safe.
-    let state = client::round::input::register_input(http, wallet, info, false).await
+    // Phase 17 17-03: register_input now takes &CoordinatorInfo (replaces
+    // the 17-02 transitional bool). The liquidity-bot points at
+    // --coordinator-url directly (no PKARR discovery), so it constructs a
+    // synthetic CoordinatorInfo defaulting `is_legacy: false` (v=2
+    // envelope) per operator out-of-band trust (T-17-03-05). The bot's
+    // WIF wallet is P2WPKH-only per D-61 so the wallet's script_type
+    // populates the synthetic capabilities cleanly.
+    let synthetic_info = client::discover::CoordinatorInfo {
+        coordinator_url: String::new(), // not consumed by register_input
+        capabilities: client::discover::CoordinatorCapabilities {
+            record_version: "manual".to_string(),
+            is_legacy: false,
+            supported_script_types: vec![
+                shared::bip322::ScriptType::P2wpkh,
+                shared::bip322::ScriptType::P2tr,
+                shared::bip322::ScriptType::P2shP2wpkh,
+            ],
+            output_script_type: wallet.script_type(),
+        },
+    };
+    let state = client::round::input::register_input(http, wallet, info, &synthetic_info).await
         .context("Input registration failed")?;
     info!("Input registered");
 
