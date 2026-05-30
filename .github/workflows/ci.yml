@@ -261,3 +261,30 @@ jobs:
             echo "       Comment text: // CRIT-01: script_type derived from on-chain script_pubkey, never from client field" >&2
             exit 1
           fi
+
+  crit-01-client-grep-check:
+    name: CRIT-01 client-side envelope invariant grep gate
+    runs-on: ubuntu-latest
+    # v1.4 Phase 17 Plan 17-02 invariant: the client-side CRIT-01 comment
+    # MUST be present above the `script_type: Some(signed.script_type)`
+    # line in register_input's v=2 envelope construction. The comment
+    # documents that the wire-emitted script_type is sourced from the
+    # wallet's stored descriptor type (set at construction in 17-01's
+    # BdkClientWallet::{generate, from_descriptor}), NEVER from a direct
+    # `cfg.script_type` echo — which would allow a CLI-misconfigured user
+    # to emit a v=2 envelope declaring P2TR over an on-chain P2WPKH SPK
+    # (the spoofing vector the coordinator-side CRIT-01 invariant rejects).
+    # Mirrors the coordinator-side crit-01-grep-check job above.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Enforce CRIT-01 client-side comment
+        run: |
+          set -eu
+          COUNT=$(grep -c "CRIT-01" client/src/round/input.rs || true)
+          if [ "$COUNT" -lt 1 ]; then
+            echo "ERROR: client/src/round/input.rs has $COUNT CRIT-01 occurrences (need >= 1)." >&2
+            echo "       The script-type-from-wallet invariant must be commented at the" >&2
+            echo "       v=2 envelope's script_type assignment in register_input." >&2
+            echo "       Comment text: // CRIT-01: script_type populated from wallet (descriptor type), never from CLI-flag direct echo" >&2
+            exit 1
+          fi
