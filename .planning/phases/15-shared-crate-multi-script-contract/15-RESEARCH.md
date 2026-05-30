@@ -966,22 +966,24 @@ fn reject_p2wpkh_spk_with_p2tr_witness() {
 
 **If this table is empty:** N/A — 12 assumptions are listed, most VERIFIED via source-of-truth reads. A4 (P2SH-P2WPKH vector supplementation) and A7 (lockfile-vs-Cargo.toml pin semantics) and A8 (base64 engine sourcing) need user/planner confirmation. A3 carries an empirical risk that the 15-03-PLAN must close on the green path.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three open questions resolved at plan-phase boundary 2026-05-30; resolutions applied verbatim across `15-01-PLAN.md`, `15-02-PLAN.md`, and `15-03-PLAN.md`.
 
 1. **Are the bip322 crate's 2 P2SH-P2WPKH test constants at `lib.rs:46-48` adequate for the BIP322-04 "per-script property test" gate, or do we need to GENERATE additional P2SH-P2WPKH vectors via the test-only signer?**
    - What we know: Upstream `basic-test-vectors.json` has 0 P2SH-P2WPKH cases. The crate's `lib.rs` has 2 cases (one sign, one roundtrip). REQUIREMENTS BIP322-04 calls for "per-script property tests against the official BIP-322 basic-test-vectors.json (commit-SHA pinned from bitcoin/bips)".
    - What's unclear: Whether REQUIREMENTS' "official" language strictly bars supplementing with crate-internal vectors, or whether "supplemented for v1.4 minimum, TEST-EXT-01 cross-impl differential closes the gap in v1.5" is acceptable per the upstream policy.
-   - Recommendation: Treat the crate's vectors as a fixture supplement (vendored as a separate file with a clear "supplement for missing upstream coverage" README), AND have the test-only signer in `#[cfg(test)] sign_for_tests` generate additional roundtrip vectors at test runtime. The combination gives strong P2SH-P2WPKH coverage without claiming "official vector" status for crate-internal data.
+   - **RESOLVED:** Treat the crate's vectors as a fixture supplement (vendored as a separate file with a clear "supplement for missing upstream coverage" README), AND have the test-only signer in `#[cfg(test)] sign_for_tests` generate additional roundtrip vectors at test runtime. The combination gives strong P2SH-P2WPKH coverage without claiming "official vector" status for crate-internal data. Applied in `15-03-PLAN.md` Task 1 (`shared/tests/fixtures/bip322/p2sh_p2wpkh_supplement.json`).
 
 2. **Should the CI grep gate for the new `bip322 = "=0.0.10"` pin be a NEW workflow job, or an extension of the existing `corepc-node-feature-pin-check`?**
    - What we know: The corepc-node job at `.github/workflows/ci.yml:183-213` is well-documented and copy-pasteable. The pattern (`grep -rEn '<dep>\s*=' --include='Cargo.toml' . | grep -v '<expected pattern>' | grep -v '^[^:]*:[0-9]*:#'`) generalises to any dependency.
    - What's unclear: Whether reviewers prefer one job per pin (clearer log output, distinct failure messages) or a single job per pin-type-class (less workflow YAML to maintain).
-   - Recommendation: Add a NEW job `bip322-pin-check` per the existing job's template, with the grep pattern asserting `bip322\s*=\s*"=0\.0\.10"` (exact-equals pin). Easier to read in PR check status; matches the v1.3 REPAIR-02 precedent's "one job per invariant" shape.
+   - **RESOLVED:** Add a NEW job `bip322-pin-check` per the existing job's template, with the grep pattern asserting `bip322\s*=\s*"=0\.0\.10"` (exact-equals pin). Easier to read in PR check status; matches the v1.3 REPAIR-02 precedent's "one job per invariant" shape. Applied in `15-02-PLAN.md` Task 3.
 
 3. **Should `OwnershipProof.script_type: Option<ScriptType>` be serialised as `"p2wpkh"` / `"p2tr"` / `"p2sh-p2wpkh"` (kebab-style, matching REQUIREMENTS' ADVERT-02 wire format) or as `"P2wpkh"` / `"P2tr"` / `"P2shP2wpkh"` (default `serde(rename_all)` ascii)?**
    - What we know: ADVERT-02 already chose `["p2wpkh", "p2tr", "p2sh-p2wpkh"]` for the PKARR / `/round/info` wire form (Phase 16 work). v1.4 wants symmetric forms across the protocol where possible.
    - What's unclear: Whether `OwnershipProof.script_type`'s wire encoding should match ADVERT-02 verbatim (kebab-case for p2sh-p2wpkh) or use a different style (snake-case `p2sh_p2wpkh`).
-   - Recommendation: Use `#[serde(rename_all = "snake_case")]` with an explicit `#[serde(rename = "p2sh-p2wpkh")]` on the `P2shP2wpkh` variant — matches ADVERT-02 verbatim. Locks Phase 16's job to "just deserialize whatever Phase 15 set up", removing ambiguity at the wire.
+   - **RESOLVED:** Use `#[serde(rename_all = "snake_case")]` with an explicit `#[serde(rename = "p2sh-p2wpkh")]` on the `P2shP2wpkh` variant — matches ADVERT-02 verbatim. Locks Phase 16's job to "just deserialize whatever Phase 15 set up", removing ambiguity at the wire. Applied in `15-01-PLAN.md` Task 1 + `15-02-PLAN.md` Task 1 (ScriptType enum derive).
 
 ## Environment Availability
 

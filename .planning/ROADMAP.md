@@ -83,9 +83,9 @@
   4. `shared` crate compiles with exact-pinned dependency versions; `Cargo.lock` reflects no minor-version drift on `bdk_wallet`, `bitcoin`, or (if adopted) `bip322`.
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (`shared` changes are additive; existing P2WPKH witness-only path unchanged for v1.3-format inputs).
 **Plans**: 3 plans
-- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
-- [x] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
-- [x] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate) (completed 2026-05-30)
+- [ ] 15-01-PLAN.md — OwnershipProof v2 wire envelope + 5 D-13 roundtrip tests (atomic commit FIRST per CD-10/REPAIR-01 lesson #1) — ADVERT-04
+- [ ] 15-02-PLAN.md — bip322 module split + 26-LOC crate adapter + 10-variant Bip322Error + CI grep gate; delete coordinator-local Bip322Error — BIP322-01, BIP322-02, BIP322-03
+- [ ] 15-03-PLAN.md — vendored basic-test-vectors.json + P2SH-P2WPKH supplement + per-script positive vectors + 9 D-34 cross-shape rejections (V1.4-CRIT-01 static mitigation) — BIP322-04
 
 ### Phase 16: Coordinator Integration & Advertisement
 **Goal**: Coordinator accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs under an operator-configurable allowlist and advertises the supported set over PKARR + `/round/info` so clients can fail-fast before opening a Tor circuit.
@@ -161,7 +161,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 10. full_round.rs decision + execution | v1.3 | 2/2 | Complete | 2026-05-28 |
 | 11-13. REPAIR-01 carry-forward (shipped as direct commits) | v1.3 | n/a | Closed-local | 2026-05-29 |
 | 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete    | 2026-05-30 |
-| 15. Shared Crate Multi-Script Contract | v1.4 | 0/0 | Not started | — |
+| 15. Shared Crate Multi-Script Contract | v1.4 | 0/3 | Planned     | — |
 | 16. Coordinator Integration & Advertisement | v1.4 | 0/0 | Not started | — |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 0/0 | Not started | — |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 0/0 | Not started | — |
