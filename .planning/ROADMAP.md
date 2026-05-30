@@ -113,9 +113,9 @@
   4. A v1.4 client with a P2WPKH wallet successfully completes a full CoinJoin round against an unmodified v1.3 coordinator (the WALLET-04 compatibility shim correctly detects pre-`0.2.0` PKARR / missing `/round/info` field and emits the legacy witness-only `OwnershipProof` wire format).
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (the client's existing P2WPKH path is preserved as a code path, not removed in favor of the new dispatcher).
 **Plans**: 3 plans
-- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
-- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
-- [ ] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
+- [ ] 17-01-PLAN.md — WALLET-01: --type CLI flag + BIP-84/86/49 descriptor templates + script_type field on BdkClientWallet + construction-time mismatch check
+- [ ] 17-02-PLAN.md — WALLET-02 + WALLET-04 (encoder): Bip322SignedProof + sign_bip322 dispatcher (WIF→shared::bip322; descriptor→bdk PSBT path) + v1/v2 envelope branch + CRIT-01 client-side grep gate
+- [ ] 17-03-PLAN.md — WALLET-03 + WALLET-04 (discovery): CoordinatorCapabilities + DiscoveryError + extended discover_coordinator + Pitfall 5 BlindjoinRecord v-field rename + 9 D-78 acceptance-gate tests
 
 ### Phase 18: Mixed-Script E2E + Liquidity Bot
 **Goal**: An operator running the v1.4 stack on signet sees the liquidity bot generate UTXOs across all enabled script types, and the v1.4 acceptance gate — a mixed-script CoinJoin round on regtest — completes and broadcasts a real txid.
