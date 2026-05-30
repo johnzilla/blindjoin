@@ -1,9 +1,18 @@
 use std::collections::HashSet;
-use bitcoin::{OutPoint, Script, ScriptBuf, hashes::Hash};
-use bitcoin::secp256k1::{Secp256k1, Message as SecpMessage, ecdsa::Signature};
-use shared::bip322::{bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign, Bip322Error};
+
+use base64::Engine;
+use bitcoin::{Network, OutPoint, Script, ScriptBuf, Witness};
+use shared::bip322::{detect_script_type, verify_simple, Bip322Error, ScriptType};
 use shared::protocol::OwnershipProof;
+
 use crate::bitcoin::rpc::{BitcoinRpc, RpcError};
+use crate::config::BipConfig;
+
+// Phase 16: per-script verify lives in shared::bip322; the dispatcher in
+// validate_utxo below is the only entry point. Per the v1.4 ADR, the script
+// type is derived from the on-chain SPK, never from a client-supplied field.
+
+const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UtxoError {
@@ -36,7 +45,19 @@ pub struct UtxoDetails {
 /// 1. Not already registered in this round (double-registration prevention, UTXO-03)
 /// 2. Exists and is unspent (via Bitcoin Core RPC, UTXO-01)
 /// 3. Value >= denomination + fee_share_sats (UTXO-02)
-/// 4. BIP-322 ownership proof is valid (UTXO-04)
+/// 4. BIP-322 ownership proof valid via the multi-script dispatcher (UTXO-04).
+///    The dispatcher routes `OwnershipProof.version` to a v=1 (legacy
+///    witness-only) or v=2 (PSBT-input) branch. BOTH branches derive
+///    `ScriptType` from the on-chain script_pubkey (load-bearing security
+///    invariant — see inline comments in each version arm of the match) and
+///    check the `BipConfig` allowlist before calling
+///    `shared::bip322::verify_simple`. v=2 additionally cross-checks
+///    `declared == derived` BEFORE verify.
+///
+/// `bip_config` carries the operator-configured allowlist (D-51 / CD-14).
+/// `network` is threaded from `CoordinatorConfig::network::bitcoin_network`
+/// once at startup (D-51); the per-script verifier passes it to the bip322
+/// crate's `Address::from_script` step regardless of script type.
 pub async fn validate_utxo(
     rpc: &BitcoinRpc,
     utxo: &OutPoint,
@@ -44,6 +65,8 @@ pub async fn validate_utxo(
     denomination_sats: u64,
     fee_share_sats: u64,
     ownership_proof: &OwnershipProof,
+    bip_config: &BipConfig,
+    network: Network,
     round_id: &str,
 ) -> Result<UtxoDetails, UtxoError> {
     // 1. Double-registration check (T-03-02: prevents double-spend of same UTXO)
@@ -67,14 +90,105 @@ pub async fn validate_utxo(
         return Err(UtxoError::InsufficientValue { value: value_sats, required });
     }
 
-    // 4. BIP-322 ownership proof (UTXO-04, T-03-01)
+    // 4. BIP-322 ownership proof — multi-script dispatcher (UTXO-04, T-03-01).
     let script_pubkey = parse_script_pubkey_from_txout(&txout)
         .map_err(|e| UtxoError::InvalidProof { reason: e })?;
     let message = format!("blindjoin:round:{}:utxo:{}:{}", round_id, utxo.txid, utxo.vout);
-    verify_bip322_simple(&script_pubkey, &ownership_proof.witness_stack, &message)
-        .map_err(|e| UtxoError::InvalidProof { reason: e.to_string() })?;
+
+    let derived = dispatch_ownership_proof(
+        &script_pubkey,
+        ownership_proof,
+        network,
+        bip_config,
+        message.as_bytes(),
+    )
+    .map_err(|e| UtxoError::InvalidProof { reason: e.to_string() })?;
+
+    // D-50: structured success log. Fields = round_id (Display) + script_type
+    // (Debug) ONLY. No outpoint, address, witness, or pubkey bytes (PRIV-02).
+    tracing::info!(
+        round_id = %round_id,
+        script_type = ?derived,
+        "ownership proof verified"
+    );
 
     Ok(UtxoDetails { value_sats, script_pubkey })
+}
+
+/// Dispatcher core — pure function (no RPC / I/O) that takes the on-chain
+/// SPK and the wire envelope and returns the derived ScriptType on success
+/// or a typed `Bip322Error` on rejection. The dual-branch invariant comments
+/// live in the private body (`dispatch_ownership_proof`); see those for the
+/// load-bearing security note.
+///
+/// Extracted so unit tests (Tests 1-5 in plan 16-02 Task 1) AND integration
+/// tests (`tests/integration/multi_script_validate.rs`, Plan 16-02 Task 3)
+/// can assert on specific `Bip322Error` variants without (a) spinning up a
+/// BitcoinRpc, or (b) parsing the `UtxoError::InvalidProof { reason }` string
+/// — Phase 15-03 D-34 discipline.
+///
+/// Visibility is `pub` so the integration test binary (which sees only the
+/// crate's PUBLIC API) can reach it. The fn is gated behind `#[cfg(test)]` so
+/// it does NOT appear in the production-binary API surface; the dispatcher's
+/// production entry point remains `validate_utxo`.
+#[cfg(test)]
+pub fn validate_ownership_proof_typed(
+    script_pubkey: &Script,
+    ownership_proof: &OwnershipProof,
+    network: Network,
+    bip_config: &BipConfig,
+    message: &[u8],
+) -> Result<ScriptType, Bip322Error> {
+    dispatch_ownership_proof(script_pubkey, ownership_proof, network, bip_config, message)
+}
+
+/// Private dispatcher body — called from `validate_utxo` (production path) and
+/// from `validate_ownership_proof_typed` (test path). Centralising the body
+/// guarantees the production code is bit-exact with the path the tests assert
+/// on.
+fn dispatch_ownership_proof(
+    script_pubkey: &Script,
+    ownership_proof: &OwnershipProof,
+    network: Network,
+    bip_config: &BipConfig,
+    message: &[u8],
+) -> Result<ScriptType, Bip322Error> {
+    match ownership_proof.version {
+        1 => {
+            // CRIT-01: script_type derived from on-chain script_pubkey, never from client field
+            let derived = detect_script_type(script_pubkey)?;
+            if !bip_config.allows(derived) {
+                return Err(Bip322Error::UnsupportedScriptType);
+            }
+            let witness = Witness::from_slice(&ownership_proof.witness_stack);
+            verify_simple(derived, script_pubkey, &witness, message, network)?;
+            Ok(derived)
+        }
+        2 => {
+            let psbt_input_b64 = ownership_proof.psbt_input_b64.as_ref().ok_or_else(|| {
+                Bip322Error::WireFormatMismatch(
+                    "v2 OwnershipProof requires psbt_input_b64".into(),
+                )
+            })?;
+            let declared = ownership_proof.script_type.ok_or_else(|| {
+                Bip322Error::WireFormatMismatch(
+                    "v2 OwnershipProof requires script_type field".into(),
+                )
+            })?;
+            let witness = decode_psbt_input_witness(psbt_input_b64)?;
+            // CRIT-01: script_type derived from on-chain script_pubkey, never from client field
+            let derived = detect_script_type(script_pubkey)?;
+            if declared != derived {
+                return Err(Bip322Error::ScriptTypeMismatch { declared, derived });
+            }
+            if !bip_config.allows(derived) {
+                return Err(Bip322Error::UnsupportedScriptType);
+            }
+            verify_simple(derived, script_pubkey, &witness, message, network)?;
+            Ok(derived)
+        }
+        v => Err(Bip322Error::UnsupportedProofVersion(v)),
+    }
 }
 
 fn parse_script_pubkey_from_txout(txout: &corepc_types::v26::GetTxOut) -> Result<ScriptBuf, String> {
@@ -84,158 +198,277 @@ fn parse_script_pubkey_from_txout(txout: &corepc_types::v26::GetTxOut) -> Result
     Ok(ScriptBuf::from_bytes(bytes))
 }
 
-// v1.4 Phase 15 Plan 15-02: the local Bip322Error enum at this location was
-// deleted per CONTEXT D-29 / 15-PATTERNS.md "coordinator/src/bitcoin/utxo.rs:87-101"
-// section. The shared::bip322::Bip322Error import at the top of this file is
-// now the single source of truth for the verify_bip322_simple body's typed
-// errors. Wire mapping at coordinator/src/api/handlers.rs is unchanged —
-// every Bip322Error variant maps to ErrorCode::InvalidOwnershipProof per
-// D-32 (no per-script-type fingerprint leak).
-//
-// The verify_bip322_simple body below remains in place at Phase 15 and gets
-// its Err(...) returns remapped to the shared variant taxonomy. Phase 16
-// ADVERT-03 swaps the call site at lines 74-75 of validate_utxo to the new
-// shared::bip322::verify_simple dispatcher, at which point this whole
-// verify_bip322_simple body becomes dead code and is removed.
-
-/// BIP-322 Simple verification for P2WPKH outputs (~50 lines).
+/// Decode the v=2 PSBT-input envelope and extract the final witness.
 ///
-/// Per BIP-322 Section 4: construct a virtual to_spend transaction with:
-///   - One input: nSequence=0, nVersion=0, scriptSig=OP_0 <sha256(message)>
-///   - One output: scriptPubKey=<the UTXO's scriptPubKey>, value=0
-///
-/// Per BIP-322 Section 5: the to_sign transaction spends the to_spend output.
-/// For P2WPKH: the witness is [sig, pubkey]. Verify the ECDSA signature over
-/// the to_sign sighash.
-///
-/// Only P2WPKH is required for Phase 1. (D-04)
-pub fn verify_bip322_simple(
-    script_pubkey: &Script,
-    witness_stack: &[Vec<u8>],
-    message: &str,
-) -> Result<(), Bip322Error> {
-    if !script_pubkey.is_p2wpkh() {
-        return Err(Bip322Error::UnsupportedScriptType);
-    }
-
-    if witness_stack.len() != 2 {
-        return Err(Bip322Error::InvalidWitnessLength {
-            expected: 2,
-            got: witness_stack.len(),
-        });
-    }
-
-    let sig_bytes = &witness_stack[0];
-    let pubkey_bytes = &witness_stack[1];
-
-    // 1. Construct the BIP-322 message hash (tagged hash)
-    let msg_hash = bip322_message_hash(message.as_bytes());
-
-    // 2. Construct the to_spend transaction per BIP-322 Section 4
-    let to_spend = build_bip322_to_spend(script_pubkey, &msg_hash);
-
-    // 3. Construct the to_sign transaction per BIP-322 Section 5
-    let to_sign = build_bip322_to_sign(&to_spend);
-
-    // 4. Compute the P2WPKH sighash for the to_sign input
-    use bitcoin::sighash::{SighashCache, EcdsaSighashType};
-    use bitcoin::Amount;
-    let mut cache = SighashCache::new(&to_sign);
-    let sighash = cache.p2wpkh_signature_hash(
-        0,  // input index in to_sign
-        script_pubkey,
-        Amount::from_sat(0),  // to_spend output value is 0 per spec
-        EcdsaSighashType::All,
-    ).map_err(|e| Bip322Error::DecodeError(format!("p2wpkh sighash: {e}")))?;
-
-    // 5. Verify ECDSA signature
-    let secp = Secp256k1::verification_only();
-    let secp_msg = SecpMessage::from_digest(sighash.to_byte_array());
-
-    // sig_bytes may include the sighash type byte at the end — strip it
-    let sig_der = if sig_bytes.last().copied() == Some(0x01) {
-        &sig_bytes[..sig_bytes.len() - 1]
-    } else {
-        sig_bytes.as_slice()
-    };
-    let sig = Signature::from_der(sig_der)
-        .map_err(|e| Bip322Error::DecodeError(format!("ecdsa signature parse: {e}")))?;
-    let pubkey = bitcoin::secp256k1::PublicKey::from_slice(pubkey_bytes)
-        .map_err(|e| Bip322Error::DecodeError(format!("pubkey parse: {e}")))?;
-    secp.verify_ecdsa(&secp_msg, &sig, &pubkey)
-        .map_err(|e| Bip322Error::DecodeError(format!("ecdsa verify: {e}")))?;
-
-    // 6. Verify pubkey matches the script_pubkey (hash160 check for P2WPKH)
-    let compressed = bitcoin::PublicKey::new(pubkey);
-    let wpkh = compressed.wpubkey_hash()
-        .map_err(|e| Bip322Error::DecodeError(format!("wpubkey_hash: {e}")))?;
-    let expected_wpkh = ScriptBuf::new_p2wpkh(&wpkh);
-    if expected_wpkh != *script_pubkey {
-        return Err(Bip322Error::ScriptMismatch);
-    }
-
-    Ok(())
+/// Wire shape (Phase 16 RESEARCH Pitfall 7 Option 1): the base64 carries a
+/// full BIP-174 PSBT containing one input and zero outputs. We extract
+/// `psbt.inputs[0].final_script_witness`. The PSBT's
+/// `witness_utxo.script_pubkey` is **IGNORED** — the on-chain SPK from
+/// `gettxout` is the only trusted source. The PSBT here is a transport for
+/// the witness bytes, not an authority for the script type.
+fn decode_psbt_input_witness(b64: &str) -> Result<Witness, Bip322Error> {
+    let bytes = B64
+        .decode(b64)
+        .map_err(|e| Bip322Error::DecodeError(format!("base64: {e}")))?;
+    let psbt = bitcoin::psbt::Psbt::deserialize(&bytes)
+        .map_err(|e| Bip322Error::DecodeError(format!("psbt: {e}")))?;
+    let input = psbt.inputs.first().ok_or_else(|| {
+        Bip322Error::WireFormatMismatch("v2 PSBT envelope contains zero inputs".into())
+    })?;
+    let witness = input.final_script_witness.clone().ok_or_else(|| {
+        Bip322Error::WireFormatMismatch("v2 PSBT input lacks final_script_witness".into())
+    })?;
+    Ok(witness)
 }
-
-// bip322_message_hash, build_bip322_to_spend, build_bip322_to_sign are now
-// provided by shared::bip322 (imported at the top of this file).
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bitcoin::secp256k1::{Secp256k1, SecretKey as SecpSecretKey};
-    use bitcoin::sighash::{SighashCache, EcdsaSighashType};
+    use bitcoin::hashes::Hash;
+    use bitcoin::key::TapTweak;
+    use bitcoin::secp256k1::{Keypair, Message as SecpMessage, Secp256k1, SecretKey as SecpSecretKey, XOnlyPublicKey};
+    use bitcoin::sighash::{EcdsaSighashType, SighashCache};
     use bitcoin::{Amount, PublicKey};
+    use shared::bip322::{
+        bip322_message_hash, build_bip322_to_sign, build_bip322_to_spend,
+    };
 
-    fn make_p2wpkh_and_witness(message: &str) -> (ScriptBuf, Vec<Vec<u8>>) {
+    fn fixture_secret_key() -> SecpSecretKey {
+        SecpSecretKey::from_slice(&[0x42_u8; 32]).unwrap()
+    }
+
+    // Recipes mirror shared::bip322::tests::fixture_p2wpkh_spk / fixture_p2tr_spk
+    // (shared/src/bip322/mod.rs:445-474). Reconstructed verbatim here because the
+    // Phase 15 helpers are `#[cfg(test)] mod tests` private and not reachable from
+    // an external crate's test code. Keeping the per-script SPK construction
+    // co-located with the dispatcher tests makes B4 self-contained.
+    fn fixture_p2wpkh_spk() -> ScriptBuf {
         let secp = Secp256k1::new();
-        let secret_key = SecpSecretKey::from_slice(&[0x01_u8; 32]).unwrap();
-        let pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-        let compressed = PublicKey::new(pubkey);
-        let script_pubkey = ScriptBuf::new_p2wpkh(&compressed.wpubkey_hash().unwrap());
+        let sk = fixture_secret_key();
+        let pk = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let compressed = PublicKey::new(pk);
+        ScriptBuf::new_p2wpkh(&compressed.wpubkey_hash().unwrap())
+    }
 
-        // Build the BIP-322 transactions
-        let msg_hash = bip322_message_hash(message.as_bytes());
-        let to_spend = build_bip322_to_spend(&script_pubkey, &msg_hash);
+    fn fixture_p2tr_spk() -> ScriptBuf {
+        let secp = Secp256k1::new();
+        let sk = fixture_secret_key();
+        let keypair = Keypair::from_secret_key(&secp, &sk);
+        let (_xonly, _parity) = XOnlyPublicKey::from_keypair(&keypair);
+        let tweaked = keypair.tap_tweak(&secp, None);
+        let tweaked_xonly = tweaked.to_keypair().x_only_public_key().0;
+        ScriptBuf::new_p2tr_tweaked(tweaked_xonly.dangerous_assume_tweaked())
+    }
+
+    /// Build a valid P2WPKH witness stack for the given (spk, message) pair.
+    /// Mirrors the inner sign body in shared::bip322::p2wpkh::sign; reproduced
+    /// inline because that fn is `pub(crate)` to the shared crate.
+    fn build_p2wpkh_witness_stack(spk: &Script, message: &[u8]) -> Vec<Vec<u8>> {
+        let secp = Secp256k1::new();
+        let sk = fixture_secret_key();
+        let pk = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let msg_hash = bip322_message_hash(message);
+        let to_spend = build_bip322_to_spend(spk, &msg_hash);
         let to_sign = build_bip322_to_sign(&to_spend);
-
-        // Sign
         let mut cache = SighashCache::new(&to_sign);
-        let sighash = cache.p2wpkh_signature_hash(0, &script_pubkey, Amount::ZERO, EcdsaSighashType::All).unwrap();
-        let secp_msg = bitcoin::secp256k1::Message::from_digest(sighash.to_byte_array());
-        let sig = secp.sign_ecdsa(&secp_msg, &secret_key);
+        let sighash = cache
+            .p2wpkh_signature_hash(0, spk, Amount::ZERO, EcdsaSighashType::All)
+            .unwrap();
+        let secp_msg = SecpMessage::from_digest(*sighash.as_byte_array());
+        let sig = secp.sign_ecdsa(&secp_msg, &sk);
         let mut sig_bytes = sig.serialize_der().to_vec();
         sig_bytes.push(0x01); // SIGHASH_ALL
+        vec![sig_bytes, pk.serialize().to_vec()]
+    }
 
-        let witness_stack = vec![sig_bytes, pubkey.serialize().to_vec()];
-        (script_pubkey, witness_stack)
+    /// Default-allowlist BipConfig (all 3 script types allowed). Production
+    /// default per Phase 16 Plan 16-01 D-38.
+    fn default_bip_config() -> BipConfig {
+        BipConfig::default()
     }
 
     #[test]
-    fn bip322_valid_p2wpkh() {
-        let msg = "blindjoin:round:test-round-id:utxo:abc:0";
-        let (script, witness) = make_p2wpkh_and_witness(msg);
-        assert!(verify_bip322_simple(&script, &witness, msg).is_ok());
+    fn dispatcher_v1_legacy_p2wpkh_routes_to_verify_simple() {
+        // Cross-phase invariant test at unit-tier: v=1 path's verify_simple(P2wpkh, ...)
+        // is bit-exact with the deleted verify_bip322_simple per Phase 15-02 SUMMARY.
+        let spk = fixture_p2wpkh_spk();
+        let round_id = "test-round-id";
+        let utxo_id = "abcdef:0";
+        let message = format!("blindjoin:round:{}:utxo:{}", round_id, utxo_id);
+        let witness_stack = build_p2wpkh_witness_stack(&spk, message.as_bytes());
+
+        let proof = OwnershipProof {
+            version: 1,
+            witness_stack,
+            psbt_input_b64: None,
+            script_type: None,
+        };
+        let cfg = default_bip_config();
+
+        let result = validate_ownership_proof_typed(
+            &spk,
+            &proof,
+            Network::Regtest,
+            &cfg,
+            message.as_bytes(),
+        );
+        assert!(result.is_ok(), "v=1 legacy P2WPKH must verify: {result:?}");
+        assert_eq!(result.unwrap(), ScriptType::P2wpkh);
     }
 
     #[test]
-    fn bip322_wrong_witness_length() {
-        let msg = "blindjoin:round:test:utxo:abc:0";
-        let (script, _witness) = make_p2wpkh_and_witness(msg);
-        let result = verify_bip322_simple(&script, &[vec![0x01]], msg);
-        assert!(matches!(
-            result,
-            Err(Bip322Error::InvalidWitnessLength { expected: 2, got: 1 })
-        ));
+    fn dispatcher_unknown_version_3_rejects_unsupported_proof_version() {
+        let spk = fixture_p2wpkh_spk();
+        let proof = OwnershipProof {
+            version: 3,
+            witness_stack: vec![],
+            psbt_input_b64: None,
+            script_type: None,
+        };
+        let cfg = default_bip_config();
+        let err = validate_ownership_proof_typed(
+            &spk,
+            &proof,
+            Network::Regtest,
+            &cfg,
+            b"msg",
+        )
+        .expect_err("v=3 must reject");
+        assert!(
+            matches!(err, Bip322Error::UnsupportedProofVersion(3)),
+            "expected UnsupportedProofVersion(3), got: {err:?}"
+        );
     }
 
     #[test]
-    fn bip322_wrong_message_fails() {
-        let msg = "blindjoin:round:test:utxo:abc:0";
-        let wrong_msg = "blindjoin:round:test:utxo:abc:1";
-        let (script, witness) = make_p2wpkh_and_witness(msg);
-        // Witness was signed for `msg`, verifying against `wrong_msg` must fail
-        let result = verify_bip322_simple(&script, &witness, wrong_msg);
-        assert!(result.is_err());
+    fn dispatcher_v2_proof_without_script_type_rejects_wireformat_mismatch() {
+        let spk = fixture_p2wpkh_spk();
+        let proof = OwnershipProof {
+            version: 2,
+            witness_stack: vec![],
+            psbt_input_b64: Some("AA==".to_string()),
+            script_type: None,
+        };
+        let cfg = default_bip_config();
+        let err = validate_ownership_proof_typed(
+            &spk,
+            &proof,
+            Network::Regtest,
+            &cfg,
+            b"msg",
+        )
+        .expect_err("v=2 without script_type must reject");
+        match err {
+            Bip322Error::WireFormatMismatch(ref msg) => {
+                assert!(
+                    msg.contains("script_type"),
+                    "WireFormatMismatch should mention 'script_type': {msg}"
+                );
+            }
+            other => panic!("expected WireFormatMismatch, got: {other:?}"),
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Spoofing-rejection at fast-CI tier (Plan 16-02 B4 closure).
+    // ---------------------------------------------------------------------
+    //
+    // Constructs a v=2 OwnershipProof whose `script_type` field declares
+    // ONE script type, against an on-chain SPK derived from ANOTHER script
+    // type. The dispatcher's declared-vs-derived cross-check MUST fire
+    // BEFORE verify_simple inspects the witness — so the witness can be
+    // arbitrary bytes (we use the smallest valid PSBT envelope) and the
+    // test still exercises the correct rejection path.
+    //
+    // A future refactor that drops `if declared != derived` from the v=2
+    // arm fails these two tests at fast-CI tier (no bitcoind required).
+    // ---------------------------------------------------------------------
+
+    /// Build a minimal v=2 PSBT envelope b64 carrying a single-input,
+    /// zero-output PSBT with a `final_script_witness` of arbitrary bytes.
+    /// The witness bytes are NOT inspected — the declared-vs-derived
+    /// cross-check fires strictly before verify_simple.
+    fn minimal_v2_psbt_b64_with_arbitrary_witness() -> String {
+        use bitcoin::psbt::Psbt;
+        use bitcoin::{absolute, transaction, OutPoint, Sequence, Transaction, TxIn};
+
+        let unsigned_tx = Transaction {
+            version: transaction::Version(2),
+            lock_time: absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ZERO,
+                witness: Witness::new(),
+            }],
+            output: vec![],
+        };
+        let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).expect("unsigned tx -> psbt");
+        // Push an arbitrary-bytes witness; the dispatcher's declared-vs-derived cross-check
+        // fires BEFORE the witness is consumed, so contents are irrelevant.
+        let mut w = Witness::new();
+        w.push([0u8; 64]);
+        psbt.inputs[0].final_script_witness = Some(w);
+        B64.encode(psbt.serialize())
+    }
+
+    #[test]
+    fn dispatcher_v2_p2wpkh_chain_p2tr_declared_rejects_spoofing() {
+        let spk_on_chain = fixture_p2wpkh_spk();
+        let proof = OwnershipProof {
+            version: 2,
+            witness_stack: vec![],
+            psbt_input_b64: Some(minimal_v2_psbt_b64_with_arbitrary_witness()),
+            script_type: Some(ScriptType::P2tr), // CLIENT-DECLARED P2TR
+        };
+        let cfg = default_bip_config();
+        let err = validate_ownership_proof_typed(
+            &spk_on_chain,
+            &proof,
+            Network::Regtest,
+            &cfg,
+            b"msg",
+        )
+        .expect_err("declared p2tr against on-chain p2wpkh must reject");
+        assert!(
+            matches!(
+                err,
+                Bip322Error::ScriptTypeMismatch {
+                    declared: ScriptType::P2tr,
+                    derived: ScriptType::P2wpkh,
+                }
+            ),
+            "expected ScriptTypeMismatch {{ declared: P2tr, derived: P2wpkh }}, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn dispatcher_v2_p2tr_chain_p2wpkh_declared_rejects_spoofing() {
+        let spk_on_chain = fixture_p2tr_spk();
+        let proof = OwnershipProof {
+            version: 2,
+            witness_stack: vec![],
+            psbt_input_b64: Some(minimal_v2_psbt_b64_with_arbitrary_witness()),
+            script_type: Some(ScriptType::P2wpkh), // CLIENT-DECLARED P2WPKH
+        };
+        let cfg = default_bip_config();
+        let err = validate_ownership_proof_typed(
+            &spk_on_chain,
+            &proof,
+            Network::Regtest,
+            &cfg,
+            b"msg",
+        )
+        .expect_err("declared p2wpkh against on-chain p2tr must reject");
+        assert!(
+            matches!(
+                err,
+                Bip322Error::ScriptTypeMismatch {
+                    declared: ScriptType::P2wpkh,
+                    derived: ScriptType::P2tr,
+                }
+            ),
+            "expected ScriptTypeMismatch {{ declared: P2wpkh, derived: P2tr }}, got: {err:?}"
+        );
     }
 }

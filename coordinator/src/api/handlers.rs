@@ -170,6 +170,11 @@ pub async fn post_input(
     // phase can build a correct witness_utxo instead of synthesizing one from the
     // participant's change address (the old bug that forced clients to overwrite
     // witness_utxo locally with their own unverified --utxo-value-sats CLI arg).
+    //
+    // v1.4 Phase 16-02: thread BipConfig (allowlist) + Network into validate_utxo
+    // so the dispatcher can policy-gate on script type (D-51 + CD-14) and pass
+    // the network to shared::bip322::verify_simple regardless of variant.
+    let bitcoin_network_for_validate = parse_bitcoin_network(&state.config.network.bitcoin_network);
     let utxo_details = crate::bitcoin::utxo::validate_utxo(
         &state.rpc,
         &utxo,
@@ -177,6 +182,8 @@ pub async fn post_input(
         denomination_sats_snap,
         fee_share_pre_lock,
         &ownership_proof,
+        &state.config.bip,
+        bitcoin_network_for_validate,
         &snap_round_id,
     ).await.map_err(|e| {
         use crate::bitcoin::utxo::UtxoError;
