@@ -51,7 +51,7 @@
 
 - [x] **Phase 14: Sprint-0 Spikes + Discuss-Phase Decisions** — Two timeboxed spikes (`bip322` crate pin verification, bdk_wallet 2.3 P2TR sign PoC) produced a GO/PASS ADR resolving Open Decisions #1 (ADOPT `bip322 = "=0.0.10"`), #2 (mixed rounds), #3 (B2 PSBT-input wire format), #4 (bdk path for P2TR sign). ✅ completed 2026-05-29
 - [x] **Phase 15: Shared Crate Multi-Script Contract** — `shared/` exposes `ScriptType` dispatch, per-type BIP-322 sign/verify, extended `OwnershipProof` + `InfoResponse` wire types, and per-script-type property tests against the official BIP-322 vectors. (completed 2026-05-30)
-- [ ] **Phase 16: Coordinator Integration & Advertisement** — Replace the `is_p2wpkh()` gate with a config-driven allowlist + dispatcher; advertise `supported_script_types` over PKARR and `/round/info`; cross-check declared script type against on-chain `scriptPubKey` (CRIT-01).
+- [x] **Phase 16: Coordinator Integration & Advertisement** — Replace the `is_p2wpkh()` gate with a config-driven allowlist + dispatcher; advertise `supported_script_types` over PKARR and `/round/info`; cross-check declared script type against on-chain `scriptPubKey` (CRIT-01). (completed 2026-05-30)
 - [ ] **Phase 17: Client Multi-Script Wallet & Discovery** — Client wallet supports BIP-84 / BIP-86 / BIP-49 descriptors, signs ownership proofs for all three types, and rejects mismatched coordinators at discovery before opening a Tor circuit; ships v1.4→v1.3 compatibility shim.
 - [ ] **Phase 18: Mixed-Script E2E + Liquidity Bot** — Liquidity bot generates UTXOs across all enabled script types and rotates per round; mixed-script regtest integration test (1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH) completes a full CoinJoin round through BROADCAST.
 
@@ -100,7 +100,7 @@
 **Plans**: 3 plans
 - [x] 16-01-PLAN.md — BipConfig struct + validate() + InfoResponse wire-format extension + get_info handler (wire/config-first atomic commit per CD-10 / REPAIR-01 lesson #1) — ADVERT-01
 - [x] 16-02-PLAN.md — validate_utxo dispatcher swap + CRIT-01 cross-check + multi_script_validate.rs (9 D-54 tests) + fund_regtest_typed helper + CI crit-01-grep-check job — ADVERT-01, ADVERT-03
-- [ ] 16-03-PLAN.md — PKARR record v0.2.0 with `sst` + `ost` fields + 220-byte budget regression gate (`coordinator_packet_under_220_byte_budget`) — ADVERT-02
+- [x] 16-03-PLAN.md — PKARR record v0.2.0 with `sst` + `ost` fields + 220-byte budget regression gate (`coordinator_packet_under_220_byte_budget`) — ADVERT-02
 
 ### Phase 17: Client Multi-Script Wallet & Discovery
 **Goal**: A user with a v1.4 client can generate a wallet of any of three script types, sign BIP-322 ownership proofs for that type, and reject mismatched coordinators before any Tor circuit opens.
@@ -162,7 +162,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 11-13. REPAIR-01 carry-forward (shipped as direct commits) | v1.3 | n/a | Closed-local | 2026-05-29 |
 | 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete    | 2026-05-30 |
 | 15. Shared Crate Multi-Script Contract | v1.4 | 3/3 | Complete   | 2026-05-30 |
-| 16. Coordinator Integration & Advertisement | v1.4 | 2/3 | In Progress|  |
+| 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 0/0 | Not started | — |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 0/0 | Not started | — |
 
