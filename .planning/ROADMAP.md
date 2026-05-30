@@ -114,7 +114,7 @@
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary (the client's existing P2WPKH path is preserved as a code path, not removed in favor of the new dispatcher).
 **Plans**: 3 plans
 - [x] 17-01-PLAN.md — WALLET-01: --type CLI flag + BIP-84/86/49 descriptor templates + script_type field on BdkClientWallet + construction-time mismatch check
-- [ ] 17-02-PLAN.md — WALLET-02 + WALLET-04 (encoder): Bip322SignedProof + sign_bip322 dispatcher (WIF→shared::bip322; descriptor→bdk PSBT path) + v1/v2 envelope branch + CRIT-01 client-side grep gate
+- [x] 17-02-PLAN.md — WALLET-02 + WALLET-04 (encoder): Bip322SignedProof + sign_bip322 dispatcher (WIF→shared::bip322; descriptor→bdk PSBT path) + v1/v2 envelope branch + CRIT-01 client-side grep gate
 - [ ] 17-03-PLAN.md — WALLET-03 + WALLET-04 (discovery): CoordinatorCapabilities + DiscoveryError + extended discover_coordinator + Pitfall 5 BlindjoinRecord v-field rename + 9 D-78 acceptance-gate tests
 
 ### Phase 18: Mixed-Script E2E + Liquidity Bot
@@ -163,7 +163,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete    | 2026-05-30 |
 | 15. Shared Crate Multi-Script Contract | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete   | 2026-05-30 |
-| 17. Client Multi-Script Wallet & Discovery | v1.4 | 1/3 | In Progress|  |
+| 17. Client Multi-Script Wallet & Discovery | v1.4 | 2/3 | In Progress|  |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 0/0 | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
