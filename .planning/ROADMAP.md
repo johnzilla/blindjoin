@@ -98,9 +98,9 @@
   4. A spoofing attempt — client declares `script_type: p2wpkh` for an on-chain P2TR UTXO — is rejected with `UnsupportedScriptType` at validate-utxo time because the coordinator derives `script_type` from `txout.script_pubkey` and cross-checks against the client declaration (CRIT-01 invariant, load-bearing, code-review checked).
   5. v1.3 `full_round::*` integration tests still pass at this phase boundary AND a v1.3 client successfully registers a P2WPKH UTXO against the v1.4 coordinator (one cell of the backwards-compat matrix verified inline).
 **Plans**: 3 plans
-- [x] 14-01-PLAN.md — Sprint-0-A: bip322 0.0.10 cargo tree + cargo audit probe (resolves Open Decision #1)
-- [ ] 14-02-PLAN.md — Sprint-0-B: bdk_wallet 2.3 P2TR BIP-322 sign PoC (resolves Open Decision #4)
-- [x] 14-03-PLAN.md — v1.4 ADR ratification + Phase 14 closeout (records all 4 Open Decisions; structural D-21 gate)
+- [ ] 16-01-PLAN.md — BipConfig struct + validate() + InfoResponse wire-format extension + get_info handler (wire/config-first atomic commit per CD-10 / REPAIR-01 lesson #1) — ADVERT-01
+- [ ] 16-02-PLAN.md — validate_utxo dispatcher swap + CRIT-01 cross-check + multi_script_validate.rs (9 D-54 tests) + fund_regtest_typed helper + CI crit-01-grep-check job — ADVERT-01, ADVERT-03
+- [ ] 16-03-PLAN.md — PKARR record v0.2.0 with `sst` + `ost` fields + 220-byte budget regression gate (`coordinator_packet_under_220_byte_budget`) — ADVERT-02
 
 ### Phase 17: Client Multi-Script Wallet & Discovery
 **Goal**: A user with a v1.4 client can generate a wallet of any of three script types, sign BIP-322 ownership proofs for that type, and reject mismatched coordinators before any Tor circuit opens.
@@ -162,7 +162,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 11-13. REPAIR-01 carry-forward (shipped as direct commits) | v1.3 | n/a | Closed-local | 2026-05-29 |
 | 14. Sprint-0 Spikes + Discuss-Phase Decisions | v1.4 | 3/3 | Complete    | 2026-05-30 |
 | 15. Shared Crate Multi-Script Contract | v1.4 | 3/3 | Complete   | 2026-05-30 |
-| 16. Coordinator Integration & Advertisement | v1.4 | 0/0 | Not started | — |
+| 16. Coordinator Integration & Advertisement | v1.4 | 0/3 | Planning complete | — |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 0/0 | Not started | — |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 0/0 | Not started | — |
 
