@@ -4,8 +4,8 @@ milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
 current_plan: "ready for /gsd:verify-phase 17 + /gsd:plan-phase 18"
 status: completed
-stopped_at: Phase 17 complete — Plan 17-03 closed; WALLET-01..04 all satisfied
-last_updated: "2026-05-30T15:05:50.132Z"
+stopped_at: Phase 18 context gathered
+last_updated: "2026-05-30T21:54:52.398Z"
 last_activity: 2026-05-30 -- Phase 17 marked complete
 progress:
   total_phases: 5
@@ -47,9 +47,9 @@ See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 ## Session Continuity
 
-**Stopped At:** Phase 17 complete — Plan 17-03 closed; WALLET-01..04 all satisfied
+**Stopped At:** Phase 18 context gathered
 **Resume File:** 
-None
+.planning/phases/18-mixed-script-e2e-liquidity-bot/18-CONTEXT.md
 
 ## Blockers
 
