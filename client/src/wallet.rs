@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use bdk_wallet::{KeychainKind, Wallet};
 #[allow(deprecated)]
 use bdk_wallet::signer::SignOptions;
+use shared::bip322::ScriptType;
 
 /// HD-wallet backed CoinJoin client using bdk_wallet 2.3.
 ///
@@ -18,11 +19,22 @@ pub struct BdkClientWallet {
     #[allow(dead_code)]
     pub network: Network,
     pub utxo_outpoint: OutPoint,
-    /// The P2WPKH script_pubkey controlling the UTXO (needed for BIP-322 and PSBT signing).
+    /// The script_pubkey (P2WPKH / P2TR / P2SH-P2WPKH) controlling the UTXO,
+    /// needed for BIP-322 and PSBT signing.
     utxo_script_pubkey: ScriptBuf,
     /// The WIF key string, stored for secret_key_for_signing (WIF wallets only).
     wif_key: Option<String>,
+    /// The descriptor's outer-wrapper type. Set at construction; single source of
+    /// truth for downstream consumers (Phase 17 17-02 sign dispatcher + 17-03
+    /// discovery check). Per D-62 the wallet KNOWS its type — never re-detected
+    /// at sign-time. Per D-61 from_wif always sets P2wpkh.
+    script_type: ScriptType,
     inner: Wallet,
+    /// Test-only mirror of the generated/loaded external descriptor string, so
+    /// unit tests can deterministically assert the BIP-84/86/49 prefix without
+    /// driving bdk_wallet's internal descriptor formatter.
+    #[cfg(test)]
+    external_desc_str: String,
 }
 
 impl BdkClientWallet {
@@ -30,6 +42,12 @@ impl BdkClientWallet {
     ///
     /// Accepts the same arguments as the Phase 1 ClientWallet::from_wif.
     /// Integration tests use this path — the API contract is preserved.
+    ///
+    /// P2WPKH-only per Phase 17 D-61 — descriptor wallets always come through
+    /// from_descriptor or generate. This signature does NOT accept a script_type
+    /// parameter; the returned wallet's script_type is hardcoded to P2wpkh so
+    /// the v1.3 cross-phase invariant (tests/integration/full_round.rs) stays
+    /// bit-exact unchanged.
     pub fn from_wif(
         wif: &str,
         utxo_outpoint_str: &str,
@@ -52,7 +70,7 @@ impl BdkClientWallet {
         // same" — use Wallet::create_single(d) instead, which is bdk's purpose-built
         // API for keychain-less wallets (added in 2.x for exactly this case).
         let descriptor = format!("wpkh({})", wif);
-        let inner = Wallet::create_single(descriptor)
+        let inner = Wallet::create_single(descriptor.clone())
             .network(bdk_net)
             .create_wallet_no_persist()
             .map_err(|e| anyhow!("Failed to create bdk wallet from WIF: {e}"))?;
@@ -63,21 +81,53 @@ impl BdkClientWallet {
             utxo_outpoint: outpoint,
             utxo_script_pubkey,
             wif_key: Some(wif.to_string()),
+            // D-61: from_wif is P2WPKH-only — hardcode here so the cross-phase
+            // invariant (tests/integration/full_round.rs) stays bit-exact.
+            script_type: ScriptType::P2wpkh,
             inner,
+            #[cfg(test)]
+            external_desc_str: descriptor,
         })
     }
 
-    /// Build a wallet from user-provided BIP-84 xprv descriptor strings.
+    /// Build a wallet from user-provided BIP descriptor strings.
     ///
-    /// external_desc: e.g. "wpkh(xprv.../84'/0'/0'/0/*)"
-    /// utxo_address: bech32 address of the UTXO being registered (needed to derive
-    ///   utxo_script_pubkey without chain data).
+    /// external_desc: e.g. "wpkh(xprv.../84'/0'/0'/0/*)" (P2WPKH/BIP-84),
+    ///                     "tr(xprv.../86'/0'/0'/0/*)" (P2TR/BIP-86),
+    ///                     "sh(wpkh(xprv.../49'/0'/0'/0/*))" (P2SH-P2WPKH/BIP-49).
+    /// utxo_address: bech32 / bech32m / base58 address of the UTXO being registered
+    ///   (needed to derive utxo_script_pubkey without chain data).
+    /// script_type: the user-declared --type flag. Cross-checked against the
+    ///   descriptor's outer wrapper at construction time per D-63 — a mismatch
+    ///   fails fast with both names in the error message.
     pub fn from_descriptor(
         external_desc: &str,
         utxo_outpoint_str: &str,
         utxo_address: &str,
         network: Network,
+        script_type: ScriptType,
     ) -> Result<Self> {
+        // D-63: construction-time script-type vs descriptor wrapper cross-check.
+        // Detect the wrapper by string-matching the well-known prefixes (sh(wpkh
+        // FIRST, because "sh(" alone also matches sh(wpkh) — and the latter is
+        // the only sh() shape we support in Phase 17).
+        let detected = if external_desc.starts_with("sh(wpkh(") {
+            ScriptType::P2shP2wpkh
+        } else if external_desc.starts_with("wpkh(") {
+            ScriptType::P2wpkh
+        } else if external_desc.starts_with("tr(") {
+            ScriptType::P2tr
+        } else {
+            return Err(anyhow!(
+                "descriptor wrapper not recognised: expected `wpkh(...)`, `tr(...)`, or `sh(wpkh(...))` (got: {external_desc:?})"
+            ));
+        };
+        if detected != script_type {
+            return Err(anyhow!(
+                "descriptor wrapper {detected:?} does not match --type {script_type:?}"
+            ));
+        }
+
         // Derive internal (change) descriptor by replacing last "/0/*" with "/1/*"
         let internal_desc = if external_desc.contains("/0/*)") {
             external_desc.replacen("/0/*)", "/1/*)", 1)
@@ -105,11 +155,21 @@ impl BdkClientWallet {
             utxo_outpoint: outpoint,
             utxo_script_pubkey,
             wif_key: None,
+            script_type,
             inner,
+            #[cfg(test)]
+            external_desc_str: external_desc.to_string(),
         })
     }
 
-    /// Generate a fresh BIP-84 (P2WPKH) wallet using a random mnemonic.
+    /// Generate a fresh BIP-84 / BIP-86 / BIP-49 wallet using a random mnemonic.
+    ///
+    /// The `script_type` arg selects the descriptor template (D-58): P2wpkh →
+    /// BIP-84, P2tr → BIP-86, P2shP2wpkh → BIP-49. coin=0' is preserved across
+    /// ALL networks per D-66 — DO NOT switch to `bdk_wallet::template::Bip84/86/49`
+    /// because those auto-select coin=1' on testnet/signet and break v1.3
+    /// byte-equivalence (RESEARCH Pitfall 2; load-bearing for the cross-phase
+    /// invariant tests/integration/full_round.rs).
     ///
     /// Prints the external and internal descriptors to stdout with a prominent warning.
     /// Also writes a descriptors.txt file in cwd with 0600 permissions (T-03-04 mitigation).
@@ -117,6 +177,7 @@ impl BdkClientWallet {
     pub fn generate(
         utxo_outpoint_str: &str,
         network: Network,
+        script_type: ScriptType,
     ) -> Result<Self> {
         use bdk_wallet::keys::GeneratableKey;
         use bdk_wallet::keys::bip39::{Mnemonic, Language, WordCount};
@@ -137,8 +198,27 @@ impl BdkClientWallet {
         let xprv = xkey.into_xprv(bdk_net)
             .ok_or_else(|| anyhow!("Failed to get xprv from extended key"))?;
 
-        let external_desc = format!("wpkh({}/84'/0'/0'/0/*)", xprv);
-        let internal_desc = format!("wpkh({}/84'/0'/0'/1/*)", xprv);
+        // D-58 / D-66: literal descriptor templates, coin=0' across all networks.
+        // The P2WPKH branch is UNCHANGED from v1.3 → cross-phase byte-equivalence.
+        let (external_desc, internal_desc) = match script_type {
+            ScriptType::P2wpkh => (
+                format!("wpkh({}/84'/0'/0'/0/*)", xprv),
+                format!("wpkh({}/84'/0'/0'/1/*)", xprv),
+            ),
+            ScriptType::P2tr => (
+                format!("tr({}/86'/0'/0'/0/*)", xprv),
+                format!("tr({}/86'/0'/0'/1/*)", xprv),
+            ),
+            ScriptType::P2shP2wpkh => (
+                format!("sh(wpkh({}/49'/0'/0'/0/*))", xprv),
+                format!("sh(wpkh({}/49'/0'/0'/1/*))", xprv),
+            ),
+        };
+        let (script_type_kebab, bip) = match script_type {
+            ScriptType::P2wpkh => ("p2wpkh", 84u32),
+            ScriptType::P2tr => ("p2tr", 86u32),
+            ScriptType::P2shP2wpkh => ("p2sh-p2wpkh", 49u32),
+        };
 
         let inner = Wallet::create(external_desc.clone(), internal_desc.clone())
             .network(bdk_net)
@@ -173,8 +253,11 @@ impl BdkClientWallet {
         println!("  FUND THIS ADDRESS TO PARTICIPATE IN A ROUND:");
         println!("=============================================================");
         println!("  {}", first_address);
+        // D-60: per-type banner line so the user sees which script type the
+        // address corresponds to (BIP-84 P2WPKH / BIP-86 P2TR / BIP-49 P2SH-P2WPKH).
+        println!("  Script type: {} (BIP-{})", script_type_kebab, bip);
         println!();
-        println!("  (BIP-84 path: m/84'/0'/0'/0/0)");
+        println!("  (BIP-{} path: m/{}'/0'/0'/0/0)", bip, bip);
         println!();
         println!("This is the wallet's first external address. The signer will");
         println!("ONLY produce valid signatures for a UTXO at this address.");
@@ -209,7 +292,10 @@ impl BdkClientWallet {
             utxo_outpoint: outpoint,
             utxo_script_pubkey,
             wif_key: None,
+            script_type,
             inner,
+            #[cfg(test)]
+            external_desc_str: external_desc,
         })
     }
 
@@ -226,9 +312,26 @@ impl BdkClientWallet {
             .inner
     }
 
-    /// Returns the P2WPKH script_pubkey for the UTXO being registered.
+    /// Returns the script_pubkey (P2WPKH / P2TR / P2SH-P2WPKH) for the UTXO being registered.
     pub fn script_pubkey(&self) -> ScriptBuf {
         self.utxo_script_pubkey.clone()
+    }
+
+    /// Returns the wallet's descriptor outer-wrapper script type. Set at
+    /// construction (per D-62) and treated as the single source of truth by
+    /// downstream consumers (Phase 17 17-02 sign dispatcher + 17-03 discovery
+    /// fail-fast + the v=2 OwnershipProof CRIT-01 wire source). ScriptType
+    /// derives Copy so the accessor returns by value.
+    pub fn script_type(&self) -> ScriptType {
+        self.script_type
+    }
+
+    /// Test-only accessor returning the generated/loaded external descriptor
+    /// string, so unit tests can deterministically assert the BIP-84/86/49
+    /// prefix shape.
+    #[cfg(test)]
+    pub(crate) fn external_desc_str(&self) -> &str {
+        &self.external_desc_str
     }
 
     /// Derive the receive address for the CoinJoin output (index 0).
@@ -306,4 +409,125 @@ pub fn parse_outpoint(s: &str) -> Result<OutPoint> {
 /// Both crates re-export bitcoin 0.32 — these are identical types, no conversion needed.
 fn bdk_network(network: Network) -> bdk_wallet::bitcoin::Network {
     network
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::bip322::ScriptType;
+
+    // Phase 17 17-01 Task 2 — descriptor templates per script type (D-58),
+    // construction-time mismatch fail-fast (D-63), accessor (D-62), and the
+    // from_wif P2WPKH-only invariant (D-61).
+
+    const DUMMY_OUTPOINT: &str =
+        "0000000000000000000000000000000000000000000000000000000000000000:0";
+
+    #[test]
+    fn generate_p2wpkh_produces_bip84_descriptor() {
+        let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2wpkh)
+            .expect("P2WPKH generate should succeed");
+        let desc = wallet.external_desc_str();
+        assert!(
+            desc.starts_with("wpkh("),
+            "expected BIP-84 wpkh( prefix, got: {desc}"
+        );
+        assert!(
+            desc.contains("/84'/0'/0'/0/*"),
+            "expected BIP-84 derivation path /84'/0'/0'/0/* (coin=0' per D-66), got: {desc}"
+        );
+    }
+
+    #[test]
+    fn generate_p2tr_produces_bip86_descriptor() {
+        let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr)
+            .expect("P2TR generate should succeed");
+        let desc = wallet.external_desc_str();
+        assert!(
+            desc.starts_with("tr("),
+            "expected BIP-86 tr( prefix, got: {desc}"
+        );
+        assert!(
+            desc.contains("/86'/0'/0'/0/*"),
+            "expected BIP-86 derivation path /86'/0'/0'/0/* (coin=0' per D-66), got: {desc}"
+        );
+    }
+
+    #[test]
+    fn generate_p2sh_p2wpkh_produces_bip49_descriptor() {
+        let wallet = BdkClientWallet::generate(
+            DUMMY_OUTPOINT,
+            Network::Signet,
+            ScriptType::P2shP2wpkh,
+        )
+        .expect("P2SH-P2WPKH generate should succeed");
+        let desc = wallet.external_desc_str();
+        assert!(
+            desc.starts_with("sh(wpkh("),
+            "expected BIP-49 sh(wpkh( prefix, got: {desc}"
+        );
+        assert!(
+            desc.contains("/49'/0'/0'/0/*"),
+            "expected BIP-49 derivation path /49'/0'/0'/0/* (coin=0' per D-66), got: {desc}"
+        );
+    }
+
+    #[test]
+    fn script_type_accessor_matches_construction() {
+        // For each of the 3 generate paths, wallet.script_type() must return
+        // the script type passed to generate (D-62).
+        let w1 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2wpkh)
+            .expect("P2WPKH generate should succeed");
+        assert_eq!(w1.script_type(), ScriptType::P2wpkh);
+
+        let w2 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr)
+            .expect("P2TR generate should succeed");
+        assert_eq!(w2.script_type(), ScriptType::P2tr);
+
+        let w3 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2shP2wpkh)
+            .expect("P2SH-P2WPKH generate should succeed");
+        assert_eq!(w3.script_type(), ScriptType::P2shP2wpkh);
+    }
+
+    #[test]
+    fn from_descriptor_rejects_p2tr_flag_with_wpkh_descriptor() {
+        // D-63 construction-time mismatch check. The error message must name
+        // BOTH the declared --type AND the detected descriptor wrapper.
+        //
+        // We use a syntactically valid wpkh() descriptor with a known signet xprv
+        // shape; the function should reject BEFORE attempting to call bdk's
+        // Wallet::create, so even a fake-ish xprv is fine — the mismatch check
+        // runs first by design.
+        let bad_desc = "wpkh(tprv8ZgxMBicQKsPd7Uf69XL1XwhmjHopUGep8GuEiJDZmbQz6o58LninorQAfcKZWARbtRtfnLcJ5MQ2AtHcQJCCRUcMRvmDUjyEmNUWwx8UbK/84'/0'/0'/0/*)";
+        let utxo_address = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0g"; // signet wpkh address
+        let result = BdkClientWallet::from_descriptor(
+            bad_desc,
+            DUMMY_OUTPOINT,
+            utxo_address,
+            Network::Signet,
+            ScriptType::P2tr,
+        );
+        match result {
+            Ok(_) => panic!("expected mismatch between --type p2tr and wpkh() descriptor to fail"),
+            Err(err) => {
+                let msg = format!("{err:?}").to_lowercase();
+                assert!(
+                    msg.contains("p2tr") && msg.contains("wpkh"),
+                    "expected error to name BOTH 'p2tr' AND 'wpkh', got: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn from_wif_asserts_p2wpkh() {
+        // D-61: from_wif takes NO script_type parameter; the returned wallet
+        // ALWAYS has script_type == P2wpkh, preserving the v1.3 cross-phase
+        // invariant (full_round.rs uses the WIF path).
+        // Use the canonical Bitcoin Core regtest "Hello World" WIF.
+        let wif = "cVt4o7BGAig1UXywgGSmARhxMdzP5qvQsxKkSsc1XEkw3tDTQFpy";
+        let wallet = BdkClientWallet::from_wif(wif, DUMMY_OUTPOINT, Network::Regtest)
+            .expect("from_wif should succeed for a valid WIF");
+        assert_eq!(wallet.script_type(), ScriptType::P2wpkh);
+    }
 }
