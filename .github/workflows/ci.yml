@@ -234,3 +234,30 @@ jobs:
             echo "       The bip322 crate is pre-1.0; minor changes can break the adapter at shared/src/bip322/mod.rs." >&2
             exit 1
           fi
+
+  crit-01-grep-check:
+    name: CRIT-01 dual-branch invariant grep gate
+    runs-on: ubuntu-latest
+    # v1.4 Phase 16 Plan 16-02 invariant: the script-type-derived-from-chain
+    # invariant comment must be present at EACH version branch of the
+    # validate_utxo dispatcher in coordinator/src/bitcoin/utxo.rs. The
+    # comment text is `// CRIT-01: script_type derived from on-chain
+    # script_pubkey, never from client field` (verbatim, lives at the
+    # v=1 and v=2 match arms in dispatch_ownership_proof). A future
+    # refactor cannot accidentally drop the v=2 cross-check while leaving
+    # the v=1 path looking superficially correct: the grep here counts
+    # BOTH comments and exits 1 if the count falls below 2. Mirrors
+    # bip322-pin-check above per RESEARCH Pattern Pitfall 1.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Enforce CRIT-01 dual-branch comment
+        run: |
+          set -eu
+          COUNT=$(grep -c "CRIT-01" coordinator/src/bitcoin/utxo.rs || true)
+          if [ "$COUNT" -lt 2 ]; then
+            echo "ERROR: coordinator/src/bitcoin/utxo.rs has $COUNT CRIT-01 occurrences (need >= 2)." >&2
+            echo "       The script-type derived-from-chain invariant must be commented" >&2
+            echo "       at EACH version branch of the validate_utxo dispatcher." >&2
+            echo "       Comment text: // CRIT-01: script_type derived from on-chain script_pubkey, never from client field" >&2
+            exit 1
+          fi

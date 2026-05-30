@@ -127,11 +127,14 @@ pub async fn validate_utxo(
 /// BitcoinRpc, or (b) parsing the `UtxoError::InvalidProof { reason }` string
 /// — Phase 15-03 D-34 discipline.
 ///
-/// Visibility is `pub` so the integration test binary (which sees only the
-/// crate's PUBLIC API) can reach it. The fn is gated behind `#[cfg(test)]` so
-/// it does NOT appear in the production-binary API surface; the dispatcher's
-/// production entry point remains `validate_utxo`.
-#[cfg(test)]
+/// Visibility is plain `pub` because the integration test binary at
+/// `tests/integration/multi_script_validate.rs` lives in a separate compilation
+/// unit (external-crate test target) and cannot see `#[cfg(test)]` items from
+/// the coordinator lib. `#[doc(hidden)]` keeps it out of public `cargo doc`
+/// output, and the name carries the `_typed` suffix to signal that production
+/// callers (HTTP handlers) MUST use `validate_utxo` instead — which performs
+/// the RPC + value checks and emits the success log line.
+#[doc(hidden)]
 pub fn validate_ownership_proof_typed(
     script_pubkey: &Script,
     ownership_proof: &OwnershipProof,
