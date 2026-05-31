@@ -150,8 +150,15 @@ impl BdkClientWallet {
         } else if external_desc.starts_with("tr(") {
             ScriptType::P2tr
         } else {
+            // CR-01 (Phase 19 review): do NOT interpolate the full descriptor —
+            // it carries master private key material (xprv / WIF). Print only
+            // the leading non-key tokens so a user-side typo is diagnosable
+            // without leaking key bytes to terminal scrollback, shell-recording
+            // tools (script, asciinema), or stderr-aggregated logs.
+            let prefix: String = external_desc.chars().take(10).collect();
             return Err(anyhow!(
-                "descriptor wrapper not recognised: expected `wpkh(...)`, `tr(...)`, or `sh(wpkh(...))` (got: {external_desc:?})"
+                "descriptor wrapper not recognised: expected `wpkh(...)`, `tr(...)`, or `sh(wpkh(...))` (prefix: {prefix:?}, len: {})",
+                external_desc.len()
             ));
         };
         if detected != script_type {
@@ -173,12 +180,30 @@ impl BdkClientWallet {
             Wallet::create(external_desc.to_string(), internal_desc)
                 .network(bdk_net)
                 .create_wallet_no_persist()
-                .map_err(|e| anyhow!("Failed to create bdk wallet from descriptor: {e}"))?
+                // CR-01 (Phase 19 review) — bdk_wallet's underlying
+                // miniscript/descriptor parse errors have historically
+                // included parts of the offending descriptor body in their
+                // Display output. The descriptor body here carries master
+                // private key material (xprv / WIF), so we swallow the inner
+                // error and surface a redacted message rather than
+                // interpolating `{e}` and risking a key leak through the
+                // error chain.
+                .map_err(|_| anyhow!(
+                    "Failed to create bdk wallet from descriptor \
+                     (parse error suppressed to avoid leaking key material; \
+                     check that the descriptor has a valid wrapper and key)"
+                ))?
         } else {
             Wallet::create_single(external_desc.to_string())
                 .network(bdk_net)
                 .create_wallet_no_persist()
-                .map_err(|e| anyhow!("Failed to create bdk wallet from descriptor: {e}"))?
+                // CR-01 (Phase 19 review): see comment above — redact the
+                // inner error to avoid leaking the descriptor body.
+                .map_err(|_| anyhow!(
+                    "Failed to create bdk wallet from descriptor \
+                     (parse error suppressed to avoid leaking key material; \
+                     check that the descriptor has a valid wrapper and key)"
+                ))?
         };
 
         // Derive utxo_script_pubkey from the provided bech32 address
