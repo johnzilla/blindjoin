@@ -334,4 +334,64 @@ mod tests {
     fn script_output_vbytes_p2sh_p2wpkh_is_32() {
         assert_eq!(script_output_vbytes(ScriptType::P2shP2wpkh), 32);
     }
+
+    // ---------------------------------------------------------------------
+    // Phase 20 Task 3 (FEE-03): regression tests pinning the v1.4 P2WPKH-only
+    // fee baseline byte-equal AND proving the per-script branch fires for a
+    // mixed-script round. CONTEXT D-125 + D-126 lock the test names + the
+    // exact assertion shapes; the inline derivation comments are the audit-
+    // charter artifact Phase 21 cites.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn fee_share_p2wpkh_only_matches_v14_baseline() {
+        // v1.4 baseline (P2WPKH-only, n=3, fee_rate=2):
+        // estimated_vsize = TX_OVERHEAD + n*68 + (n + n)*31
+        //                 = 10 + 3*68 + 6*31
+        //                 = 10 + 204 + 186
+        //                 = 400 vbytes
+        // total_fee  = 400 * 2 = 800 sats
+        // fee_share  = 800 / 3 = 266 sats (integer floor; 2-sat remainder absorbed)
+        let n = 3;
+        let denomination_sats = 1_000_000;
+        let inputs = make_inputs(n, 1_100_000);   // CD-44: reuse existing helper
+        let outputs = make_outputs(n);
+        let psbt = build_coinjoin_psbt(
+            &inputs, &outputs, denomination_sats, 2,
+            ScriptType::P2wpkh,                   // output_script_type
+        ).unwrap();
+        // Derive fee_share from PSBT: total_in - total_out should equal 800 (total_fee)
+        // and per-participant burden derives as 800/3 = 266.
+        let total_in: u64 = inputs.iter().map(|i| i.value_sats).sum();
+        let total_out: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
+        let total_fee = total_in - total_out;
+        let fee_share = total_fee / (n as u64);
+        assert_eq!(fee_share, 266, "v1.4 P2WPKH-only baseline must be byte-exact 266");
+    }
+
+    #[test]
+    fn fee_share_mixed_script_differs_from_uniform_baseline() {
+        // mixed-script (n=3, fee_rate=2, output_type=P2WPKH):
+        // estimated_vsize = 10 + (68 + 58 + 91) + 6*31 = 10 + 217 + 186 = 413 vB
+        // total_fee = 413 * 2 = 826 sats
+        // fee_share = 826 / 3 = 275 sats
+        // diff per participant: 275 - 266 = 9 sats (well above the ≥1 sat requirement)
+        let n = 3;
+        let denomination_sats = 1_000_000;
+        let types = [ScriptType::P2wpkh, ScriptType::P2tr, ScriptType::P2shP2wpkh];
+        let inputs = make_inputs_typed(&types, 1_100_000);
+        let outputs = make_outputs(n);
+        let psbt = build_coinjoin_psbt(
+            &inputs, &outputs, denomination_sats, 2,
+            ScriptType::P2wpkh,                   // single output type per round (D-37)
+        ).unwrap();
+        let total_in: u64 = inputs.iter().map(|i| i.value_sats).sum();
+        let total_out: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
+        let fee_share = (total_in - total_out) / (n as u64);
+        assert!(
+            fee_share.saturating_sub(266) >= 1,
+            "Mixed-script fee_share must exceed P2WPKH-only baseline by >=1 sat \
+             (got {fee_share}; would be 266 if per-script branch silently reverted)"
+        );
+    }
 }
