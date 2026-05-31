@@ -152,7 +152,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
-| 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete   | 2026-05-31 |
+| 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete    | 2026-05-31 |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 0/? | Not started | — |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 0/? | Not started | — |
 

@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
-status: verifying
-last_updated: "2026-05-31T17:15:58.847Z"
+status: ready_to_plan
+last_updated: 2026-05-31T17:32:57.272Z
 last_activity: 2026-05-31 -- Plan 19-02 completed (BIP322-07 closed; 2 commits; Phase 19 ready for verification)
 progress:
   total_phases: 3
@@ -11,23 +11,24 @@ progress:
   total_plans: 2
   completed_plans: 2
   percent: 33
+stopped_at: Phase 19 complete (2/2) — ready to discuss Phase 20
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 19 (multi-script-signing-finish) — EXECUTION COMPLETE
-Plan: 2 of 2 (BIP322-05 + BIP322-06 in Plan 19-01; BIP322-07 in Plan 19-02)
-Status: Phase complete — ready for verification
-Last activity: 2026-05-31 -- Plan 19-02 4 callsites migrated to sign_simple; shared::bip322 public surface shrunk to 9 symbols
+Phase: 20
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-31
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 19 — multi-script-signing-finish
+**Current focus:** Phase 20 — mixed round fee accuracy
 
 ## Milestone Map
 
