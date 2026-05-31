@@ -240,7 +240,7 @@ mod tests {
         // 22-byte witnessv0 push (the redeem-script wrapped scriptSig form).
         let sig_bytes: Vec<u8> = vec![0x16, 0x00, 0x14]
             .into_iter()
-            .chain(std::iter::repeat(0xCD).take(20))
+            .chain(std::iter::repeat_n(0xCD, 20))
             .collect();
         let final_sig = ScriptBuf::from_bytes(sig_bytes);
 

@@ -60,15 +60,15 @@ fn make_known_p2sh_p2wpkh_spk() -> ScriptBuf {
 /// downstream when the dispatcher delegates to the bip322 crate.
 fn make_p2wpkh_shaped_witness() -> Witness {
     let mut w = Witness::new();
-    w.push([0u8; 72].to_vec()); // 72-byte dummy DER sig
-    w.push([0u8; 33].to_vec()); // 33-byte dummy compressed pubkey
+    w.push([0u8; 72]); // 72-byte dummy DER sig
+    w.push([0u8; 33]); // 33-byte dummy compressed pubkey
     w
 }
 
 /// P2TR-shaped witness: 1 element of 64 bytes (Schnorr SIGHASH_DEFAULT).
 fn make_p2tr_shaped_witness() -> Witness {
     let mut w = Witness::new();
-    w.push([0u8; 64].to_vec()); // 64-byte dummy Schnorr sig
+    w.push([0u8; 64]); // 64-byte dummy Schnorr sig
     w
 }
 
