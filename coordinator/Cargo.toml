@@ -70,6 +70,14 @@ liquidity-bot = { path = "../liquidity-bot" }
 reqwest = { workspace = true }
 tempfile = "3"
 
+[features]
+default = []
+# opt-in gate for the v1.3-client ↔ v1.4-coordinator binary compatibility test
+# (tests/integration/v13_binary_compat.rs). Disabled by default because the
+# first-run cost is ~30-45s (cold cargo build of the pinned v1.3 worktree) and
+# ~600MB disk. Enable with: cargo test --features v13-binary-compat --test integration v13_binary_compat
+v13-binary-compat = []
+
 [[test]]
 name = "integration"
 path = "../tests/integration/mod.rs"
