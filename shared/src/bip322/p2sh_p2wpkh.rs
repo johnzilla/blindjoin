@@ -103,6 +103,6 @@ pub(crate) fn sign_for_tests(_spk: &Script, key: &SecretKey, message: &[u8]) -> 
 
     let mut w = Witness::new();
     w.push(sig_bytes);
-    w.push(pubkey.serialize().to_vec());
+    w.push(pubkey.serialize());
     w
 }

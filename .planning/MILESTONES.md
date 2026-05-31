@@ -16,9 +16,9 @@
 - **Mixed-script E2E acceptance gate + liquidity bot multi-script** — `mixed_script_e2e_three_clients_broadcast` runs 1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH input through INPUT_REG → BROADCAST in a single `cargo test` run (reuses `BitcoindGuard` + `require_bitcoind!()` unchanged from v1.3, zero `Box::leak` in new test files); liquidity bot rotates `script_types` per round via `BLINDJOIN_BOT_SCRIPT_TYPES` CSV + persistent rotation counter file (defeats V1.4-MIN-02 uniform-script fingerprint); README §Privacy Considerations documents the chain-analysis tradeoff of mixed-script rounds (Phase 14 CD-3 carry-forward)
 
 **Known gaps recorded at close:**
-- 14 pre-existing clippy lints in `shared/src/bip322/*` deferred per SCOPE BOUNDARY rule; logged in `.planning/phases/16-coordinator-integration-advertisement/deferred-items.md`. Suggested follow-up: box the `bip322::Error` source on `CrateVerifyFailed`, or `#[allow]` at module level with rationale.
 - TEST-EXT-03 (automated v1.3↔v1.4 backwards-compat integration matrix) deferred — WALLET-04 covers v1.4→v1.3 informally + Phase 18-03 verifies v1.3→v1.4 against a pinned binary, but no automated grid in v1.4.
 - CARRY-REPAIR-01-PR (v1.3 REPAIR-01 PR observation closure) still pending — the v1.4 cut PR is the natural moment to discharge this but is NOT a v1.4 code deliverable per REPAIR-01 lesson #5.
+- **Resolved at close:** 14 pre-existing clippy lints in `shared/src/bip322/*` (12× `result_large_err` + 2× `unnecessary_to_owned`) AND `coordinator::validate_utxo` `too_many_arguments` were fixed at the milestone-cut boundary so the `v1.4.0` tag push could clear the pre-push hook (`cargo clippy --workspace -- -D warnings`). Fixes: `Box<bip322::Error>` source, dropped redundant `.to_vec()` calls (`Witness::push` accepts `AsRef<[u8]>`), and `#[allow(clippy::too_many_arguments)]` on the CRIT-01 validator.
 
 ---
 

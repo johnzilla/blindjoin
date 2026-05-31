@@ -49,7 +49,6 @@ None at the roadmap level. Run `/gsd:new-milestone` to scope v1.5.
 - **TEST-EXT-01/02/03** — Cross-implementation differential fixtures, on-chain anchor test, automated v1.3↔v1.4 backwards-compat integration matrix
 - **P2WSH multisig BIP-322 support** (v1.4 stretch dropped for scope discipline)
 - **Mixed output script types** (Wasabi 2.0.3-style per-participant output choice)
-- **14 deferred clippy lints** in `shared/src/bip322/*` (12× `clippy::result_large_err` + 2× `clippy::unnecessary_to_owned`) — see `.planning/phases/16-coordinator-integration-advertisement/deferred-items.md`
 
 ## Performance Metrics
 

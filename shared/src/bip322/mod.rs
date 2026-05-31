@@ -191,7 +191,7 @@ pub enum Bip322Error {
     #[error("BIP-322 crate verification failed")]
     CrateVerifyFailed {
         #[source]
-        source: bip322::Error,
+        source: Box<bip322::Error>,
     },
     #[error("network mismatch: address decoded for {decoded:?}, configured for {configured:?}")]
     NetworkMismatch {
@@ -329,7 +329,7 @@ pub(crate) fn verify_via_bip322_crate(
     let address = bitcoin::Address::from_script(spk, network)
         .map_err(|source| Bip322Error::UnrecognisedScriptPubkey { source })?;
     bip322::verify_simple(&address, message, witness.clone())
-        .map_err(|source| Bip322Error::CrateVerifyFailed { source })
+        .map_err(|source| Bip322Error::CrateVerifyFailed { source: Box::new(source) })
 }
 
 // ---------------------------------------------------------------------------

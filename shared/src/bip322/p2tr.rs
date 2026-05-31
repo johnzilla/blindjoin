@@ -90,6 +90,6 @@ pub(crate) fn sign_for_tests(spk: &Script, key: &SecretKey, message: &[u8]) -> W
     );
 
     let mut w = Witness::new();
-    w.push(sig.as_ref().to_vec());
+    w.push(sig.as_ref());
     w
 }

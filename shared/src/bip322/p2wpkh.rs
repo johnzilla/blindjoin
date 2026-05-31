@@ -67,7 +67,7 @@ pub(crate) fn sign(
 
     let mut w = Witness::new();
     w.push(sig_bytes);
-    w.push(pubkey.serialize().to_vec());
+    w.push(pubkey.serialize());
     Ok(w)
 }
 

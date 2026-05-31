@@ -58,6 +58,7 @@ pub struct UtxoDetails {
 /// `network` is threaded from `CoordinatorConfig::network::bitcoin_network`
 /// once at startup (D-51); the per-script verifier passes it to the bip322
 /// crate's `Address::from_script` step regardless of script type.
+#[allow(clippy::too_many_arguments)]
 pub async fn validate_utxo(
     rpc: &BitcoinRpc,
     utxo: &OutPoint,

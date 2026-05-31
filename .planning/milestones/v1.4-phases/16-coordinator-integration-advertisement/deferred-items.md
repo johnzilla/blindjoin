@@ -33,6 +33,17 @@ module level with a rationale comment.
 test (`cargo test --workspace` / integration suite) both pass. Only the strict
 clippy `-- -D warnings` gate exposes these warnings.
 
+**RESOLVED at v1.4 milestone close (2026-05-31):** All 14 lints fixed at the
+milestone-cut boundary so the pre-push hook would accept the `v1.4.0` tag push.
+- `Bip322Error::CrateVerifyFailed { source: bip322::Error }` →
+  `{ source: Box<bip322::Error> }` (eliminated 11 `result_large_err` lints).
+- 3 `to_vec()` calls in `p2wpkh.rs:70`, `p2tr.rs:93`, `p2sh_p2wpkh.rs:106`
+  dropped (`Witness::push` takes `impl AsRef<[u8]>`).
+- Also surfaced after the shared/ fix: `validate_utxo` in
+  `coordinator/src/bitcoin/utxo.rs` triggered `too_many_arguments` (9/7);
+  added `#[allow(clippy::too_many_arguments)]` since restructuring the
+  load-bearing CRIT-01 validator at milestone-close was out of scope.
+
 ## Plan 16-03 (re-confirmation)
 
 Plan 16-03 (PKARR record v0.2.0 + B3 compact-name rename + byte-budget tests)
