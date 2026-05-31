@@ -53,7 +53,7 @@
 - [x] **Phase 15: Shared Crate Multi-Script Contract** — `shared/` exposes `ScriptType` dispatch, per-type BIP-322 sign/verify, extended `OwnershipProof` + `InfoResponse` wire types, and per-script-type property tests against the official BIP-322 vectors. (completed 2026-05-30)
 - [x] **Phase 16: Coordinator Integration & Advertisement** — Replace the `is_p2wpkh()` gate with a config-driven allowlist + dispatcher; advertise `supported_script_types` over PKARR and `/round/info`; cross-check declared script type against on-chain `scriptPubKey` (CRIT-01). (completed 2026-05-30)
 - [x] **Phase 17: Client Multi-Script Wallet & Discovery** — Client wallet supports BIP-84 / BIP-86 / BIP-49 descriptors, signs ownership proofs for all three types, and rejects mismatched coordinators at discovery before opening a Tor circuit; ships v1.4→v1.3 compatibility shim. (completed 2026-05-30)
-- [ ] **Phase 18: Mixed-Script E2E + Liquidity Bot** — Liquidity bot generates UTXOs across all enabled script types and rotates per round; mixed-script regtest integration test (1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH) completes a full CoinJoin round through BROADCAST.
+- [x] **Phase 18: Mixed-Script E2E + Liquidity Bot** — Liquidity bot generates UTXOs across all enabled script types and rotates per round; mixed-script regtest integration test (1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH) completes a full CoinJoin round through BROADCAST. (completed 2026-05-31)
 
 ## Phase Details
 
@@ -130,7 +130,7 @@
 **Plans**: 3 plans
 - [x] 18-01-PLAN.md — INTEG-01 mixed-script E2E test (1 P2WPKH WIF + 1 P2TR descriptor + 1 P2SH-P2WPKH descriptor through INPUT_REG → BROADCAST; helpers promoted to mod.rs)
 - [x] 18-02-PLAN.md — INTEG-02 liquidity bot multi-script via BLINDJOIN_BOT_SCRIPT_TYPES CSV + per-round rotation counter file + per-type wallet dispatch + bot_rotation integration test
-- [ ] 18-03-PLAN.md — v1.3-client binary compat gate (pinned SHA 05f21438) + README §Privacy Considerations prose + 18-VERIFICATION.md milestone-cut readiness checklist
+- [x] 18-03-PLAN.md — v1.3-client binary compat gate (pinned SHA 05f21438) + README §Privacy Considerations prose + 18-VERIFICATION.md milestone-cut readiness checklist
 
 ## Cross-Phase Invariant (v1.4)
 
@@ -164,7 +164,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 15. Shared Crate Multi-Script Contract | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete   | 2026-05-30 |
-| 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 2/3 | In Progress|  |
+| 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete   | 2026-05-31 |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
