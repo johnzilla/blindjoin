@@ -704,7 +704,7 @@ pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
 //   3. Carries the per-UTXO SecretKey + (for P2SH-P2WPKH) the inner
 //      P2WPKH redeem script in the returned handle so the integration tests
 //      can construct valid v=2 ownership-proof witnesses via
-//      shared::bip322::sign_simple_test_only.
+//      shared::bip322::sign_simple.
 //
 // fund_regtest remains in place and untouched — the v1.3 cross-phase
 // invariant tests (full_round.rs) continue to use it unchanged.
@@ -720,7 +720,7 @@ pub struct TypedUtxoHandle {
     pub value_sats: u64,
     /// Secret key matching the address — used by the integration tests to
     /// construct valid BIP-322 v=2 witnesses via
-    /// shared::bip322::sign_simple_test_only.
+    /// shared::bip322::sign_simple.
     pub secret_key: bitcoin::secp256k1::SecretKey,
     /// For P2SH-P2WPKH only: the inner P2WPKH redeem script that gets
     /// HASH160'd into the P2SH SPK. None for P2WPKH and P2TR.

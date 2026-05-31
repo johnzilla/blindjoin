@@ -4,8 +4,13 @@
 //! BIP-322 `basic-test-vectors.json` + the `p2sh_p2wpkh_supplement.json` so
 //! every script type (P2WPKH, P2TR, P2SH-P2WPKH) has ≥1 passing positive
 //! vector through the public dispatcher (`shared::bip322::verify_simple` +
-//! `sign_simple` / `sign_simple_test_only`). Compile-time fixture loading
-//! per D-33 (`include_str!`); no network in CI.
+//! `sign_simple`). Compile-time fixture loading per D-33 (`include_str!`);
+//! no network in CI.
+//!
+//! Phase 19 Plan 19-02 (BIP322-07) migrated the P2TR + P2SH-P2WPKH
+//! sign↔verify roundtrip tests off the deleted test-only mirror onto
+//! the production `sign_simple` dispatcher — the positive-vector suite
+//! now exercises the production `sign` bodies shipped in Plan 19-01.
 //!
 //! Each #[test] fn asserts that it iterated ≥1 vector before declaring
 //! success — a future fixture-bump that drops a script type is caught at
@@ -18,7 +23,7 @@ use bitcoin::consensus::Decodable;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Address, Network, ScriptBuf, Witness};
 use serde_json::Value;
-use shared::bip322::{sign_simple, sign_simple_test_only, verify_simple, Bip322Error, ScriptType};
+use shared::bip322::{sign_simple, verify_simple, Bip322Error, ScriptType};
 use std::str::FromStr;
 
 // --- Compile-time fixture loading (D-33) ---
@@ -249,7 +254,7 @@ fn test_p2wpkh_sign_verify_roundtrip_via_dispatcher() {
     );
 }
 
-// --- Test 5: P2TR sign↔verify roundtrip via test-only dispatcher ---
+// --- Test 5: P2TR sign↔verify roundtrip via production dispatcher ---
 
 #[test]
 fn test_p2tr_sign_verify_roundtrip_via_dispatcher() {
@@ -268,11 +273,12 @@ fn test_p2tr_sign_verify_roundtrip_via_dispatcher() {
 
     let message = b"blindjoin:15-03:per-script-vector-test:p2tr";
 
-    // P2TR production sign_simple is todo!() per CD-6; test path uses
-    // sign_simple_test_only which routes to p2tr::sign_for_tests (the
-    // 8-step BIP-341 sequence from Sprint-0-B).
-    let witness = sign_simple_test_only(ScriptType::P2tr, &spk, &key, message)
-        .expect("sign_simple_test_only p2tr");
+    // P2TR production sign_simple ships in Phase 19 Plan 19-01 (D-116 lifted
+    // the prior test-only sign body verbatim into production sign + D-111
+    // cross-check at top). Plan 19-02 migrated this callsite off the deleted
+    // test-only mirror.
+    let witness = sign_simple(ScriptType::P2tr, &spk, &key, message)
+        .expect("sign_simple p2tr");
     let result = verify_simple(ScriptType::P2tr, &spk, &witness, message, Network::Regtest);
     assert!(
         result.is_ok(),
@@ -287,7 +293,7 @@ fn test_p2tr_sign_verify_roundtrip_via_dispatcher() {
     );
 }
 
-// --- Test 6: P2SH-P2WPKH sign↔verify roundtrip via test-only dispatcher ---
+// --- Test 6: P2SH-P2WPKH sign↔verify roundtrip via production dispatcher ---
 
 #[test]
 fn test_p2sh_p2wpkh_sign_verify_roundtrip_via_dispatcher() {
@@ -305,11 +311,12 @@ fn test_p2sh_p2wpkh_sign_verify_roundtrip_via_dispatcher() {
 
     let message = b"blindjoin:15-03:per-script-vector-test:p2sh-p2wpkh";
 
-    // P2SH-P2WPKH production sign_simple is todo!() per CD-6; test path uses
-    // sign_simple_test_only which routes to p2sh_p2wpkh::sign_for_tests
-    // (sighash over the unwrapped P2WPKH redeem).
-    let witness = sign_simple_test_only(ScriptType::P2shP2wpkh, &spk, &key, message)
-        .expect("sign_simple_test_only p2sh-p2wpkh");
+    // P2SH-P2WPKH production sign_simple ships in Phase 19 Plan 19-01 (D-116
+    // lifted the prior test-only sign body verbatim + D-111 cross-check +
+    // D-117 spk-used-directly). Plan 19-02 migrated this callsite off the
+    // deleted test-only mirror.
+    let witness = sign_simple(ScriptType::P2shP2wpkh, &spk, &key, message)
+        .expect("sign_simple p2sh-p2wpkh");
     let result = verify_simple(
         ScriptType::P2shP2wpkh,
         &spk,

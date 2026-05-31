@@ -20,7 +20,7 @@ use base64::Engine;
 use bitcoin::{Network, Witness};
 use coordinator::bitcoin::utxo::validate_ownership_proof_typed;
 use coordinator::config::BipConfig;
-use shared::bip322::{sign_simple_test_only, Bip322Error, ScriptType};
+use shared::bip322::{sign_simple, Bip322Error, ScriptType};
 use shared::protocol::OwnershipProof;
 
 use crate::{fund_regtest_typed, require_bitcoind, TypedUtxoHandle};
@@ -110,14 +110,20 @@ fn default_bip_config() -> BipConfig {
 
 /// Sign a BIP-322 Simple witness for the given script type using the
 /// per-UTXO secret key.
+///
+/// Phase 19 Plan 19-02 (BIP322-07): migrated off the deleted test-only
+/// mirror onto the production `sign_simple` dispatcher. The 9 cross-shape
+/// rejection cases below now exercise the production `sign` bodies shipped
+/// in Plan 19-01 (P2TR keypath + P2SH-P2WPKH BIP-143 with the D-111 spk↔key
+/// cross-check at top).
 fn sign_witness(handle: &TypedUtxoHandle, message: &[u8]) -> Witness {
-    sign_simple_test_only(
+    sign_simple(
         handle.script_type,
         handle.script_pubkey.as_script(),
         &handle.secret_key,
         message,
     )
-    .expect("sign_simple_test_only should produce a valid witness")
+    .expect("sign_simple should produce a valid witness")
 }
 
 // ---------------------------------------------------------------------------
