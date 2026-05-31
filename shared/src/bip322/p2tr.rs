@@ -70,10 +70,24 @@ pub(crate) fn sign(
     let keypair = Keypair::from_secret_key(&secp, key);
     let tweaked = keypair.tap_tweak(&secp, None);
     let tweaked_xonly = tweaked.to_keypair().x_only_public_key().0;
+    // Safe: `tweaked_xonly` is the output of keypair.tap_tweak(&secp, None)
+    // on the line above; the BIP-341 tweak has been applied.
     let expected_spk = ScriptBuf::new_p2tr_tweaked(tweaked_xonly.dangerous_assume_tweaked());
     if expected_spk.as_script() != spk {
+        // WR-01 (Phase 19 review): the dispatcher rustdoc on `sign_simple`
+        // promises that a (spk, key) mismatch returns
+        // `Bip322Error::ScriptTypeMismatch` BEFORE any sighash work. The
+        // earlier `detect_script_type(spk)?` form propagated
+        // `UnsupportedScriptType` for SPK shapes outside the
+        // P2WPKH/P2TR/P2SH trio (e.g. P2WSH, OP_RETURN, bare multisig),
+        // breaking that promise. Falling back to the variant the caller
+        // invoked (here: P2TR) preserves the ScriptTypeMismatch contract:
+        // a non-standard SPK still produces semantically sensible
+        // `declared` / `derived` fields and a single, predictable error
+        // variant for callers troubleshooting why sign rejected their SPK.
+        let declared = super::detect_script_type(spk).unwrap_or(super::ScriptType::P2tr);
         return Err(super::Bip322Error::ScriptTypeMismatch {
-            declared: super::detect_script_type(spk)?,
+            declared,
             derived: super::ScriptType::P2tr,
         });
     }
