@@ -90,12 +90,12 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - ✓ Per-script positive property tests + 9 cross-shape rejection tests against the vendored official BIP-322 `basic-test-vectors.json` (upstream SHA `d77863fb9e` pinned) — v1.4 Phase 15 (BIP322-04)
 - ✓ Production `sign` bodies for P2TR (BIP-341 Schnorr keypath via `sign_schnorr_no_aux_rand`) and P2SH-P2WPKH (BIP-143 ECDSA over unwrapped P2WPKH redeem) shipped in `shared::bip322`; D-111 spk↔key cross-check at the top of each new body (T-19-A defense-in-depth); byte-equality with `BdkClientWallet::sign_bip322` proven empirically in `client/tests/wallet_sign_roundtrip.rs` (T-19-C) — v1.5 Phase 19 (BIP322-05, BIP322-06)
 - ✓ `sign_simple_test_only` + per-script `sign_for_tests` helpers removed; all callsites (`shared/tests/per_script_vectors.rs`, `tests/integration/multi_script_validate.rs`) migrated to the production `sign_simple` dispatcher; V1.4-CRIT-01 dispatcher-only invariant now load-bearing at the type level with no test-only hole — v1.5 Phase 19 (BIP322-07)
+- ✓ Per-script BIP-141 witness weight table in `coordinator/src/bitcoin/tx.rs` (P2WPKH 68/31, P2TR 58/43 [round-UP per STATE.md], P2SH-P2WPKH 91/32) replaces the legacy P2WPKH-only `INPUT_WEIGHT_VBYTES`/`OUTPUT_WEIGHT_VBYTES` constants; `ParticipantInput.script_type` plumbed coordinator-side from the existing `dispatch_ownership_proof` derivation through `UtxoDetails → RegisteredInput` (CRIT-01 invariant preserved into the fee path — zero new `detect_script_type` call sites); two regression tests pin v1.4 P2WPKH-only `fee_share == 266` byte-equal and prove the mixed-script branch fires with a ≥1 sat/participant delta (computed delta = 9 sats at fee_rate=2); v1.3 `full_round::*` 8/8 + v1.4 `mixed_script_e2e_three_clients_broadcast` both green with the new fee math — v1.5 Phase 20 (FEE-01, FEE-02, FEE-03)
 
 ### Active
 
 v1.5 Audit-Readiness & Multi-Script Finish (requirements detailed in `.planning/REQUIREMENTS.md`):
 
-- [ ] Per-script witness weight table in coordinator fee estimator; `ParticipantInput` carries `script_type`; mixed-round fee regression test
 - [ ] `docs/AUDIT-CHARTER.md` scoping external audit (BIP-322 dispatcher + per-script modules, cross-shape rejection properties, v=2 PSBT handling, RSA zeroization window)
 - [ ] Tighten RSA SecretKey zeroization window via newtype + explicit Drop (currently best-effort)
 - [ ] Refresh `.cargo/audit.toml` rationale strings to reference AUDIT-CHARTER.md and v1.4-shipped multi-script reality
@@ -192,4 +192,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 — v1.5 Phase 19 complete (Multi-Script Signing Finish: BIP322-05, BIP322-06, BIP322-07 closed)*
+*Last updated: 2026-05-31 — v1.5 Phase 20 complete (Mixed-Round Fee Accuracy: FEE-01, FEE-02, FEE-03 closed)*
