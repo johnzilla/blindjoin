@@ -1,13 +1,15 @@
 //! P2SH-P2WPKH BIP-322 Simple verify + sign per Phase 15 CONTEXT D-04.
 //!
-//! Both `verify` and `sign` are `pub(crate)` per D-27. The production `sign`
-//! body is `todo!()` per CD-6 — Phase 17 WALLET-02 wires the bdk_wallet sign
-//! path per ADR Decision #4. The `#[cfg(test)] sign_for_tests` helper builds
-//! a valid `[sig, pubkey]` 2-item witness mirroring the P2WPKH shape (per
-//! CONTEXT `<specifics>`: "P2SH-P2WPKH uses the same shape as P2WPKH but
-//! with final_script_sig = OP_HASH160 <redeem-script-hash> and witness =
-//! [sig, pubkey]"), so Plan 15-03's per-script property tests can construct
-//! positive vectors without depending on `bdk_wallet` from `shared/`.
+//! Both `verify` and `sign` are `pub(crate)` per D-27. Phase 19 Plan 19-01
+//! ships the production `sign` body (BIP-143 sighash over the UNWRAPPED
+//! P2WPKH redeem, 2-item `[sig, pubkey]` witness) per CONTEXT D-116, lifted
+//! from the prior `sign_for_tests` helper with the D-111 spk↔key cross-check
+//! at the top and D-117 `spk`-used-directly after the cross-check (removes
+//! the rebuild-from-key footgun where the test signer silently ignored its
+//! `_spk` argument). `sign` does NOT depend on `bdk_wallet` (Phase 14 ADR
+//! Decision #4 + Phase 15 CD-6 preserve the shared-crate boundary). The
+//! `sign_for_tests` alias remains for Plan 15-03 integration tests; Plan
+//! 19-02 deletes it.
 
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Network, Script, Witness};
@@ -36,17 +38,90 @@ pub(crate) fn verify(
     super::verify_via_bip322_crate(spk, witness, message, network)
 }
 
-/// Production sign for P2SH-P2WPKH — `todo!()` per CD-6.
+/// Production sign for P2SH-P2WPKH — BIP-143 over the UNWRAPPED P2WPKH
+/// redeem, returning a 2-item `[der_sig+SIGHASH_ALL, compressed_pubkey]`
+/// witness.
 ///
-/// Phase 17 WALLET-02 swaps this body for the bdk_wallet 2.3 sign path per
-/// ADR Decision #4. The signature contract is locked at this plan boundary
-/// so Phase 16 and Phase 17 can wire against a stable API.
+/// Body lifted near-verbatim from the prior `sign_for_tests` helper per
+/// Phase 19 CONTEXT D-116, with two production-only transforms:
+/// - **D-111 spk↔key cross-check** at the TOP — rejects mismatched
+///   `(spk, key)` pairs BEFORE any sighash work, returning
+///   [`super::Bip322Error::ScriptTypeMismatch`] (variant reused per D-112;
+///   P2SH-P2WPKH algorithm per D-113).
+/// - **D-117 spk-used-directly** — the cross-check above proves
+///   `expected_spk == spk` byte-equal, so `build_bip322_to_spend(spk, ...)`
+///   consumes the caller-supplied parameter directly. The prior
+///   `sign_for_tests` rebuilt the outer P2SH SPK from the key (silent
+///   footgun: ignored `_spk` argument).
+///
+/// Determinism: ECDSA via `sign_ecdsa` is RFC 6979 deterministic — the
+/// `client/tests/wallet_sign_roundtrip.rs::p2sh_p2wpkh_shared_sign_matches_bdk_sign_byte_for_byte`
+/// parity test (Phase 19 Plan 19-01 D-119) asserts byte-equality with
+/// `bdk_wallet` 2.3's BIP-322 sign path.
+///
+/// Sighash is computed against the UNWRAPPED P2WPKH redeem (not the outer
+/// P2SH SPK) — this is structural per BIP-143; the bip322 crate's
+/// `verify_full_p2wpkh(is_p2sh=true)` at `verify.rs:167-169` reconstructs
+/// the same redeem from `witness[1].wpubkey_hash()` for the verify side.
+///
+/// `pub(crate)` per D-27 — callers reach this only through `sign_simple`.
 pub(crate) fn sign(
-    _spk: &Script,
-    _key: &SecretKey,
-    _message: &[u8],
+    spk: &Script,
+    key: &SecretKey,
+    message: &[u8],
 ) -> Result<Witness, super::Bip322Error> {
-    todo!("Phase 17 WALLET-02 wires bdk_wallet sign per ADR #4")
+    // Plan 19-01 Task 2 — BIP322-06 production body; lifted from sign_for_tests
+    // per D-116 + D-111 cross-check + D-117 spk-used-directly.
+    use bitcoin::hashes::Hash;
+    use bitcoin::secp256k1::{Message, Secp256k1};
+    use bitcoin::sighash::{EcdsaSighashType, SighashCache};
+    use bitcoin::{Amount, PublicKey, ScriptBuf};
+
+    let secp = Secp256k1::new();
+    let pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, key);
+    let compressed = PublicKey::new(pubkey);
+    // Derive the UNWRAPPED P2WPKH SPK from the pubkey (this is the sighash SPK).
+    let unwrapped_p2wpkh =
+        ScriptBuf::new_p2wpkh(&compressed.wpubkey_hash().expect("compressed key"));
+
+    // D-111 spk↔key cross-check (P2SH-P2WPKH algorithm per D-113): the
+    // expected outer P2SH SPK is `OP_HASH160 <HASH160(redeem)> OP_EQUAL`
+    // where `redeem` is the unwrapped P2WPKH SPK above. Reject if it does
+    // not byte-equal the caller-supplied `spk`.
+    let expected_spk = ScriptBuf::new_p2sh(&unwrapped_p2wpkh.script_hash());
+    if expected_spk.as_script() != spk {
+        return Err(super::Bip322Error::ScriptTypeMismatch {
+            declared: super::detect_script_type(spk)?,
+            derived: super::ScriptType::P2shP2wpkh,
+        });
+    }
+
+    let msg_hash = super::bip322_message_hash(message);
+    // D-117: `spk` is load-bearing here (the cross-check above proves it
+    // byte-equals the derived outer P2SH SPK). Removes the rebuild-from-key
+    // footgun present in the prior sign_for_tests helper.
+    let to_spend = super::build_bip322_to_spend(spk, &msg_hash);
+    let to_sign = super::build_bip322_to_sign(&to_spend);
+
+    let mut cache = SighashCache::new(&to_sign);
+    let sighash = cache
+        .p2wpkh_signature_hash(
+            0,
+            &unwrapped_p2wpkh,
+            Amount::ZERO,
+            EcdsaSighashType::All,
+        )
+        .expect("sighash on well-formed to_sign");
+
+    let secp_msg = Message::from_digest(sighash.to_byte_array());
+    let sig = secp.sign_ecdsa(&secp_msg, key);
+    let mut sig_bytes = sig.serialize_der().to_vec();
+    sig_bytes.push(0x01); // SIGHASH_ALL
+
+    let mut w = Witness::new();
+    w.push(sig_bytes);
+    w.push(pubkey.serialize());
+    Ok(w)
 }
 
 /// Test-only signer producing the `[sig, pubkey]` witness for a P2SH-P2WPKH
