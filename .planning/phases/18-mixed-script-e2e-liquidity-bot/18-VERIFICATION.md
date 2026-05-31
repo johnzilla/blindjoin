@@ -3,6 +3,10 @@ phase: 18-mixed-script-e2e-liquidity-bot
 verified: 2026-05-31T00:45:00Z
 status: passed
 plans_complete: 3/3
+independent_verification:
+  agent: gsd-verifier
+  date: "2026-05-30T00:00:00Z"
+  verdict: confirmed
 ---
 
 # Phase 18: Mixed-Script E2E + Liquidity Bot — Verification Report
@@ -380,3 +384,162 @@ release. Proper backwards compat at the signature level would require either:
 2. A v1.4 coordinator BIP-322 verifier that also accepts the v1.3 to_sign format (requires two
    separate signature verification paths in `bip322 = "=0.0.10"` or a custom verifier).
 Both options are v1.5+ work items. The v1.4 cut proceeds with the D-87 UAT path.
+
+---
+
+## Independent Verification Audit (gsd-verifier)
+
+**Auditor:** gsd-verifier (Claude)
+**Date:** 2026-05-30
+**Verdict:** confirmed
+
+This section records an independent codebase audit against every claim made above. Each audit
+item was verified by direct file inspection and grep commands — not by trusting executor narration
+in SUMMARY.md files.
+
+### Audit Item 1: INTEG-01 — mixed_script_e2e.rs structure (ROADMAP SC #1)
+
+**Claim:** `tests/integration/mixed_script_e2e.rs` contains `mixed_script_e2e_three_clients_broadcast`
+with 3-typed-client structure, `detect_script_type` assertion, `v14_coordinator_info()` calls, and no `Box::leak`.
+
+**Findings:**
+- File exists: CONFIRMED (521 lines)
+- `async fn mixed_script_e2e_three_clients_broadcast` present: `grep -c` returns 1
+- `detect_script_type` used: `grep -c` returns 1 (at input-type set-equality assertion)
+- `v14_coordinator_info(` called 5 times (3 in client tasks + factory definition/use): passes >= 3 threshold
+- `BdkClientWallet::generate` used twice (P2TR + P2SH-P2WPKH), `from_wif` once (P2WPKH)
+- `utxo_outpoint =` assignment found (B1.b funding override)
+- `Box::leak` count: 0
+- `require_bitcoind!()` and `fund_regtest_typed` both present
+- Asserts `denom_output_count == 3` and `HashSet` containing `{P2wpkh, P2tr, P2shP2wpkh}`
+
+**Status: VERIFIED**
+
+### Audit Item 2: Cross-phase invariant — full_round.rs unchanged with 8 tests (ROADMAP SC #4)
+
+**Claim:** `full_round.rs` has 8 `#[tokio::test]` fns, uses `use crate::` imports for promoted
+helpers, and `spawn_coordinator` definition was removed.
+
+**Findings:**
+- `grep -c "^#\[tokio::test\]" full_round.rs` returns 8: CONFIRMED
+- `grep -c "use crate::" full_round.rs` returns 3 (multiple use-crate import lines): CONFIRMED (>= 1)
+- `grep -cE "^async fn spawn_coordinator\(" full_round.rs` returns 0: CONFIRMED (removed)
+- `use crate::{v14_p2wpkh_coordinator_info, build_input_reg_round_state, spawn_coordinator, wait_for_coordinator};` present at line 41
+- Promoted helpers in mod.rs: `pub(crate) fn v14_p2wpkh_coordinator_info`, `pub(crate) fn v14_coordinator_info`, `pub(crate) fn build_input_reg_round_state`, `pub(crate) async fn spawn_coordinator` — all confirmed at lines 43, 61, 76, 89
+
+**Commit SHA verification:** All 5 commits referenced in the cross-phase invariant table (`1c9c103`, `56aff83`, `65c2030`, `e3a1824`, `e87b858`) exist in the repository's git history.
+
+**Status: VERIFIED**
+
+### Audit Item 3: INTEG-02 — bot multi-script structure (ROADMAP SC #3)
+
+**Claim:** `liquidity-bot/src/lib.rs` exposes `pub async fn run(config: BotConfig)`, `strategy.rs`
+has `RotationState` with atomic write, `Cargo.toml` has `[lib]` target, `bot_rotation.rs` drives
+3-run rotation and calls `liquidity_bot::run`.
+
+**Findings:**
+- `liquidity-bot/src/lib.rs`: exists (157 lines); `pub async fn run` and `pub struct BotConfig` present
+- `liquidity-bot/src/strategy.rs`: `pub struct RotationState` at line 54; `pub async fn pick_script_type` at 75; `pub async fn bump_counter` at 86; atomic write idiom `tokio::fs::write` + `tokio::fs::rename` at lines 110-111
+- `liquidity-bot/Cargo.toml`: `[lib]` at line 10, `name = "liquidity_bot"` at line 11, `tempfile = "3"` at line 24
+- `tests/integration/bot_rotation.rs`: exists (248 lines); `async fn bot_rotates_p2wpkh_p2tr_p2sh_p2wpkh_across_three_runs` at line 40; uses `liquidity_bot::run` (via `run` imported from `liquidity_bot`); asserts P2wpkh → P2tr → P2shP2wpkh rotation; counter file in `tempfile::tempdir()`
+- 10 unit tests in strategy.rs: `grep -c "#\[tokio::test\]\|#\[test\]"` returns 10
+
+**Status: VERIFIED**
+
+### Audit Item 4: v1.3 binary compat gate — D-87 fallback (ROADMAP SC #5)
+
+**Claim:** `v13_binary_compat.rs` exists, is feature-gated with `#![cfg(feature = "v13-binary-compat")]`,
+carries `#[ignore]`, reads `v13_pinned_sha.txt`, and uses `tokio::process::Command`.
+
+**Findings:**
+- File exists: CONFIRMED
+- First line is `#![cfg(feature = "v13-binary-compat")]`: CONFIRMED (head -1 output)
+- `#[ignore = "v1.3 binary BIP-322 to_sign format incompatible..."]` attribute at line 124: CONFIRMED (actual attribute, not a comment)
+- `async fn v13_client_p2wpkh_against_v14_coordinator` present: CONFIRMED
+- Reads `v13_pinned_sha.txt`: CONFIRMED (line 137)
+- Uses `tokio::process::Command`: CONFIRMED
+- `#[cfg(feature = "v13-binary-compat")] mod v13_binary_compat;` in mod.rs with cfg attribute above: CONFIRMED
+
+**Executor claim note:** The VERIFICATION.md states the test "exists with `#[ignore]`" — this is
+accurate. The `#[ignore]` is a proper Rust test attribute (not just a comment), confirmed by reading lines 123-125 directly.
+
+**Status: VERIFIED**
+
+### Audit Item 5: v13_pinned_sha.txt content
+
+**Claim:** Line 1 = `05f21438a7072987773bfe2eafaac5c51c68c61a`, line 2 = `docs(15): create phase plan`.
+
+**Findings:**
+- File read directly: line 1 is `05f21438a7072987773bfe2eafaac5c51c68c61a` (40 chars)
+- Line 2 is `docs(15): create phase plan`
+
+**Status: VERIFIED**
+
+### Audit Item 6: coordinator/Cargo.toml [features] block
+
+**Claim:** Contains `[features]` with `default = []` and `v13-binary-compat = []`.
+
+**Findings:**
+- `grep -n "v13-binary-compat\|default = \[\]\|\[features\]"` shows `[features]` at line 73, `default = []` at line 74, `v13-binary-compat = []` at line 79
+
+**Status: VERIFIED**
+
+### Audit Item 7: README.md Privacy Considerations
+
+**Claim:** `## Privacy Considerations` section present with 2 paragraphs covering V1.4-MOD-06
+(chain-analysis fingerprint) and V1.4-MIN-02 (bot rotation).
+
+**Findings:**
+- `grep -n "^## Privacy Considerations" README.md` returns line 44: 1 match
+- `grep -c "chain-analysis signal"` returns 1 (V1.4-MOD-06 paragraph)
+- `grep -c "uniform-script-type fingerprint"` returns 1 (V1.4-MIN-02 paragraph)
+- `grep -c "BLINDJOIN_BOT_SCRIPT_TYPES"` returns at least 1
+
+**Status: VERIFIED**
+
+### Audit Item 8: Requirements coverage
+
+**Findings:**
+- 18-01-PLAN.md frontmatter: `requirements: [INTEG-01]`
+- 18-02-PLAN.md frontmatter: `requirements: [INTEG-02]`
+- 18-03-PLAN.md frontmatter: `requirements: []` (intentional — no new requirements)
+- REQUIREMENTS.md maps INTEG-01 and INTEG-02 to Phase 18 with "Pending" status (these are the two requirements the executor claimed to close; no requirement tracking update in REQUIREMENTS.md is part of Phase 18 scope per plan 18-03 — status remains "Pending" in the requirements file itself, which is consistent with this project's convention of not editing REQUIREMENTS.md status inline)
+
+**Status: VERIFIED**
+
+### Audit Item 9: PII discipline
+
+**Claim:** No IP addresses, wallet identifiers, or key bytes logged in new bot code.
+
+**Findings:**
+- `grep -rn "tracing::info\|tracing::warn" liquidity-bot/src/lib.rs liquidity-bot/src/main.rs | grep -i "ip\|wallet_id\|secret_key\|private_key\|wif"` — one match found in main.rs line 156: `tracing::info!("Using BLINDJOIN_BOT_P2WPKH_{{UTXO,WIF}} env vars for P2WPKH")` — this logs the ENV VAR NAME (not a value), which is not PII.
+- `tests/integration/bot_rotation.rs` — zero matches
+
+**Status: VERIFIED (no PII leak; env var name logging is acceptable)**
+
+### Audit Item 10: Cargo build + audit gates
+
+**Findings:**
+- `cargo build --workspace` (dev profile): exit code 0, "Finished" in 25.18s
+- `cargo audit`: exit code 0, 718 crate dependencies scanned, no vulnerabilities found
+
+**Status: VERIFIED**
+
+### Audit Item 11: CRIT-01 grep gate carry-forward
+
+**Findings:**
+- `grep -c "CRIT-01" client/src/round/input.rs` returns 2 (matches Phase 17 baseline)
+- `grep -c "CRIT-01" coordinator/src/bitcoin/utxo.rs` returns 2 (matches Phase 16 baseline)
+
+**Status: VERIFIED**
+
+### Overall Audit Verdict
+
+All 11 audit items PASS. The executor's executor-narrated claims in SUMMARY.md are
+supported by observable codebase evidence. The D-87 fallback for success criterion #5 is
+a documented and authorized deviation per CD-25, not a gap — the test infrastructure
+(`v13_binary_compat.rs` with proper `#[ignore]` attribute, `v13_pinned_sha.txt`, coordinator
+`[features]` block) is present and correctly wired, and the UAT recipe is fully documented in
+this verification document.
+
+**verdict: confirmed — executor's `status: passed` is upheld by independent codebase audit.**

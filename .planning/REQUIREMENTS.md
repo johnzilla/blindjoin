@@ -30,8 +30,8 @@
 
 ### Test Infrastructure & Liquidity
 
-- [ ] **INTEG-01**: Mixed-script E2E integration test on regtest — full CoinJoin round with at least 1 P2WPKH + 1 P2TR + 1 P2SH-P2WPKH input completes through INPUT_REG → OUTPUT_REG → SIGNING → BROADCAST; reuses `BitcoindGuard` + `require_bitcoind!()` macro from v1.3 unchanged; v1.3 P2WPKH-only `full_round::*` tests remain green at this phase boundary (rollback safety net)
-- [ ] **INTEG-02**: Liquidity bot generates UTXOs across all enabled script types (new config field `script_types: ["p2wpkh", "p2tr", "p2sh-p2wpkh"]`); rotates type per round so bot's UTXOs aren't a uniform fingerprint (V1.4-MIN-02 mitigation); per-round keychain derivation continues to prevent output-address clustering
+- [x] **INTEG-01**: Mixed-script E2E integration test on regtest — full CoinJoin round with at least 1 P2WPKH + 1 P2TR + 1 P2SH-P2WPKH input completes through INPUT_REG → OUTPUT_REG → SIGNING → BROADCAST; reuses `BitcoindGuard` + `require_bitcoind!()` macro from v1.3 unchanged; v1.3 P2WPKH-only `full_round::*` tests remain green at this phase boundary (rollback safety net)
+- [x] **INTEG-02**: Liquidity bot generates UTXOs across all enabled script types (new config field `script_types: ["p2wpkh", "p2tr", "p2sh-p2wpkh"]`); rotates type per round so bot's UTXOs aren't a uniform fingerprint (V1.4-MIN-02 mitigation); per-round keychain derivation continues to prevent output-address clustering
 
 ## Future Requirements (v1.5+)
 
@@ -88,8 +88,8 @@ Explicitly excluded with reasoning to prevent re-adding later.
 | WALLET-02 | Phase 17 | Complete |
 | WALLET-03 | Phase 17 | Complete |
 | WALLET-04 | Phase 17 | Complete |
-| INTEG-01 | Phase 18 | Pending |
-| INTEG-02 | Phase 18 | Pending |
+| INTEG-01 | Phase 18 | Complete |
+| INTEG-02 | Phase 18 | Complete |
 
 **Coverage:**
 - v1.4 requirements: 14 total

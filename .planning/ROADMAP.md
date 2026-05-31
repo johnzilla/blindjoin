@@ -164,7 +164,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 15. Shared Crate Multi-Script Contract | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete   | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete   | 2026-05-30 |
-| 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete   | 2026-05-31 |
+| 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete    | 2026-05-31 |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`

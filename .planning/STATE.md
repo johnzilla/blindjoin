@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: BIP-322 Multi-Script Support
 current_plan: 1
-status: verifying
-stopped_at: Phase 18 context gathered
-last_updated: "2026-05-31T00:49:16.065Z"
+status: milestone_complete
+stopped_at: Milestone complete (Phase 18 was final phase)
+last_updated: 2026-05-31T00:56:56.819Z
 last_activity: 2026-05-31
 progress:
   total_phases: 5
@@ -19,9 +19,9 @@ progress:
 
 ## Current Position
 
-Phase: 18 (Mixed-Script E2E + Liquidity Bot) — EXECUTING
+Phase: 18
 Plan: 3 of 3
-Status: Phase complete — ready for verification
+Status: Milestone complete
 Last activity: 2026-05-31
 
 ## Project Reference
@@ -29,13 +29,13 @@ Last activity: 2026-05-31
 See: `.planning/PROJECT.md` (updated 2026-05-29 after v1.3 close)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 18 — Mixed-Script E2E + Liquidity Bot
+**Current focus:** Milestone complete
 
 ## Progress
 
 **Phases Complete:** 4 of 5 (v1.4 milestone)
 **Plans Complete:** 12 of 12 (Phase 14: 3/3 + Phase 15: 3/3 + Phase 16: 3/3 + Phase 17: 3/3)
-**Current Plan:** 1
+**Current Plan:** Not started
 
 **v1.4 phase map:**
 
