@@ -111,6 +111,23 @@ Yes — a BIP-style normative specification is being drafted at [docs/PROTOCOL.m
 </details>
 
 <details>
+<summary>Which input address types does BlindJoin support?</summary>
+
+As of v1.4, BlindJoin accepts three input script types in a single round:
+
+- **P2WPKH** (BIP-84 native segwit, addresses starting with `bc1q...` / `tb1q...`)
+- **P2TR** (BIP-86 single-key Taproot, `bc1p...` / `tb1p...`)
+- **P2SH-P2WPKH** (BIP-49 wrapped segwit, `3...` / `2...`)
+
+Pick the type at wallet generation with `client --generate-wallet --type {p2wpkh|p2tr|p2sh-p2wpkh}` (default: `p2wpkh` for backwards compatibility).
+
+Operators can run a single-script-type coordinator by disabling the others in `coordinator.toml` (`[bip] allow_p2tr = false`, etc.) — the supported set is advertised over the PKARR DHT and on `/info`, so clients reject mismatched coordinators **before** opening a Tor circuit.
+
+The coordinator derives the input's script type from the on-chain `script_pubkey` (not from any client-declared field) and cross-checks against the client's declaration; a malicious client cannot lie about its script type to bypass the per-script-type sighash verifier. See the README §Security Model "Multi-script script-type integrity" for the CRIT-01 invariant.
+
+</details>
+
+<details>
 <summary>What are the next planned features?</summary>
 
 - Mainnet support
@@ -118,6 +135,7 @@ Yes — a BIP-style normative specification is being drafted at [docs/PROTOCOL.m
 - Improved blame / round recovery mechanisms
 - GUI client
 - More robust Sybil resistance
+- P2WSH (multisig) BIP-322 support — currently P2WPKH, P2TR, and P2SH-P2WPKH are supported
 
 </details>
 

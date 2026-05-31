@@ -55,3 +55,25 @@ heartbeat_interval_secs = 300
 # Phase 4 (clearnet): your server's IP:port or hostname:port.
 # Phase 5 (Tor): your .onion address (e.g. "abc123xyz.onion").
 coordinator_public_addr = "127.0.0.1:8080"
+
+# --- v1.4 multi-script BIP-322 allowlist ----------------------------------
+# Top-level [bip] section. Validated at startup: an all-false combination,
+# or an `output_script_type` whose matching `allow_*` flag is false, cause
+# the coordinator to refuse to start. Defaults accept all three script
+# types. Env-var overrides use the BLINDJOIN__BIP__* path (lowercase
+# "true" / "false" strings only — "0" / "1" do NOT deserialize as bool
+# through the config crate's env source).
+#
+# Disabling a script type takes effect at validate-utxo time: registrations
+# for that type are rejected with UnsupportedScriptType, and the type is
+# omitted from the coordinator's `/info` and PKARR advertisements so v1.4
+# clients fail-fast at discovery (before opening a Tor circuit).
+[bip]
+allow_p2wpkh = true               # BIP-84 native segwit
+allow_p2tr = true                 # BIP-86 single-key Taproot (keypath only)
+allow_p2sh_p2wpkh = true          # BIP-49 wrapped segwit
+
+# Script type the coordinator uses for round outputs (mixed inputs, single
+# output type per round per design). Wire form is lowercase kebab-case:
+# "p2wpkh" / "p2tr" / "p2sh-p2wpkh". MUST match an enabled allow_* flag.
+output_script_type = "p2wpkh"

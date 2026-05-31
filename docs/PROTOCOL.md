@@ -82,7 +82,7 @@ and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 | Primitive | Specification | Implementation |
 |---|---|---|
 | Blind signatures | [RFC 9474](https://datatracker.ietf.org/doc/html/rfc9474) RSABSSA-SHA384-PSS-Randomized | [`blind-rsa-signatures` v0.17](https://crates.io/crates/blind-rsa-signatures) |
-| Ownership proofs | [BIP-322 Simple](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki) | Project-local implementation in [`shared/src/bip322.rs`](../shared/src/bip322.rs) |
+| Ownership proofs | [BIP-322 Simple](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki) | Dispatcher in [`shared/src/bip322/`](../shared/src/bip322/) wrapping the upstream [`bip322 = "=0.0.10"`](https://crates.io/crates/bip322) crate (rust-bitcoin org) via a 26-LOC zero-lossy adapter. Per-script implementations (P2WPKH, P2TR, P2SH-P2WPKH) live in sibling files behind a `pub(crate)`-only surface so callers cannot reach them to bypass dispatch. |
 | Coordinator identity | Ed25519 over [PKARR](https://github.com/pubky/pkarr) | [`pkarr` v5](https://crates.io/crates/pkarr) |
 | Transport | Tor v3 hidden services (server); isolated client circuits | [`arti-client` v0.41](https://crates.io/crates/arti-client) |
 | Session token integrity | HMAC-SHA-256 with constant-time comparison | `hmac` + `sha2` |
@@ -94,9 +94,14 @@ A coordinator MUST publish a PKARR record to the Mainline DHT containing:
 
 - The coordinator's reachable address: `.onion` hostname (production) or
   `host:port` (development only).
-- The protocol version supported.
+- The protocol version supported (current: `v0.2.0` for v1.4 coordinators; v1.3 used `0.1.0`).
 - The advertised fixed denomination, in satoshis.
 - The minimum and maximum participant counts.
+- (v1.4+) The supported input script types (`sst`, CSV; alphabetical canonical
+  order) and the output script type the coordinator will use for round outputs
+  (`ost`, single kebab-case string). Clients that cannot sign for any
+  advertised input type SHOULD reject the coordinator at discovery time
+  rather than opening a Tor circuit.
 
 The PKARR record MUST be signed by the coordinator's Ed25519 keypair (the
 "coordinator identity key"); clients MUST verify the signature before
@@ -124,8 +129,15 @@ containing:
 
 - `utxo_outpoint`: the UTXO being registered, as `"txid:vout"`.
 - `ownership_proof`: a BIP-322 Simple signature over the canonical
-  blindjoin challenge, encoded as a JSON array of hex-encoded witness
-  stack items (the canonical wire form per [`OwnershipProof`](../shared/src/protocol.rs#L113)).
+  blindjoin challenge, encoded per [`OwnershipProof`](../shared/src/protocol.rs).
+  v1.3 used a JSON array of hex-encoded witness stack items
+  (P2WPKH-only); v1.4 extends this to a versioned flat-struct envelope
+  (`version: u8`, `witness_stack`, `psbt_input_b64`, `script_type`) so
+  P2TR and P2SH-P2WPKH proofs can carry the additional bytes they need
+  (Schnorr keypath witness, P2SH `final_script_sig`). The
+  v1.4 decoder is a two-phase try-parse that accepts the legacy
+  array-of-hex shape as `version = 1`, so a v1.3 client continues to
+  interoperate with a v1.4 coordinator byte-for-byte.
 - `blinded_token`: an RFC 9474-blinded message commitment, base64-encoded.
 - `change_address`: the bech32 address for the participant's change output
   (this is linkable to the input; participants are advised so).

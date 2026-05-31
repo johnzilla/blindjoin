@@ -1,5 +1,35 @@
 # TODO
 
+## Resolved 2026-05-31
+
+- [x] **B-02: BIP-322 multi-script support — SHIPPED as v1.4 milestone.**
+  Coordinator accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs under an
+  operator-configurable `[bip]` allowlist; advertises `supported_script_types`
+  over PKARR (`v0.2.0` schema, compact `sst`/`ost` fields, 209-byte
+  production-onion payload) and `/round/info`. Client wallet supports
+  `--type {p2wpkh|p2tr|p2sh-p2wpkh}` with BIP-84/86/49 descriptor templates
+  (literal templates with `coin=0'` across all networks per RESEARCH Pitfall 2
+  — bdk_wallet's `Bip84/86/49` helpers auto-select `coin=1'` on testnet/signet
+  and would break v1.3 byte-equivalence). Client rejects mismatched
+  coordinators at discovery time **before** opening a Tor circuit
+  (`DiscoveryError::UnsupportedScriptType` with the literal "does not support"
+  wording naming both coordinator and missing type). V1.4-CRIT-01 spoofing
+  vector mitigated three ways: (1) coordinator derives `ScriptType` from
+  on-chain `script_pubkey` and cross-checks against client declaration before
+  the per-script verifier runs; (2) `shared::bip322` dispatcher-only public
+  surface — per-script verify/sign are `pub(crate)`-only so callers cannot
+  reach them to bypass dispatch; (3) two CI grep gates (`crit-01-grep-check`
+  coordinator-side + `crit-01-client-grep-check` client-side) enforce the
+  literal `CRIT-01` token count. Adopted upstream `bip322 = "=0.0.10"` via a
+  26-LOC zero-lossy adapter (no custom sighash math) behind a
+  `bip322-pin-check` CI gate. 5 phases (14-18), 15 plans; v1.3 P2WPKH-only
+  `full_round::*` invariant held green at every v1.4 phase boundary (8/8 PASS).
+  Backwards-compat shim (WALLET-04) verified bidirectionally: v1.4→v1.3 via
+  the CD-7 two-phase try-parse `OwnershipProof` encoder (byte-identical v1.3
+  array-of-hex in the legacy branch); v1.3→v1.4 verified inline by Phase 18-03
+  against a pinned v1.3 binary at SHA `05f21438`. Tagged `v1.4.0`. Full
+  per-phase summary in `.planning/milestones/v1.4-ROADMAP.md`.
+
 ## Resolved 2026-05-28
 
 - [x] **REPAIR-01: full_round.rs carve-outs repaired.** All 8 `full_round::*`
@@ -217,7 +247,6 @@
   findings #1 and #2. Estimated ~30 min refactor.
 
 ### Scoped features (see BACKLOG.md)
-- [ ] **B-02:** BIP-322 multi-script support (P2TR, P2SH-P2WPKH)
 - [ ] **B-03:** Dynamic fee estimation (mempool-aware, safety margin, RBF)
 
-These are deferred features with full scoping in [`.planning/BACKLOG.md`](.planning/BACKLOG.md). **B-01 shipped 2026-05-26** as Phase 8 of the v1.2 Production Readiness milestone (see Resolved above). B-02 and B-03 remain candidates for future milestones.
+These are deferred features with full scoping in [`.planning/BACKLOG.md`](.planning/BACKLOG.md). **B-01 shipped 2026-05-26** as Phase 8 of the v1.2 Production Readiness milestone (see Resolved above). **B-02 shipped 2026-05-31** as the v1.4 BIP-322 Multi-Script Support milestone (see Resolved above). B-03 remains a candidate for future milestones (pre-mainnet requirement).

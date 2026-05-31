@@ -6,14 +6,17 @@ MIT licensed. No fees. No company. No terms of service.
 
 ## What This Does
 
-1. Coordinator announces a fixed-denomination CoinJoin round (default: 0.01 BTC)
-2. Participants register inputs with BIP-322 ownership proofs and receive blind-signed tokens
-3. Participants register outputs using unblinded tokens (on a fresh Tor circuit)
-4. Coordinator builds the transaction, participants verify and sign
-5. Coordinator broadcasts the final CoinJoin transaction
-6. Non-signers are detected, banned, and the round restarts with remaining participants
+1. Coordinator announces a fixed-denomination CoinJoin round (default: 0.01 BTC) and the input script types it accepts (P2WPKH, P2TR, P2SH-P2WPKH)
+2. Participants discover the coordinator via PKARR DHT and reject mismatched coordinators **before** opening a Tor circuit
+3. Participants register inputs with BIP-322 ownership proofs (one of the three supported script types) and receive blind-signed tokens
+4. Participants register outputs using unblinded tokens (on a fresh Tor circuit)
+5. Coordinator builds the transaction, participants verify and sign
+6. Coordinator broadcasts the final CoinJoin transaction
+7. Non-signers are detected, banned, and the round restarts with remaining participants
 
 The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses ephemeral RSA keys that are destroyed after broadcast. All round state is zeroed from memory.
+
+As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of P2WPKH + P2TR + P2SH-P2WPKH inputs) under an operator-configurable allowlist. The script type of every input is derived from on-chain `script_pubkey` and cross-checked against the client's declaration — a malicious client cannot bypass the per-script-type sighash verification by lying about which type its input is.
 
 ## Documentation
 
@@ -110,18 +113,24 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | `coordinator.max_concurrent_connections` | 256 | Cap on simultaneous Tor hidden-service streams; excess connections park | ✓ |
 | `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |  |
 | `discovery.heartbeat_interval_secs` | 300 | PKARR re-publish interval |  |
+| `bip.allow_p2wpkh` | true | Accept BIP-84 P2WPKH inputs (env: `BLINDJOIN__BIP__ALLOW_P2WPKH`) | ✓ |
+| `bip.allow_p2tr` | true | Accept BIP-86 P2TR inputs (env: `BLINDJOIN__BIP__ALLOW_P2TR`) | ✓ |
+| `bip.allow_p2sh_p2wpkh` | true | Accept BIP-49 P2SH-P2WPKH inputs (env: `BLINDJOIN__BIP__ALLOW_P2SH_P2WPKH`) | ✓ |
+| `bip.output_script_type` | p2wpkh | Script type of round outputs; one of `p2wpkh` / `p2tr` / `p2sh-p2wpkh`. MUST match an enabled `allow_*` flag (env: `BLINDJOIN__BIP__OUTPUT_SCRIPT_TYPE`) | ✓ |
 
-**✓ Startup-validated** entries are checked by `CoordinatorConfig::validate()` at boot — out-of-range values (e.g. `request_timeout_secs: 0`, or `max_concurrent_connections` above the OS file-descriptor cap) cause the coordinator to refuse to start with an actionable error, rather than panicking later under load. The unmarked entries get type-level validation only (TOML/serde parses an integer as an integer, but no semantic bounds are enforced). The four marked entries are the v1.2 Phase 8 DoS-hardening knobs.
+**✓ Startup-validated** entries are checked by `CoordinatorConfig::validate()` at boot — out-of-range values (e.g. `request_timeout_secs: 0`, or `max_concurrent_connections` above the OS file-descriptor cap) cause the coordinator to refuse to start with an actionable error, rather than panicking later under load. The unmarked entries get type-level validation only (TOML/serde parses an integer as an integer, but no semantic bounds are enforced). The four `coordinator.*` marked entries are the v1.2 Phase 8 DoS-hardening knobs; the four `bip.*` entries are the v1.4 multi-script allowlist (an all-`false` `bip.*` combination, or an `output_script_type` whose matching `allow_*` flag is `false`, refuses to start).
 
 ### API Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/info` | Coordinator status, round state, RSA public key |
-| POST | `/round/input` | Register a UTXO input + receive blind signature |
+| GET | `/info` | Coordinator status, round state, RSA public key, `supported_script_types` (v1.4+), `output_script_type` (v1.4+) |
+| POST | `/round/input` | Register a UTXO input + receive blind signature (accepts BIP-322 ownership proofs for all enabled script types) |
 | POST | `/round/output` | Register an output using unblinded token |
 | GET | `/round/tx` | Retrieve unsigned PSBT for verification |
 | POST | `/round/sign` | Submit partial signature |
+
+**Script-type advertisement.** `/info` includes `supported_script_types` (a JSON array such as `["p2sh-p2wpkh","p2tr","p2wpkh"]`) and `output_script_type` (a single kebab-case string) so clients can fail-fast on a mismatch before opening a Tor circuit. The same data is published in compact form (`sst`/`ost` fields) in the coordinator's PKARR record (`v0.2.0`) so even DHT-discovery callers can skip mismatched coordinators without ever connecting. Both `supported_script_types` and `output_script_type` are `#[serde(default)]` on the wire — pre-v1.4 coordinators with no advertised set are interpreted as `["p2wpkh"]` and v1.4 clients fall back to the legacy witness-only `OwnershipProof` envelope when they detect one.
 
 Errors return a structured JSON envelope:
 
@@ -152,24 +161,35 @@ Handlers that stall past `request_timeout_secs` return **HTTP 408**. Clients SHO
 ## Run the Client
 
 ```bash
-# Direct connection (development)
+# Generate a wallet of a given script type (writes descriptors.txt, mode 0600)
+cargo run -p client -- --generate-wallet --type p2tr            # BIP-86 Taproot
+cargo run -p client -- --generate-wallet --type p2sh-p2wpkh     # BIP-49 wrapped-segwit
+cargo run -p client -- --generate-wallet --type p2wpkh          # BIP-84 native segwit (default)
+
+# Direct connection (development) — uses a WIF P2WPKH key (legacy v1.3 path)
 cargo run -p client -- --coordinator-url http://127.0.0.1:8080 \
   --wif <your-private-key-wif> \
   --output-address <destination-address>
 
-# Via Tor (production)
-cargo run -p client -- --coordinator-url http://<onion-address> \
-  --wif <your-private-key-wif> \
+# Direct connection with a descriptor wallet (works for all 3 script types)
+cargo run -p client -- --coordinator-url http://127.0.0.1:8080 \
+  --descriptor descriptors.txt \
+  --type p2tr \
+  --output-address <destination-address>
+
+# Via Tor (production) — coordinator discovery via PKARR DHT
+cargo run -p client -- --pkarr-pubkey <coordinator-public-key> \
+  --descriptor descriptors.txt \
+  --type p2tr \
   --output-address <destination-address> \
   --tor
-
-# Discover coordinator via PKARR DHT
-cargo run -p client -- --pkarr-pubkey <coordinator-public-key> \
-  --wif <your-private-key-wif> \
-  --output-address <destination-address>
 ```
 
+The `--type` flag (also settable via the `BLINDJOIN_SCRIPT_TYPE` env var) accepts `p2wpkh`, `p2tr`, or `p2sh-p2wpkh` and selects the BIP descriptor template at wallet generation (BIP-84 / BIP-86 / BIP-49 respectively). It also tells the discovery layer which script type to require — pointing a `--type p2tr` client at a coordinator that has `bip.allow_p2tr = false` fails fast with `DiscoveryError::UnsupportedScriptType` **before** any Tor circuit opens, naming both the coordinator and the missing script type.
+
 When `--tor` is enabled, the client uses per-phase Tor circuit isolation: input registration flows through one circuit (alice) and output registration flows through a different circuit (bob). This prevents the coordinator from correlating phases by Tor circuit.
+
+**Backwards compatibility.** A v1.4 client pointed at a pre-`0.2.0` (v1.3) coordinator detects the absence of `supported_script_types` on `/info` and falls back to the legacy witness-only `OwnershipProof` wire format. A v1.3 client unaware of v1.4 advertisement happily registers a P2WPKH UTXO against a v1.4 coordinator — the v1.4 coordinator's `OwnershipProof` decoder is a two-phase try-parse that accepts v1.3 array-of-hex shape as `version = 1`.
 
 ## Pre-built Binaries
 
@@ -222,9 +242,17 @@ blindjoin/
     src/
       protocol.rs    # Wire message structs (serde, forward-compatible)
       token.rs       # Blind token message computation (domain-separated SHA-256)
-      bip322.rs      # BIP-322 Simple message signing primitives
+      bip322/        # BIP-322 Simple dispatcher + per-script-type sign/verify (v1.4)
+        mod.rs       # ScriptType enum, dispatcher, 26-LOC bip322-crate adapter
+        p2wpkh.rs    # BIP-143 ECDSA sign/verify
+        p2tr.rs      # BIP-341 Schnorr keypath sign/verify
+        p2sh_p2wpkh.rs # BIP-49-wrapped P2WPKH sign/verify
       errors.rs      # Structured error codes
       types.rs       # Common types (RoundId, Denomination)
+    tests/
+      bip322_cross_shape.rs    # 9 cross-shape rejection tests (V1.4-CRIT-01 mitigation)
+      per_script_vectors.rs    # Vendored official BIP-322 vectors per script type
+      ownership_proof_roundtrip.rs # v1.3 array-of-hex ↔ v1.4 flat-struct compat
   liquidity-bot/     # Auto-joins rounds for testing and cold-start
     src/
       main.rs        # Polling loop, signet safety guard
@@ -273,12 +301,15 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Test infrastructure (v1.3 Phase 9):** Integration tests under `tests/integration/` no longer silently graceful-skip in CI — under `BLINDJOIN_REQUIRE_BITCOIND=1` (workflow-level env), tests that can't find bitcoind PANIC, surfacing the misconfiguration immediately. The historical `Box::leak(node)` pattern that blocked cargo's stdout pipe behind orphan bitcoind processes is replaced with a `BitcoindGuard` RAII type whose `Drop::drop` runs `node.stop()` via `tokio::spawn_blocking`. All 8 `full_round::*` end-to-end tests run by default (six former `#[ignore = "TODO(Phase-10)..."]` carve-outs were closed once the wire-format mismatch in client/server witness encoding was repaired). See [CONTRIBUTING.md](CONTRIBUTING.md) for local invocation.
 
+**Multi-script script-type integrity (v1.4):** The coordinator's `validate_utxo` derives the `ScriptType` of every input from the on-chain `script_pubkey` (not from the client-declared field on the wire) and cross-checks against the declaration; mismatch returns `Bip322Error::ScriptTypeMismatch` **before** the per-script verifier ever runs. The invariant is double-anchored in CI: a `crit-01-grep-check` job greps for ≥2 `CRIT-01` tokens in `coordinator/src/bitcoin/utxo.rs` (the v=1 and v=2 dispatcher arms); a `crit-01-client-grep-check` job greps for ≥1 in `client/src/round/input.rs` (where the client populates `script_type` from the wallet, not from a CLI echo). The `shared::bip322` dispatcher is the only public verifier surface — per-script verify/sign functions are `pub(crate)`-only, so a caller cannot reach `p2wpkh::verify` from outside the crate to bypass dispatch. A `bip322-pin-check` CI job enforces the `bip322 = "=0.0.10"` exact pin (the crate is pre-1.0 and any minor release can break us). 9 cross-shape rejection tests in `shared/tests/bip322_cross_shape.rs` lock the V1.4-CRIT-01 spoofing-vector closure at the `shared/` crate boundary.
+
 ## Key Dependencies
 
 | Crate | Purpose |
 |-------|---------|
 | `blind-rsa-signatures` | RFC 9474 RSA blind signatures (jedisct1) |
 | `bitcoin` (rust-bitcoin) | Bitcoin primitives, PSBT, scripts |
+| `bip322` | BIP-322 Simple verifier (rust-bitcoin org). Exact-pinned to `=0.0.10` and enforced by a `bip322-pin-check` CI gate — the crate is pre-1.0 and any minor release can break the wire format. Wrapped behind a 26-LOC zero-lossy adapter so a future swap is mechanical. |
 | `bdk_wallet` | Client wallet: key management, UTXO selection, PSBT signing |
 | `arti-client` | Tor hidden service (coordinator) and circuit isolation (client). Configured `default-features = false` with the `rustls` feature so the TLS backend is pure-Rust and the openssl chain is not in the dep tree. |
 | `pkarr` | Coordinator discovery via Mainline DHT |
