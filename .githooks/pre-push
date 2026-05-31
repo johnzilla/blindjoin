@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Tracked pre-push hook — mirrors `.github/workflows/ci.yml`.
+#
+# Install once per clone:
+#   git config core.hooksPath .githooks
+#
+# Skip a single push (e.g. WIP branch): git push --no-verify
+# Run the heavy --all-targets test suite too (needs bitcoind on $PATH or
+# $BITCOIND_EXE, takes minutes):
+#   BLINDJOIN_HOOK_FULL_TEST=1 git push
+#
+# CI invocations this mirrors (see .github/workflows/ci.yml):
+#   - cargo test --workspace --all-targets     (job: cargo test)
+#   - cargo clippy --workspace --all-targets -- -D warnings  (job: cargo clippy)
+#   - cargo audit                              (job: cargo audit)
+
+set -e
+
+echo "=== pre-push: cargo check ==="
+cargo check --workspace
+
+echo "=== pre-push: cargo clippy --all-targets ==="
+# Must use --all-targets so lints in tests/integration/ surface locally,
+# not only in CI. The June 2026 v1.4 milestone close shipped two commits
+# that passed locally without --all-targets and failed CI on lints in
+# integration-test files (commits ad86f6c, 3bf0d19).
+cargo clippy --workspace --all-targets -- -D warnings
+
+if [ "${BLINDJOIN_HOOK_FULL_TEST:-0}" = "1" ]; then
+    echo "=== pre-push: cargo test --workspace --all-targets (BLINDJOIN_HOOK_FULL_TEST=1) ==="
+    cargo test --workspace --all-targets
+else
+    echo "=== pre-push: cargo test --workspace --lib (fast path; BLINDJOIN_HOOK_FULL_TEST=1 for full --all-targets) ==="
+    cargo test --workspace --lib
+fi
+
+if command -v cargo-audit &>/dev/null; then
+    echo "=== pre-push: cargo audit (advisory, non-blocking) ==="
+    cargo audit || echo "    ⚠ Audit found issues — review above. Push continues (upstream deps may have known advisories)."
+else
+    echo "=== pre-push: cargo audit skipped (cargo-audit not installed) ==="
+    echo "    Install with: cargo install cargo-audit --locked"
+fi
+
+echo "=== pre-push: all checks passed ==="

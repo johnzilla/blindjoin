@@ -9,6 +9,24 @@ This document is narrow on purpose: it covers the local-dev prerequisites and th
 - **Rust toolchain.** Use the stable channel that matches CI. Verify with `rustup show active-toolchain`, or read `.github/workflows/ci.yml` for the toolchain action's pin.
 - **Bitcoin Core v30.2.** The version is pinned in `.bitcoind-version` at the repo root (currently `30.2`); CI reads the same file so local and CI behavior stay aligned. Install via `brew install bitcoin` on macOS, or download the release tarball from <https://bitcoincore.org/bin/bitcoin-core-30.2/>. Bumping the pin is a single-line PR.
 
+## Pre-push hook (optional but recommended)
+
+A tracked pre-push hook lives at `.githooks/pre-push` and mirrors the CI checks in `.github/workflows/ci.yml` (`cargo check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --lib`, `cargo audit`). It catches the common case where local clippy passes without `--all-targets` but CI fails on lints in `tests/` files.
+
+Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs `cargo test --workspace --lib` (fast unit tests only) by default. To mirror CI exactly and run integration tests too — slow, needs `bitcoind` on `$PATH` or `$BITCOIND_EXE` — set `BLINDJOIN_HOOK_FULL_TEST=1`:
+
+```bash
+BLINDJOIN_HOOK_FULL_TEST=1 git push
+```
+
+Skip the hook for a single push (e.g. a WIP branch): `git push --no-verify`.
+
 ## Running integration tests
 
 The integration tests under `tests/integration/` exercise the production startup path of the coordinator (in-process `coordinator::run`) against a real regtest `bitcoind` and a real HTTP client. They are slow — 60+ seconds per test, sometimes longer — and they require a running `bitcoind` binary discoverable via `BITCOIND_EXE`.
