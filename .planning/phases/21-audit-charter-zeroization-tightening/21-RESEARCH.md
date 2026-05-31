@@ -937,7 +937,7 @@ audit:
 
 **Notable:** all other claims in this research are verified by direct inspection of installed source (`~/.cargo/registry/src/...`), direct execution of `cargo audit --json`, direct grep of the codebase, or direct citation of cited files/line numbers. The Assumptions Log has only 2 entries because the dominant research method here was **direct code inspection**, not training-data inference.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 No remaining open questions. The 3 CONTEXT.md-flagged research questions are answered with RECOMMENDATION blocks above; the 9 Standard Research items have concrete tables/answers; the file:symbol anchors all resolve; the cargo-audit diff is empty; the call-site count is exact.
 

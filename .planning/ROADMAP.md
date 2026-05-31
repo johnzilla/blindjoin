@@ -122,6 +122,18 @@ Plans:
   4. Test `round_secret_key_zeroes_on_drop` in `coordinator/src/blind/rsa.rs::tests` constructs a `RoundSecretKey`, drops it, and asserts the underlying buffer no longer matches the original DER bytes (best-effort RAM scan acceptable per the existing `blind-rsa-signatures 0.17.x` limitation — the structural lifetime bound is the load-bearing claim).
   5. v1.3 `full_round::*` 8/8 + v1.4 `mixed_script_e2e_three_clients_broadcast` + Phase 20 fee tests all green at the plan boundary; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo audit` returns 0 vulnerabilities with the refreshed `audit.toml`.
 
+**Plans:** 2 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 21-01-PLAN.md — RoundSecretKey newtype + Option<RsaBlindSigner> refactor + 2 tests (structural FSM + best-effort RAM scan) + D-07 comment rewrite + 4 call-site fix-ups (closes AUDIT-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 21-02-PLAN.md — docs/AUDIT-CHARTER.md (8 sections) + .cargo/audit.toml charter-anchor refresh + RUSTSEC-2023-0071 rewrite + README §Security Model callout — single atomic commit per D-133a (closes AUDIT-01 + AUDIT-02)
+
+
 ## Cross-Phase Invariant (v1.5)
 
 > **At every v1.5 phase boundary, the v1.3 P2WPKH-only `full_round::*` integration tests MUST remain green AND the v1.4 `mixed_script_e2e_three_clients_broadcast` test MUST remain green.** This extends the v1.4 rollback safety net to include the v1.4 multi-script E2E gate — v1.5 is finishing v1.4, so v1.4's acceptance gate becomes v1.5's invariant. Per the v1.4 lesson: if a phase breaks either suite, abandon the structured plan and pivot to `/gsd:debug` (REPAIR-01 lesson #4).
@@ -160,7 +172,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
 | 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete    | 2026-05-31 |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete    | 2026-05-31 |
-| 21. Audit Charter & Zeroization Tightening | v1.5 | 0/? | Not started | — |
+| 21. Audit Charter & Zeroization Tightening | v1.5 | 0/2 | Planned     | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
