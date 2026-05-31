@@ -19,8 +19,10 @@ ignore = [
     # blind-sign operations per round (default max_participants = 20);
     # (iii) AUDIT-03 RoundSecretKey + Option<RsaBlindSigner> bounded
     # lifetime on RoundStateInner — the secret is dropped at the SOLE
-    # FSM chokepoint transition_to(Phase::Idle) (coordinator/src/round/
-    # state.rs:194-200), triggering the transitive <rsa::RsaPrivateKey
+    # FSM chokepoint transition_to(Phase::Idle) (declared at coordinator/
+    # src/round/state.rs:193; the self.inner = None assignment lives at
+    # state.rs:202 inside the validated-transition block 201-207),
+    # triggering the transitive <rsa::RsaPrivateKey
     # as Drop>::drop chain at rsa-0.9.10/src/key.rs:76-82 which zeroizes
     # d, primes, and precomputed unconditionally. The structural lifetime
     # bound is verified by coordinator/src/round/state.rs::tests::

@@ -190,8 +190,10 @@ wraps the per-round `blind_rsa_signatures::SecretKey`. The
 `RoundStateInner.rsa_signer: Option<RsaBlindSigner>` field on
 `coordinator/src/round/state.rs::RoundStateInner` is the lifetime bound
 expressible as a Rust type signature. The SOLE FSM trigger that nulls this
-Option is `RoundState::transition_to(Phase::Idle)` at
-`coordinator/src/round/state.rs:194-200`. When that trigger fires, the
+Option is `RoundState::transition_to(Phase::Idle)` (declared at
+`coordinator/src/round/state.rs:193`; the `self.inner = None` chokepoint is
+at `coordinator/src/round/state.rs:202` inside the validated-transition
+block at lines 201-207). When that trigger fires, the
 Drop chain runs all the way through to `<rsa::RsaPrivateKey as Drop>::drop`
 at `rsa-0.9.10/src/key.rs:76-82`, which calls `.zeroize()` on `d`,
 `primes`, and `precomputed`. The full chain is documented in
@@ -321,9 +323,10 @@ signature. An auditor reading the type signature can answer "when does
 this secret die?" with a single grep: the secret dies when the Option is
 set to `None`.
 
-**The trigger.** `RoundState::transition_to(Phase::Idle)` at
-`coordinator/src/round/state.rs:194-200` is the SOLE site that sets
-`self.inner = None`. This is verified by grep of the entire
+**The trigger.** `RoundState::transition_to(Phase::Idle)` (declared at
+`coordinator/src/round/state.rs:193`) is the SOLE site that sets
+`self.inner = None` — the assignment lives at `state.rs:202` inside the
+validated-transition block 201-207. This is verified by grep of the entire
 `coordinator/src/` tree — no other code path assigns `inner = None`. The
 FSM has 4 valid edges to `Phase::Idle`: Broadcast → Idle (success path,
 `coordinator/src/round/signing.rs:280`), Blame → Idle (signing timeout,
@@ -347,8 +350,8 @@ Both impls compile without any feature flag — `zeroize` is a non-optional
 dep of `rsa`. When the FSM trigger fires, the full Drop chain runs:
 
 ```text
-RoundState::transition_to(Phase::Idle)             // state.rs:194-200
-  self.inner = None
+RoundState::transition_to(Phase::Idle)             // state.rs:193 (decl); body at 194-228
+  self.inner = None                                // state.rs:202 (chokepoint)
     drop(Option<RoundStateInner>)
       drop(RoundStateInner)                        // state.rs::Drop, lines 127-156
         // (zeroizes rsa_signing_key, round_secret, registered_inputs, ...)
@@ -490,6 +493,33 @@ prose below is the threat-model treatment.
   verification has been performed during development. **Disposition:
   DOCUMENTED GAP**; closure deferred to v1.6+ per REQUIREMENTS Future
   Requirements.
+
+- **AUDIT-03 chokepoint result-discard pattern (`let _ =` on FSM
+  transitions).** The 3 success-path FSM trigger sites that ultimately
+  route through `transition_to(Phase::Idle)` use the pattern
+  `let _ = state.transition_to(Phase::{Broadcast,Idle})` at
+  `coordinator/src/round/signing.rs:279-280` (Broadcast → Idle on success),
+  `coordinator/src/round/blame.rs:219-220` (Blame → Idle on signing
+  timeout), and `coordinator/src/round/output_reg.rs:30-31` (Blame → Idle
+  on missing output). The discarded `Result<(), TransitionError>` would
+  signal a failed FSM edge, but in the current concurrency model the
+  preceding transitions guarantee a valid edge: the round-state
+  `Arc<RwLock<RoundState>>` is held for the duration of each handler,
+  no other writer can interleave a phase change, and the preceding
+  transition (e.g., `Signing → Broadcast` in signing.rs:271) has already
+  established a phase from which `→ Idle` is a valid edge per
+  `Phase::can_transition_to`. If a future refactor introduces concurrent
+  writers, a different middle phase, or a stricter FSM validator, a
+  failed transition would silently leave `RoundStateInner.inner` (and
+  hence `Option<RsaBlindSigner>`) live in memory until the next
+  successful `→ Idle` transition, violating the AUDIT-03 bounded-window
+  claim's spirit. **Disposition: ACCEPTED** as defense-in-depth gap
+  with the explicit invariant that **any change to the FSM concurrency
+  model or the set of `Phase::can_transition_to` edges MUST audit these
+  3 sites first**; closure (replacing `let _ =` with explicit
+  `.expect()` or `.unwrap_or_else(|e| { /* fallback drop */ })`)
+  deferred to v1.6+. Surfaced by the v1.5 internal code review (Phase
+  21 REVIEW.md CR-01).
 
 ### Residual Risks: Operational
 

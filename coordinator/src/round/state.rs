@@ -96,7 +96,7 @@ pub struct RoundStateInner {
     pub rsa_signing_key: Vec<u8>,
     /// Parsed RSA blind signer wrapped in `Option` per AUDIT-03 — `Some(_)` during
     /// an active round, `None` when Idle. The bounded lifetime (the Option is set
-    /// to `None` at `state.rs:195` inside `transition_to(Phase::Idle)`) is the
+    /// to `None` at `state.rs:202` inside `transition_to(Phase::Idle)`) is the
     /// structural mitigation for the RUSTSEC-2023-0071 Marvin Attack timing-
     /// sidechannel exposure (long-lived-key + unlimited-measurements preconditions
     /// do not obtain when the key is per-round and dropped at the FSM chokepoint).

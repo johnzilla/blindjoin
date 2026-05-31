@@ -78,10 +78,13 @@ impl Drop for RoundSecretKey {
 /// The per-round secret key is wrapped in `RoundSecretKey` (above) and held in the
 /// `secret_key` field below. The key's lifetime is bounded by
 /// `RoundStateInner.rsa_signer: Option<RsaBlindSigner>` on the outer round state.
-/// On any transition to `Phase::Idle`, `RoundState::transition_to` sets
-/// `self.inner = None` (`coordinator/src/round/state.rs:194-200`), which drops
-/// `Option<RsaBlindSigner>`, which drops `RoundSecretKey`, whose `Drop` impl emits
-/// a PII-safe `tracing::debug!` event and then the wrapped `BjSecretKey` drops.
+/// On any transition to `Phase::Idle`, `RoundState::transition_to` (declared at
+/// `coordinator/src/round/state.rs:193`) sets `self.inner = None` at the
+/// success-path chokepoint inside the function body
+/// (`coordinator/src/round/state.rs:202`, within the validated-transition block
+/// at lines 201-207), which drops `Option<RsaBlindSigner>`, which drops
+/// `RoundSecretKey`, whose `Drop` impl emits a PII-safe `tracing::debug!` event
+/// and then the wrapped `BjSecretKey` drops.
 ///
 /// `BjSecretKey` is `blind_rsa_signatures::SecretKey<Sha384, PSS, Randomized>`,
 /// which holds `inner: rsa::RsaPrivateKey`. The `rsa = 0.9.10` crate has an
