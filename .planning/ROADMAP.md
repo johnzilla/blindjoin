@@ -68,10 +68,22 @@
 ## Phase Details
 
 ### Phase 19: Multi-Script Signing Finish
+
 **Goal**: `shared::bip322` ships production `sign` bodies for all 3 script types via the `pub(crate) fn sign` surface, and the test-only escape hatches (`sign_simple_test_only` + per-script `sign_for_tests` helpers) are gone — V1.4-CRIT-01 dispatcher-only invariant is now load-bearing at the type level with no holes.
 **Depends on**: v1.4 ship (Phase 18 closed; `bip322 = "=0.0.10"` adapter at `shared/src/bip322/mod.rs::verify_via_bip322_crate` is the reference pattern for the symmetric sign path).
 **Requirements**: BIP322-05, BIP322-06, BIP322-07
+**Plans:** 2 plans
+Plans:
+**Wave 1**
+
+- [ ] 19-01-PLAN.md — Ship production p2tr::sign + p2sh_p2wpkh::sign bodies, D-111 spk↔key cross-check, p2sh_p2wpkh_final_script_sig helper + 3 unit tests, 2 byte-equality parity tests in client/tests/wallet_sign_roundtrip.rs (closes BIP322-05 + BIP322-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 19-02-PLAN.md — Delete sign_simple_test_only + per-script sign_for_tests helpers, migrate 6 callsites to sign_simple, refresh doc-comments, grep-verify zero residual references (closes BIP322-07)
+
 **Success Criteria** (what must be TRUE):
+
   1. `shared/src/bip322/p2tr.rs::sign` returns a 1-element witness with a valid 64-byte BIP-341 Schnorr SIGHASH_DEFAULT signature over the canonical BIP-322 `to_sign` sighash; `secp256k1::verify_schnorr(sig, sighash, x_only_pubkey)` returns `Ok(())` on the output of `sign(spk, key, message)`; identical witness bytes to what `BdkClientWallet::sign_bip322` produces for the same `(key, message)` (parity test).
   2. `shared/src/bip322/p2sh_p2wpkh.rs::sign` returns a 2-element witness `[der_sig+SIGHASH_ALL, compressed_pubkey]` AND a `final_script_sig = OP_PUSHBYTES_22 OP_0 <20-byte HASH160(pubkey)>`; HASH160(redeemScript) equals the P2SH SPK hash160; `shared::bip322::verify_simple(ScriptType::P2shP2wpkh, spk, witness, message, network)` returns `Ok(())` on the output of `sign(spk, key, message)`.
   3. `#[doc(hidden)] pub fn sign_simple_test_only` at `shared/src/bip322/mod.rs:302-314` is **deleted** AND no `pub(crate) fn sign_for_tests` remains in `p2wpkh.rs` / `p2tr.rs` / `p2sh_p2wpkh.rs`; integration tests at `shared/tests/{per_script_vectors,bip322_cross_shape}.rs` call only `verify_simple` / `sign_simple` / `detect_script_type` (the real dispatcher).
@@ -79,10 +91,12 @@
   5. `cargo clippy --workspace --all-targets -- -D warnings` clean; `bip322-pin-check` + `crit-01-grep-check` + `crit-01-client-grep-check` CI jobs all green.
 
 ### Phase 20: Mixed-Round Fee Accuracy
+
 **Goal**: A mixed-script CoinJoin round (heterogeneous P2WPKH + P2TR + P2SH-P2WPKH inputs) charges a `fee_share` that reflects actual per-input witness weights rather than the v1.4 P2WPKH-only approximation; v1.4 P2WPKH-only round fee math is byte-preserved.
 **Depends on**: v1.4 Phase 16 (`BipConfig.output_script_type` exists on `CoordinatorConfig`) and Phase 18 (mixed-script E2E test exists at `tests/integration/mixed_script_e2e.rs`).
 **Requirements**: FEE-01, FEE-02, FEE-03
 **Success Criteria** (what must be TRUE):
+
   1. `coordinator/src/bitcoin/tx.rs` exposes `pub fn script_input_vbytes(ScriptType) -> u64` and `pub fn script_output_vbytes(ScriptType) -> u64` returning conservative-rounded-UP BIP-141 weights (P2WPKH in/out 68/31; P2TR 57/43; P2SH-P2WPKH 91/32); the hardcoded `INPUT_WEIGHT_VBYTES = 68` and `OUTPUT_WEIGHT_VBYTES = 31` consts at `tx.rs:11,13` are gone.
   2. `ParticipantInput` gains a `script_type: shared::bip322::ScriptType` field; `build_coinjoin_psbt` sums per-input weights via `script_input_vbytes(inp.script_type)` and uses `script_output_vbytes(output_script_type)` for the denomination + change outputs; the `script_type` value is set by the **coordinator** at `validate_utxo` time via `detect_script_type(txout.script_pubkey)` (CRIT-01 invariant preserved into the fee path — never client-declared).
   3. Regression test `fee_share_p2wpkh_only_matches_v14_baseline` in `coordinator/src/bitcoin/tx.rs::tests` constructs a 3-participant uniform-P2WPKH round and asserts `fee_share` matches the pre-Phase-20 value byte-equal (the v1.3 cross-phase invariant from the fee-math angle).
@@ -90,10 +104,12 @@
   5. v1.3 `full_round::*` 8/8 green AND the v1.4 `mixed_script_e2e_three_clients_broadcast` test in `tests/integration/mixed_script_e2e.rs` still passes with the new fee math — broadcast txid still observable in mempool, output amounts adjust to the new (more accurate) fee deduction.
 
 ### Phase 21: Audit Charter & Zeroization Tightening
+
 **Goal**: `docs/AUDIT-CHARTER.md` exists and an external auditor can read it cold, identify exactly which files and properties are in scope, and start reviewing without asking the project team for clarification; `.cargo/audit.toml` rationale strings reference the charter; the RSA SecretKey lifetime is *explicitly bounded* via a `RoundSecretKey` newtype so the charter can describe a structurally-enforced mitigation rather than "best-effort".
 **Depends on**: Phase 19 (production sign bodies — charter §"BIP-322 dispatcher + per-script modules" wants to point at production code, not `todo!()`) and Phase 20 (`tx.rs` per-script weight table — charter §"v=2 OwnershipProof PSBT handling" wants to describe the *complete* multi-script verification + fee path).
 **Requirements**: AUDIT-01, AUDIT-02, AUDIT-03
 **Success Criteria** (what must be TRUE):
+
   1. `docs/AUDIT-CHARTER.md` exists, committed in `main`, linked from `README.md` §Security Model; contains 8 sections (in-scope modules with line/file references, threat models per module, cross-shape rejection properties enumerated, v=2 PSBT handling boundary, RSA zeroization window in its bounded form, out-of-scope with rationale, residual risks accepted with rationale, glossary of project terms → audit language).
   2. `.cargo/audit.toml` updated: each `ignore = [...]` entry's rationale string references a `docs/AUDIT-CHARTER.md#section-anchor`; the RUSTSEC-2023-0071 (rsa Marvin Attack) entry's rationale paragraph references the AUDIT-03 bounded-window mitigation by name (not "best-effort" anymore); header "Reviewed: YYYY-MM-DD" bumped to v1.5 ship date; any new transitive advisories opened since v1.3 review get explicit ignore-or-fix decisions with rationale.
   3. `coordinator/src/blind/rsa.rs` introduces a `RoundSecretKey(BjSecretKey)` newtype wrapper with an explicit `Drop` impl that zeroes the in-process buffer; the round state struct holds `Option<RoundSecretKey>` and explicitly sets it to `None` (triggering Drop) on `Round.complete()` / `Round.abort()` / `Round.timeout()`; the "best-effort" qualification in the D-07 comment at `rsa.rs:18-22` is rewritten as a bounded statement ("zeroed on round end via `RoundSecretKey::drop`; lifetime bound to `Round.state.signer: Option<RoundSecretKey>`").
@@ -136,7 +152,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
-| 19. Multi-Script Signing Finish | v1.5 | 0/? | Not started | — |
+| 19. Multi-Script Signing Finish | v1.5 | 0/2 | Planning | — |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 0/? | Not started | — |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 0/? | Not started | — |
 
