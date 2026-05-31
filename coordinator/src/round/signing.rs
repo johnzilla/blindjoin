@@ -447,7 +447,7 @@ mod tests {
         state.phase = Phase::Signing;
         let inner = RoundStateInner {
             rsa_signing_key: vec![],
-            rsa_signer: RsaBlindSigner::generate().unwrap(),
+            rsa_signer: Some(RsaBlindSigner::generate().unwrap()),
             round_secret: [0u8; 32],
             registered_inputs: {
                 let mut m = HashMap::new();
@@ -493,7 +493,7 @@ mod tests {
         state.phase = Phase::Signing;
         state.inner = Some(RoundStateInner {
             rsa_signing_key: vec![],
-            rsa_signer: RsaBlindSigner::generate().unwrap(),
+            rsa_signer: Some(RsaBlindSigner::generate().unwrap()),
             round_secret: [0u8; 32],
             registered_inputs: HashMap::new(),
             redeemed_tokens: HashSet::new(),
@@ -518,7 +518,7 @@ mod tests {
         state.phase = Phase::OutputReg;
         let mut inner = RoundStateInner {
             rsa_signing_key: vec![],
-            rsa_signer: RsaBlindSigner::generate().unwrap(),
+            rsa_signer: Some(RsaBlindSigner::generate().unwrap()),
             round_secret: [0u8; 32],
             registered_inputs: HashMap::new(),
             redeemed_tokens: HashSet::new(),
@@ -557,7 +557,7 @@ mod tests {
         state.phase = Phase::Signing;
         state.inner = Some(RoundStateInner {
             rsa_signing_key: vec![],
-            rsa_signer: RsaBlindSigner::generate().unwrap(),
+            rsa_signer: Some(RsaBlindSigner::generate().unwrap()),
             round_secret: [0u8; 32],
             registered_inputs: HashMap::new(),
             redeemed_tokens: HashSet::new(),

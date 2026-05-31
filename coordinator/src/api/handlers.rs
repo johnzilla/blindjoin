@@ -380,7 +380,7 @@ pub async fn post_output(
     let rsa_public_key = guard.inner.as_ref()
         .ok_or_else(|| api_error(StatusCode::CONFLICT, "WRONG_PHASE",
             "Round inner state not initialized", Some(&round_id_str)))?
-        .rsa_signer.public_key.clone();
+        .rsa_signer.as_ref().expect("rsa_signer must be Some during OutputReg").public_key.clone();
 
     // Run pure output reg logic
     {

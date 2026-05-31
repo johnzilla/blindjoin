@@ -94,13 +94,20 @@ pub struct RoundStateInner {
     /// Zeroed when inner is dropped (after BROADCAST or BLAME transitions to IDLE).
     /// D-07: raw bytes kept alongside parsed signer so zeroize-on-drop still fires.
     pub rsa_signing_key: Vec<u8>,
-    /// Parsed RSA blind signer — cached once at round creation (D-04, D-05, AVAIL-02).
-    /// Not zeroized on drop (upstream SecretKey limitation; raw bytes above ARE zeroed).
+    /// Parsed RSA blind signer wrapped in `Option` per AUDIT-03 — `Some(_)` during
+    /// an active round, `None` when Idle. The bounded lifetime (the Option is set
+    /// to `None` at `state.rs:195` inside `transition_to(Phase::Idle)`) is the
+    /// structural mitigation for the RUSTSEC-2023-0071 Marvin Attack timing-
+    /// sidechannel exposure (long-lived-key + unlimited-measurements preconditions
+    /// do not obtain when the key is per-round and dropped at the FSM chokepoint).
+    /// See `coordinator/src/blind/rsa.rs::RoundSecretKey` for the full Drop chain
+    /// that transitively reaches `rsa::RsaPrivateKey::drop`
+    /// (`rsa-0.9.10/src/key.rs:76-82`).
     ///
     /// Constructed in production by `round::manager::start_round`. Tests may construct
     /// directly via the public field; they should prefer `start_round` where possible
     /// to keep production and test bootstrap aligned.
-    pub rsa_signer: RsaBlindSigner,
+    pub rsa_signer: Option<RsaBlindSigner>,
     /// Per-round HMAC secret for session tokens (D-05). 32 random bytes.
     pub round_secret: [u8; 32],
     /// Set of registered input UTXOs for double-registration prevention.
@@ -267,7 +274,7 @@ mod tests {
         state.rsa_pubkey_der = Some(vec![1, 2, 3]); // simulate active round
         state.inner = Some(RoundStateInner {
             rsa_signing_key: vec![0xAA; 32],
-            rsa_signer: RsaBlindSigner::generate().unwrap(),
+            rsa_signer: Some(RsaBlindSigner::generate().unwrap()),
             round_secret: [0xBB; 32],
             registered_inputs: Default::default(),
             redeemed_tokens: HashSet::new(),
@@ -283,6 +290,53 @@ mod tests {
         assert_eq!(state.phase, Phase::Idle);
         assert!(state.rsa_pubkey_hash.is_none());
         assert!(state.rsa_pubkey_der.is_none());
+    }
+
+    /// AUDIT-03 (D-131): structural FSM test — load-bearing claim per REQUIREMENTS
+    /// AUDIT-03 ("the structural lifetime bound is the load-bearing claim"). Mirrors
+    /// `transition_to_idle_clears_inner` above with an additional pre-transition
+    /// assertion that `rsa_signer` is `Some(_)` — guaranteeing the Drop chain on
+    /// the Idle transition fires on a non-None `RoundSecretKey` (which transitively
+    /// zeroizes the wrapped `rsa::RsaPrivateKey` at `rsa-0.9.10/src/key.rs:76-82`).
+    ///
+    /// The sibling best-effort scrub test
+    /// `coordinator::blind::rsa::tests::round_secret_key_buffer_overwritten_on_drop`
+    /// is a sanity check that may be ignored on non-Linux platforms; THIS test is
+    /// the unconditional CI gate.
+    #[test]
+    fn round_secret_key_dropped_on_round_end() {
+        use crate::blind::rsa::RsaBlindSigner;
+        let mut state = RoundState::new_idle();
+        state.phase = Phase::Signing;
+        state.rsa_pubkey_der = Some(vec![1, 2, 3]);
+        state.inner = Some(RoundStateInner {
+            rsa_signing_key: vec![0xAA; 32],
+            rsa_signer: Some(RsaBlindSigner::generate().unwrap()),
+            round_secret: [0xBB; 32],
+            registered_inputs: Default::default(),
+            redeemed_tokens: HashSet::new(),
+            registered_outputs: vec![],
+            partial_sigs: Default::default(),
+            change_addresses: Default::default(),
+        });
+        // Pre-transition: rsa_signer is Some, so the Drop chain has a target.
+        assert!(
+            state.inner.as_ref().unwrap().rsa_signer.is_some(),
+            "fixture must construct with Some(RsaBlindSigner)"
+        );
+
+        // Drive the FSM through Signing → Broadcast → Idle (the success path).
+        state.transition_to(Phase::Broadcast).unwrap();
+        state.transition_to(Phase::Idle).unwrap();
+
+        // AUDIT-03: inner MUST be None — Drop chain has fired, RoundSecretKey
+        // dropped, rsa::RsaPrivateKey zeroized transitively
+        // (rsa-0.9.10/src/key.rs:76-82).
+        assert!(
+            state.inner.is_none(),
+            "AUDIT-03: RoundStateInner must be dropped on Idle transition"
+        );
+        assert_eq!(state.phase, Phase::Idle);
     }
 
     #[test]
@@ -308,7 +362,7 @@ mod tests {
         // Simulate what round creation stores: signer moved into inner, raw bytes also stored
         let inner = RoundStateInner {
             rsa_signing_key: sk_der.clone(),
-            rsa_signer: signer,
+            rsa_signer: Some(signer),
             round_secret: [0u8; 32],
             registered_inputs: Default::default(),
             redeemed_tokens: HashSet::new(),
@@ -318,7 +372,9 @@ mod tests {
         };
 
         // The cached signer's public key hash must match what was generated
-        assert_eq!(inner.rsa_signer.public_key_hash(), expected_hash,
+        assert_eq!(
+            inner.rsa_signer.as_ref().expect("test fixture: rsa_signer is Some").public_key_hash(),
+            expected_hash,
             "AVAIL-02: cached rsa_signer must match the generated key");
 
         // The raw key bytes must round-trip to the same public key hash

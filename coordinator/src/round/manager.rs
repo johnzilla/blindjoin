@@ -60,7 +60,7 @@ pub fn start_round(state: &mut RoundState) -> Result<(), StartRoundError> {
     state.rsa_pubkey_hash = Some(pk_hash);
     state.inner = Some(RoundStateInner {
         rsa_signing_key: sk_der,
-        rsa_signer: signer,
+        rsa_signer: Some(signer),
         round_secret,
         registered_inputs: HashMap::new(),
         redeemed_tokens: HashSet::new(),
@@ -192,7 +192,7 @@ mod tests {
 
         // The cached signer must agree with the stored DER bytes (AVAIL-02).
         let inner = state.inner.as_ref().unwrap();
-        let pk_hash_from_signer = inner.rsa_signer.public_key_hash();
+        let pk_hash_from_signer = inner.rsa_signer.as_ref().expect("test fixture: rsa_signer is Some").public_key_hash();
         assert_eq!(
             Some(pk_hash_from_signer),
             state.rsa_pubkey_hash,

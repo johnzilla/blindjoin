@@ -68,7 +68,7 @@ pub fn register_input(
 
     // Blind-sign the blinded message using the cached signer (AVAIL-02: no per-request key deserialization)
     let blind_msg = BlindMessage(blinded_token_bytes.to_vec());
-    let blind_sig = inner.rsa_signer.blind_sign(&blind_msg).map_err(|e| ApiError {
+    let blind_sig = inner.rsa_signer.as_ref().expect("rsa_signer must be Some during InputReg").blind_sign(&blind_msg).map_err(|e| ApiError {
         code: ErrorCode::InvalidToken,
         message: format!("Blind signing failed: {e}"),
         round_id: Some(round_id_str.to_string()),
