@@ -10,8 +10,8 @@ const DUST_THRESHOLD_SATS: u64 = 294;
 
 /// Fixed TX overhead: 10 vbytes (version, locktime, vin/vout counts).
 /// Script-independent — the only weight constant that stays a plain const after
-/// Phase 20's per-script weight table replaced INPUT_WEIGHT_VBYTES /
-/// OUTPUT_WEIGHT_VBYTES with `script_input_vbytes` / `script_output_vbytes`.
+/// Phase 20's per-script weight table replaced the legacy per-input / per-output
+/// constants with `script_input_vbytes` / `script_output_vbytes`.
 const TX_OVERHEAD_VBYTES: u64 = 10;
 
 /// Input vbytes per BIP-141 worst-case witness, conservative-rounded-UP
@@ -62,6 +62,12 @@ pub struct ParticipantInput {
     pub value_sats: u64,
     pub script_pubkey: ScriptBuf,   // for PSBT input UTXO field
     pub change_address: ScriptBuf,  // their change output script
+    /// FEE-02: per-input vbyte selector (coordinator-derived from on-chain SPK
+    /// at validate_utxo, never client-declared — CRIT-01 invariant). Consumed
+    /// only by the in-memory vsize loop in `build_coinjoin_psbt`; NOT written
+    /// to any PSBT field (T-20-05 hedge — keeps serialized PSBT bytes
+    /// invariant w.r.t. the new field).
+    pub script_type: shared::bip322::ScriptType,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +103,7 @@ pub fn build_coinjoin_psbt(
     outputs: &[ParticipantOutput],
     denomination_sats: u64,
     fee_rate_sat_per_vbyte: u64,
+    output_script_type: ScriptType,
 ) -> Result<Psbt, TxError> {
     if inputs.is_empty() {
         return Err(TxError::NoParticipants);
@@ -105,17 +112,25 @@ pub fn build_coinjoin_psbt(
 
     // Estimate size assuming all participants have change outputs (upper bound).
     //
-    // Phase 20 Task 1 (transitional): per-input weight is uniformly P2WPKH because
-    // ParticipantInput.script_type doesn't yet exist (Task 2 adds the field and
-    // replaces this with a per-input sum). The numeric outcome is byte-identical
-    // to the pre-Phase-20 formula (`script_input_vbytes(P2wpkh) = 68`,
-    // `script_output_vbytes(P2wpkh) = 31`) — preserves the v1.3 `full_round`
-    // invariant during the Task 1 → Task 2 window.
+    // Phase 20 Task 2 (FEE-02): per-input weight sum reads the coordinator-derived
+    // ScriptType from each ParticipantInput; output weight uses the operator-
+    // configured `output_script_type` (Phase 16 D-37: single output type per
+    // round). Single canonical source of truth — both `get_tx` (display) and
+    // `assemble_and_broadcast` (broadcast) MUST call this fn with the same
+    // `output_script_type` value sourced from `config.bip.output_script_type`
+    // (WR-04: byte-identical PSBTs).
     let num_change_outputs = n;
+    let total_input_vb: u64 = inputs.iter()
+        .map(|inp| script_input_vbytes(inp.script_type))
+        .sum();
+    let output_vb = script_output_vbytes(output_script_type);
     let estimated_vsize = TX_OVERHEAD_VBYTES
-        + n * script_input_vbytes(ScriptType::P2wpkh)
-        + (n + num_change_outputs) * script_output_vbytes(ScriptType::P2wpkh);
+        + total_input_vb
+        + (n + num_change_outputs) * output_vb;
     let total_fee = estimated_vsize * fee_rate_sat_per_vbyte;
+    // PRESERVE VERBATIM: integer floor — D-125 byte-equality assertion in
+    // `fee_share_p2wpkh_only_matches_v14_baseline` depends on this. Do NOT
+    // refactor to ceil-divide or a helper function. RISK-1 hedge.
     let fee_share = total_fee / n;  // each participant pays fee_share
 
     // Validate each input can cover denomination + fee_share
@@ -197,11 +212,20 @@ mod tests {
     }
 
     fn make_inputs(n: usize, value_sats: u64) -> Vec<ParticipantInput> {
-        (0..n).map(|i| ParticipantInput {
+        make_inputs_typed(&vec![ScriptType::P2wpkh; n], value_sats)
+    }
+
+    /// FEE-03 fixture: build n participant inputs with caller-specified ScriptType
+    /// per input. The on-chain SPK shape is irrelevant for the fee math (the test
+    /// fixture uses a P2WPKH-shaped SPK regardless), so the helper deliberately
+    /// uses p2wpkh_script for all inputs and only varies `script_type`.
+    fn make_inputs_typed(types: &[ScriptType], value_sats: u64) -> Vec<ParticipantInput> {
+        types.iter().enumerate().map(|(i, &st)| ParticipantInput {
             outpoint: dummy_outpoint(i as u8),
             value_sats,
             script_pubkey: p2wpkh_script(i as u8),
             change_address: p2wpkh_script((i + 100) as u8),
+            script_type: st,
         }).collect()
     }
 
@@ -217,7 +241,7 @@ mod tests {
         let denomination_sats = 1_000_000;
         let inputs = make_inputs(n, 1_100_000);
         let outputs = make_outputs(n);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
         let denom_outputs: Vec<_> = psbt.unsigned_tx.output.iter()
             .filter(|o| o.value.to_sat() == denomination_sats)
             .collect();
@@ -228,7 +252,7 @@ mod tests {
     fn coinjoin_psbt_is_valid_psbt() {
         let inputs = make_inputs(3, 1_100_000);
         let outputs = make_outputs(3);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh).unwrap();
         // Serialize and deserialize — must succeed
         let serialized = psbt.serialize();
         let reparsed = Psbt::deserialize(&serialized).expect("PSBT must be valid");
@@ -245,7 +269,7 @@ mod tests {
         // Set input value = denomination + estimated_fee_share + 100 (dust)
         let inputs = make_inputs(n, denomination_sats + 500 + 100); // 100 is below dust
         let outputs = make_outputs(n);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
         // The test assertion: total output value < total input value (fee was paid)
         let total_in: u64 = inputs.iter().map(|i| i.value_sats).sum();
         let total_out: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
@@ -256,7 +280,7 @@ mod tests {
     fn coinjoin_psbt_insufficient_funds_error() {
         let inputs = make_inputs(3, 100); // way too small
         let outputs = make_outputs(3);
-        let result = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2);
+        let result = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh);
         assert!(matches!(result, Err(TxError::InsufficientFunds { .. })));
     }
 
@@ -264,7 +288,7 @@ mod tests {
     fn coinjoin_psbt_witness_utxo_set() {
         let inputs = make_inputs(3, 1_100_000);
         let outputs = make_outputs(3);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh).unwrap();
         for (i, psbt_input) in psbt.inputs.iter().enumerate() {
             assert!(psbt_input.witness_utxo.is_some(),
                 "Input {} must have witness_utxo set for SegWit signing", i);

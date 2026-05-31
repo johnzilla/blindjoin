@@ -65,6 +65,11 @@ pub struct RegisteredInput {
     pub script_pubkey: ScriptBuf,
     /// On-chain value of this UTXO in satoshis, as returned by gettxout.
     pub value_sats: u64,
+    /// Coordinator-derived script type (FEE-02 plumbing). Mirrors `script_pubkey`
+    /// in provenance and zeroize policy: public chain data, derivable from
+    /// `script_pubkey`, no key material, no privacy concern.
+    #[zeroize(skip)]
+    pub script_type: shared::bip322::ScriptType,
 }
 
 /// Registered output for one participant.

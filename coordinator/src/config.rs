@@ -216,6 +216,25 @@ impl BipConfig {
         v
     }
 
+    /// Iterator over allowed input ScriptTypes (FEE-02 Phase 20 D-122a helper).
+    ///
+    /// Order is unspecified — callers MUST NOT depend on iteration order. Use
+    /// `supported()` for the alphabetical canonical order needed by PKARR
+    /// advertisement.
+    ///
+    /// Used by `fee::estimate_fee_share` to compute worst-case-across-allowed-
+    /// set vbytes; iteration order is irrelevant because `max(...)` is
+    /// commutative.
+    pub fn allowed_set(&self) -> impl Iterator<Item = ScriptType> + '_ {
+        [
+            (self.allow_p2wpkh, ScriptType::P2wpkh),
+            (self.allow_p2tr, ScriptType::P2tr),
+            (self.allow_p2sh_p2wpkh, ScriptType::P2shP2wpkh),
+        ]
+        .into_iter()
+        .filter_map(|(allowed, st)| if allowed { Some(st) } else { None })
+    }
+
     /// Fail-fast startup validation per D-36 + D-37.
     ///
     /// 1. At least one `allow_*` flag MUST be true — a coordinator that accepts

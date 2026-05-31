@@ -280,6 +280,7 @@ mod tests {
             blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(),
             value_sats: 150_000,
+            script_type: shared::bip322::ScriptType::P2wpkh,
         });
         inputs.insert("tx2:0".to_string(), RegisteredInput {
             utxo_str: "tx2:0".to_string(),
@@ -287,6 +288,7 @@ mod tests {
             blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(),
             value_sats: 150_000,
+            script_type: shared::bip322::ScriptType::P2wpkh,
         });
         let mut sigs: HashMap<String, Vec<u8>> = HashMap::new();
         sigs.insert("tx1:0".to_string(), vec![1, 2, 3]);
@@ -305,6 +307,7 @@ mod tests {
             blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(),
             value_sats: 150_000,
+            script_type: shared::bip322::ScriptType::P2wpkh,
         });
         let mut sigs: HashMap<String, Vec<u8>> = HashMap::new();
         sigs.insert("tx1:0".to_string(), vec![1, 2, 3]);

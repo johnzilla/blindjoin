@@ -126,6 +126,7 @@ async fn assemble_and_broadcast(
             value_sats: reg.value_sats,
             script_pubkey: reg.script_pubkey.clone(),
             change_address: change_script,
+            script_type: reg.script_type,
         });
     }
 
@@ -141,12 +142,16 @@ async fn assemble_and_broadcast(
         participant_outputs.push(ParticipantOutput { script_pubkey: script });
     }
 
-    // Build PSBT
+    // Build PSBT. WR-04 invariant: `output_script_type` MUST come from the
+    // SAME source as the get_tx call site (`config.bip.output_script_type`)
+    // so the broadcast PSBT is byte-identical to the one clients signed
+    // against in display path.
     let mut psbt = build_coinjoin_psbt(
         &participant_inputs,
         &participant_outputs,
         config.coordinator.denomination_sats,
         config.coordinator.fee_rate_sat_per_vbyte,
+        config.bip.output_script_type,
     ).map_err(|e| ApiError {
         code: ErrorCode::BroadcastRejected,
         message: format!("PSBT construction failed: {e}"),
@@ -338,6 +343,7 @@ mod tests {
                 blind_sig_hash: [0u8; 32],
                 script_pubkey: bitcoin::ScriptBuf::new(),
                 value_sats: 150_000,
+                script_type: shared::bip322::ScriptType::P2wpkh,
             });
         }
         state.participant_count = 1;
@@ -451,6 +457,7 @@ mod tests {
                     blind_sig_hash: [0u8; 32],
                     script_pubkey: bitcoin::ScriptBuf::new(),
                     value_sats: 150_000,
+                    script_type: shared::bip322::ScriptType::P2wpkh,
                 });
                 m
             },
@@ -523,10 +530,12 @@ mod tests {
         inner.registered_inputs.insert("tx1:0".to_string(), RegisteredInput {
             utxo_str: "tx1:0".to_string(), change_address: "a".into(), blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(), value_sats: 150_000,
+            script_type: shared::bip322::ScriptType::P2wpkh,
         });
         inner.registered_inputs.insert("tx2:0".to_string(), RegisteredInput {
             utxo_str: "tx2:0".to_string(), change_address: "b".into(), blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(), value_sats: 150_000,
+            script_type: shared::bip322::ScriptType::P2wpkh,
         });
         inner.registered_outputs.push(RegisteredOutput {
             address: "out1".into(), amount_sats: 100_000,

@@ -27,11 +27,14 @@ pub struct InputRegResult {
 /// - `change_address`     — bech32 change address string
 /// - `utxo_script_pubkey` — on-chain script_pubkey from validate_utxo's gettxout
 /// - `utxo_value_sats`    — on-chain value from validate_utxo's gettxout
+/// - `utxo_script_type`   — coordinator-derived ScriptType from validate_utxo
+///   (CRIT-01: NEVER client-declared; FEE-02 plumbing)
 /// - `round_id_str`       — current round_id as string (for error messages)
 ///
 /// # TOCTOU
 /// This function re-checks double-registration under the caller's write lock (D-02).
 /// The pre-lock validation snapshot may be stale; this check is authoritative.
+#[allow(clippy::too_many_arguments)]
 pub fn register_input(
     state: &mut RoundState,
     utxo: &OutPoint,
@@ -39,6 +42,7 @@ pub fn register_input(
     change_address: &str,
     utxo_script_pubkey: ScriptBuf,
     utxo_value_sats: u64,
+    utxo_script_type: shared::bip322::ScriptType,
     round_id_str: &str,
 ) -> Result<InputRegResult, ApiError> {
     use base64::Engine;
@@ -85,6 +89,7 @@ pub fn register_input(
         blind_sig_hash,
         script_pubkey: utxo_script_pubkey,
         value_sats: utxo_value_sats,
+        script_type: utxo_script_type,
     });
     inner.change_addresses.insert(utxo_str, change_address.to_string());
     state.participant_count += 1;
@@ -159,6 +164,7 @@ mod tests {
             "tb1qtest000000000000000000000000000000000000",
             bitcoin::ScriptBuf::new(),
             150_000,
+            shared::bip322::ScriptType::P2wpkh,
             "test-round-id",
         );
 
@@ -195,6 +201,7 @@ mod tests {
                 blind_sig_hash: [0u8; 32],
                 script_pubkey: bitcoin::ScriptBuf::new(),
                 value_sats: 150_000,
+                script_type: shared::bip322::ScriptType::P2wpkh,
             },
         );
 
@@ -208,6 +215,7 @@ mod tests {
             "tb1qdouble",
             bitcoin::ScriptBuf::new(),
             150_000,
+            shared::bip322::ScriptType::P2wpkh,
             "test-round-id",
         );
 

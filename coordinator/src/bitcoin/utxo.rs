@@ -37,6 +37,11 @@ impl From<RpcError> for UtxoError {
 pub struct UtxoDetails {
     pub value_sats: u64,
     pub script_pubkey: ScriptBuf,
+    /// Coordinator-derived script type from the on-chain `script_pubkey`,
+    /// computed inside `dispatch_ownership_proof` (CRIT-01 invariant: NEVER
+    /// client-declared). Threaded through to the fee path via `RegisteredInput`
+    /// → `ParticipantInput` (FEE-02 plumbing).
+    pub script_type: ScriptType,
 }
 
 /// Validate a UTXO registration request.
@@ -113,7 +118,7 @@ pub async fn validate_utxo(
         "ownership proof verified"
     );
 
-    Ok(UtxoDetails { value_sats, script_pubkey })
+    Ok(UtxoDetails { value_sats, script_pubkey, script_type: derived })
 }
 
 /// Dispatcher core — pure function (no RPC / I/O) that takes the on-chain

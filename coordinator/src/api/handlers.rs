@@ -161,8 +161,10 @@ pub async fn post_input(
          rid)
     };
 
-    // Compute fee share for UTXO value check — use max_participants (pessimistic, WR-06)
-    let fee_share_pre_lock = estimate_fee_share(max_participants_snap, fee_rate_snap);
+    // Compute fee share for UTXO value check — use max_participants (pessimistic, WR-06).
+    // Phase 20 FEE-02: BipConfig threaded through so the worst-case-across-allowed-set
+    // formula in fee.rs correctly accounts for P2SH-P2WPKH (91 vB) when allowed.
+    let fee_share_pre_lock = estimate_fee_share(&state.config.bip, max_participants_snap, fee_rate_snap);
 
     // Validate UTXO before acquiring write lock (AVAIL-01: RPC outside write lock).
     // On failure, return immediately — write lock is never taken for bad UTXOs.
@@ -260,6 +262,7 @@ pub async fn post_input(
         &req.change_address,
         utxo_details.script_pubkey.clone(),
         utxo_details.value_sats,
+        utxo_details.script_type,
         &round_id_str,
     ).map_err(|e| {
         let status = match e.code {
@@ -477,6 +480,7 @@ pub async fn get_tx(
             value_sats: reg.value_sats,
             script_pubkey: reg.script_pubkey.clone(),
             change_address: change_script,
+            script_type: reg.script_type,
         });
     }
 
@@ -488,11 +492,17 @@ pub async fn get_tx(
         participant_outputs.push(ParticipantOutput { script_pubkey: script });
     }
 
+    // WR-04 invariant: `output_script_type` MUST come from the SAME source as
+    // the signing.rs::assemble_and_broadcast call site (state.config.bip
+    // .output_script_type / config.bip.output_script_type — same Arc<Coord-
+    // Config>), so the broadcast PSBT is byte-identical to the one clients
+    // signed against in this display path.
     let psbt = build_coinjoin_psbt(
         &participant_inputs,
         &participant_outputs,
         denomination_sats,
         fee_rate,
+        state.config.bip.output_script_type,
     ).map_err(|e| {
         api_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
             format!("PSBT build failed: {e}"), Some(&round_id_str))
@@ -502,7 +512,7 @@ pub async fn get_tx(
     let psbt_b64 = B64.encode(&psbt_bytes);
 
     let n = participant_inputs.len() as u32;
-    let fee_per_participant_sats = estimate_fee_share(n, fee_rate);
+    let fee_per_participant_sats = estimate_fee_share(&state.config.bip, n, fee_rate);
     let fee_total_sats = fee_per_participant_sats * n as u64;
 
     Ok(Json(RoundTxResponse {
