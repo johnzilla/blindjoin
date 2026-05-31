@@ -2,37 +2,37 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
-status: executing
-last_updated: "2026-05-31T20:12:30.751Z"
-last_activity: 2026-05-31 -- Phase 20 planning complete
+status: verifying
+last_updated: "2026-05-31T20:38:49.507Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 67
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 20
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-31 -- Phase 20 planning complete
+Phase: 20 (Mixed-Round Fee Accuracy) — COMPLETE
+Plan: 1 of 1
+Status: Phase complete — ready for verification
+Last activity: 2026-05-31 — Phase 20 Plan 01 executed (FEE-01/02/03 closed)
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 20 — mixed round fee accuracy
+**Current focus:** Phase 20 — Mixed-Round Fee Accuracy
 
 ## Milestone Map
 
 - ✅ **Phase 19** — Multi-Script Signing Finish (BIP322-05, BIP322-06, BIP322-07) — execution complete, awaiting verification
-- ⬜ **Phase 20** — Mixed-Round Fee Accuracy (FEE-01, FEE-02, FEE-03)
+- ✅ **Phase 20** — Mixed-Round Fee Accuracy (FEE-01, FEE-02, FEE-03) — execution complete, awaiting verification
 - ⬜ **Phase 21** — Audit Charter & Zeroization Tightening (AUDIT-01, AUDIT-02, AUDIT-03)
 
 ## Blockers
@@ -75,6 +75,11 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 - **Plan 19-01** (2026-05-31, Rule 3): `BdkClientWallet::from_descriptor` now supports single-key non-derivation descriptors via `Wallet::create_single` branch (gated on `/0/*)` template marker). RESEARCH §Q2 named the descriptor shape; the wrapper change to support it surfaced during parity-test execution.
 - **Plan 19-02** (2026-05-31): BIP322-07 closed — `#[doc(hidden)] pub fn sign_simple_test_only` deleted from `shared::bip322::mod`; per-script `pub(crate) fn sign_for_tests` helpers deleted from `p2tr.rs`, `p2sh_p2wpkh.rs`, `p2wpkh.rs`. 4 test callsites (per_script_vectors import + 2 sign sites + multi_script_validate import + sign_witness helper) migrated to production `sign_simple` dispatcher; 2 `tests/integration/mod.rs` doc-comments refreshed (CD-39 default). The 9 cross-shape rejection cases now exercise production sign bodies.
 - **Plan 19-02** (2026-05-31): `shared::bip322` public surface now shrunk to exactly 9 symbols (`ScriptType`, `Bip322Error`, `detect_script_type`, `verify_simple`, `sign_simple`, `p2sh_p2wpkh_final_script_sig`, `bip322_message_hash`, `build_bip322_to_spend`, `build_bip322_to_sign`) — V1.4-CRIT-01 dispatcher-only invariant load-bearing at the type level with no test-only mirror. Phase 21 audit charter can now describe the surface without a "but also there's this `#[doc(hidden)]` thing" footnote.
+- **Plan 20-01** (2026-05-31): P2TR vbyte fixed at **58** (round UP from raw 57.5 per STATE.md §v1.5 design notes), NOT 57 (ROADMAP SC#1 floor). Divergence documented inline in the `script_input_vbytes(ScriptType::P2tr) => 58` match-arm comment block AND in the unit-test name (`script_input_vbytes_p2tr_is_58_up_rounded`). STATE.md's rounding policy supersedes ROADMAP's planning approximation.
+- **Plan 20-01** (2026-05-31): `script_input_vbytes` / `script_output_vbytes` located in `coordinator/src/bitcoin/tx.rs` (CD-40 fallback) co-located with `build_coinjoin_psbt`; `fee.rs` imports them via `use crate::bitcoin::tx::{script_input_vbytes, script_output_vbytes};`. Both are `pub const fn` over the `ScriptType` Copy enum (CD-41 default).
+- **Plan 20-01** (2026-05-31): `BipConfig::allowed_set` returns `impl Iterator<Item = ScriptType> + '_` (CD-43 default); iteration order is implementation-defined — callers MUST NOT depend on order (use `supported()` for the alphabetical PKARR-canonical order). The `estimate_fee_share` use case is `max(...)` which is commutative.
+- **Plan 20-01** (2026-05-31): FEE-03 baseline test hardcodes `266` with inline derivation comment per D-125 (NOT a `v14_formula()` helper — hardcoded number + comment is more durable for the audit-charter artifact Phase 21 cites).
+- **Plan 20-01** (2026-05-31, Rule 1): `coordinator/src/round/blame.rs` test fixtures (3 `RegisteredInput` literals at lines 277/284/302) required `script_type` field refresh — plan enumeration listed signing.rs sites but missed blame.rs `detect_non_signers_*` tests. Auto-fixed; pattern is the same (P2WPKH default for tests that don't exercise fee math).
 
 ## Performance Metrics
 
@@ -82,5 +87,6 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 |-------|------|----------|-------|-------|------|
 | 19    | 01   | 11 min   | 4     | 5     | 2026-05-31 |
 | 19    | 02   | 7 min    | 2     | 7     | 2026-05-31 |
+| 20    | 01   | 17 min   | 3     | 9     | 2026-05-31 |
 
 (v1.5 metrics will accumulate per-phase. Cumulative trends live in `RETROSPECTIVE.md`. v1.4 milestone-scoped metrics live in `milestones/v1.4-*` archives.)

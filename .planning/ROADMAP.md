@@ -62,7 +62,7 @@
 ### 🚧 v1.5 Audit-Readiness & Multi-Script Finish (Phases 19-21)
 
 - [x] **Phase 19: Multi-Script Signing Finish** — Ship production `sign` bodies for `shared::bip322::{p2tr,p2sh_p2wpkh}::sign` (replacing the `todo!("Phase 17 WALLET-02 wires bdk_wallet sign per ADR #4")`) and remove the `#[doc(hidden)] sign_simple_test_only` mirror + per-script `sign_for_tests` helpers, strengthening the V1.4-CRIT-01 dispatcher-only public surface. (planning) (completed 2026-05-31)
-- [ ] **Phase 20: Mixed-Round Fee Accuracy** — Replace the hardcoded `INPUT_WEIGHT_VBYTES = 68` / `OUTPUT_WEIGHT_VBYTES = 31` in `coordinator/src/bitcoin/tx.rs` with a per-script weight table; thread `ScriptType` through `ParticipantInput`; coordinator passes `bip_config.output_script_type` to fee math; add v1.4-fee-byte-equality test + mixed-script fee-divergence sanity test. (planning)
+- [x] **Phase 20: Mixed-Round Fee Accuracy** — Replace the hardcoded `INPUT_WEIGHT_VBYTES = 68` / `OUTPUT_WEIGHT_VBYTES = 31` in `coordinator/src/bitcoin/tx.rs` with a per-script weight table; thread `ScriptType` through `ParticipantInput`; coordinator passes `bip_config.output_script_type` to fee math; add v1.4-fee-byte-equality test + mixed-script fee-divergence sanity test. (planning) (completed 2026-05-31)
 - [ ] **Phase 21: Audit Charter & Zeroization Tightening** — Publish `docs/AUDIT-CHARTER.md` scoping external audit (BIP-322 dispatcher + per-script modules, 9 cross-shape rejection properties, v=2 `OwnershipProof` PSBT handling, RSA SecretKey zeroization window); refresh `.cargo/audit.toml` rationale strings to reference charter sections; wrap `BjSecretKey` in a `RoundSecretKey` newtype with explicit `Drop` so the zeroization window is *explicitly bounded* via Rust lifetime, not "best-effort". Depends on Phases 19+20 landing so the charter can describe production state. (planning)
 
 ## Phase Details
@@ -95,11 +95,11 @@ Plans:
 **Goal**: A mixed-script CoinJoin round (heterogeneous P2WPKH + P2TR + P2SH-P2WPKH inputs) charges a `fee_share` that reflects actual per-input witness weights rather than the v1.4 P2WPKH-only approximation; v1.4 P2WPKH-only round fee math is byte-preserved.
 **Depends on**: v1.4 Phase 16 (`BipConfig.output_script_type` exists on `CoordinatorConfig`) and Phase 18 (mixed-script E2E test exists at `tests/integration/mixed_script_e2e.rs`).
 **Requirements**: FEE-01, FEE-02, FEE-03
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 **Wave 1**
 
-- [ ] 20-01-PLAN.md — Per-script vbyte table (`script_input_vbytes` / `script_output_vbytes` const fns in `coordinator/src/bitcoin/tx.rs`, deletes the legacy `INPUT_WEIGHT_VBYTES`/`OUTPUT_WEIGHT_VBYTES` consts; P2TR = 58 per STATE.md round-UP, divergence from ROADMAP "57" documented inline); plumb `script_type` through `UtxoDetails → RegisteredInput → ParticipantInput` (single derivation point at `utxo.rs:99`, CRIT-01 preserved with zero new `detect_script_type` call sites); rewrite `build_coinjoin_psbt` to per-input weight sum + `output_script_type` param (WR-04 byte-identical PSBTs from both call sites); refactor `estimate_fee_share(&BipConfig, n, fee_rate)` to worst-case-across-allowed-set + add `BipConfig::allowed_set()` iterator helper; 6 vbyte-pin unit tests + 2 FEE-03 regression tests (P2WPKH-only baseline = 266 byte-exact, mixed-script delta = 9 sats ≥ 1) (closes FEE-01 + FEE-02 + FEE-03).
+- [x] 20-01-PLAN.md — Per-script vbyte table (`script_input_vbytes` / `script_output_vbytes` const fns in `coordinator/src/bitcoin/tx.rs`, deletes the legacy `INPUT_WEIGHT_VBYTES`/`OUTPUT_WEIGHT_VBYTES` consts; P2TR = 58 per STATE.md round-UP, divergence from ROADMAP "57" documented inline); plumb `script_type` through `UtxoDetails → RegisteredInput → ParticipantInput` (single derivation point at `utxo.rs:99`, CRIT-01 preserved with zero new `detect_script_type` call sites); rewrite `build_coinjoin_psbt` to per-input weight sum + `output_script_type` param (WR-04 byte-identical PSBTs from both call sites); refactor `estimate_fee_share(&BipConfig, n, fee_rate)` to worst-case-across-allowed-set + add `BipConfig::allowed_set()` iterator helper; 6 vbyte-pin unit tests + 2 FEE-03 regression tests (P2WPKH-only baseline = 266 byte-exact, mixed-script delta = 9 sats ≥ 1) (closes FEE-01 + FEE-02 + FEE-03).
 
 **Success Criteria** (what must be TRUE):
 
@@ -159,7 +159,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
 | 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete    | 2026-05-31 |
-| 20. Mixed-Round Fee Accuracy | v1.5 | 0/1 | Not started | — |
+| 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete   | 2026-05-31 |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 0/? | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`

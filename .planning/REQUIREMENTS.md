@@ -17,11 +17,11 @@
 
 ### Mixed-Round Fee Accuracy (`FEE-*`)
 
-- [ ] **FEE-01**: `coordinator/src/bitcoin/tx.rs` exposes `script_input_vbytes(ScriptType) -> u64` and `script_output_vbytes(ScriptType) -> u64` lookup functions (replacing the hardcoded `INPUT_WEIGHT_VBYTES = 68` and `OUTPUT_WEIGHT_VBYTES = 31`); values derived from BIP-141 worst-case (round UP, never DOWN, so coordinator does not underpay): P2WPKH input ~68 vB / output 31 vB; P2TR input ~57 vB / output 43 vB; P2SH-P2WPKH input ~91 vB / output 32 vB; values + derivation cited inline in the source.
+- [x] **FEE-01**: `coordinator/src/bitcoin/tx.rs` exposes `script_input_vbytes(ScriptType) -> u64` and `script_output_vbytes(ScriptType) -> u64` lookup functions (replacing the hardcoded `INPUT_WEIGHT_VBYTES = 68` and `OUTPUT_WEIGHT_VBYTES = 31`); values derived from BIP-141 worst-case (round UP, never DOWN, so coordinator does not underpay): P2WPKH input ~68 vB / output 31 vB; P2TR input ~57 vB / output 43 vB; P2SH-P2WPKH input ~91 vB / output 32 vB; values + derivation cited inline in the source.
 
-- [ ] **FEE-02**: `ParticipantInput` carries `script_type: shared::bip322::ScriptType` (added field, CRIT-01-derived from `script_pubkey` at registration — not client-declared); `build_coinjoin_psbt` sums actual per-input weights via `script_input_vbytes(inp.script_type)`; output weight is derived from `bip_config.output_script_type` (passed through the call chain). Per-input fee_share variance is documented inline (currently uniform; if non-uniform fee_share is adopted later that's a separate REQ).
+- [x] **FEE-02**: `ParticipantInput` carries `script_type: shared::bip322::ScriptType` (added field, CRIT-01-derived from `script_pubkey` at registration — not client-declared); `build_coinjoin_psbt` sums actual per-input weights via `script_input_vbytes(inp.script_type)`; output weight is derived from `bip_config.output_script_type` (passed through the call chain). Per-input fee_share variance is documented inline (currently uniform; if non-uniform fee_share is adopted later that's a separate REQ).
 
-- [ ] **FEE-03**: Two regression tests in `coordinator/src/bitcoin/tx.rs::tests`:
+- [x] **FEE-03**: Two regression tests in `coordinator/src/bitcoin/tx.rs::tests`:
   (a) `fee_share_p2wpkh_only_matches_v14_baseline` — a 3-participant uniform-P2WPKH round produces a `fee_share` value byte-equal to v1.4 (preserves the v1.3 cross-phase invariant from the fee-math angle);
   (b) `fee_share_mixed_script_differs_from_uniform_baseline` — a 3-participant round (1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH) produces a `fee_share` that differs from the uniform-P2WPKH baseline by ≥ 1 sat per participant (sanity check that the per-script branch actually fires, not just compiles).
 
