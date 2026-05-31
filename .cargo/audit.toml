@@ -4,7 +4,7 @@
 # Each entry below must include a written rationale. Adding an ignore without
 # a documented reason is a code-review-blocking change.
 #
-# Reviewed: 2026-05-26.
+# Reviewed: 2026-05-31.
 
 [advisories]
 ignore = [
@@ -14,27 +14,37 @@ ignore = [
     # Why accepted as residual risk in blindjoin:
     # The Marvin Attack model assumes the attacker can submit many chosen
     # ciphertexts against the same long-lived private key and measure
-    # decryption timing precisely. blindjoin's coordinator generates a fresh
-    # ephemeral RSA keypair per round, performs at most `max_participants`
-    # blind-sign operations against it (default cap: 20 per round), and
-    # destroys the key via `zeroize` after the round broadcasts. The attack
-    # model's preconditions (long-lived key, unlimited measurements) do not
-    # obtain.
+    # decryption timing precisely. blindjoin's structural countermeasures:
+    # (i) per-round ephemeral RSA-2048 keypair (D-02); (ii) bounded
+    # blind-sign operations per round (default max_participants = 20);
+    # (iii) AUDIT-03 RoundSecretKey + Option<RsaBlindSigner> bounded
+    # lifetime on RoundStateInner — the secret is dropped at the SOLE
+    # FSM chokepoint transition_to(Phase::Idle) (coordinator/src/round/
+    # state.rs:194-200), triggering the transitive <rsa::RsaPrivateKey
+    # as Drop>::drop chain at rsa-0.9.10/src/key.rs:76-82 which zeroizes
+    # d, primes, and precomputed unconditionally. The structural lifetime
+    # bound is verified by coordinator/src/round/state.rs::tests::
+    # round_secret_key_dropped_on_round_end. The Marvin Attack's
+    # preconditions (long-lived key + unlimited measurements) do not
+    # obtain in this codebase.
     #
     # This residual-risk acceptance is explicitly in scope for the planned
     # external security audit. If the audit finds the ephemeral-key mitigation
     # insufficient (e.g. cross-round timing oracles via shared TLS state),
     # this entry will be removed and a remediation plan published.
+    # See docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window for the full rationale.
     "RUSTSEC-2023-0071",
 
     # bincode 2.0.1 — marked unmaintained.
     #
     # Transitive dependency (not directly used by blindjoin). Will track
     # upstream for a maintained replacement. Not a runtime vulnerability.
+    # See docs/AUDIT-CHARTER.md#residual-risks-cargo-audit-advisories for the full rationale.
     "RUSTSEC-2025-0141",
 
     # paste 1.0.15 — proc-macro crate marked unmaintained.
     #
     # Compile-time-only macro. No runtime code path. Transitive dep.
+    # See docs/AUDIT-CHARTER.md#residual-risks-cargo-audit-advisories for the full rationale.
     "RUSTSEC-2024-0436",
 ]
