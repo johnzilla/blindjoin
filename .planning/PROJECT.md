@@ -21,16 +21,24 @@ PKARR DHT discovery live with `v0.2.0` schema advertising `sst`/`ost`. Docker Co
 CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned, bitcoind cached + PGP-verified, corepc-node feature pin enforced, `bip322-pin-check` enforces the `=0.0.10` pin, `crit-01-grep-check` (coordinator) + `crit-01-client-grep-check` (client) enforce CRIT-01 invariant tokens.
 Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance, real on-chain witness_utxo values in PSBT assembly, multi-script ownership-proof dispatcher with on-chain cross-check.
 
-## Next Milestone: v1.5 (Planning)
+## Current Milestone: v1.5 Audit-Readiness & Multi-Script Finish
 
-Not yet defined. Run `/gsd:new-milestone` to scope.
+**Goal:** Close the v1.4 follow-throughs (production sign bodies for P2TR + P2SH-P2WPKH, accurate fees for mixed-script rounds) and ready the codebase for external security audit by publishing a scoped audit charter, refreshing `.cargo/audit.toml` rationales, and tightening the RSA SecretKey zeroization window so the charter can describe an explicitly-bounded mitigation rather than "best-effort".
 
-**Carry-forward items tracked for v1.5+:**
+**Target features:**
+- Production BIP-322 `sign` bodies for P2TR (Schnorr keypath) and P2SH-P2WPKH (BIP-143 over unwrapped P2WPKH redeem) — replaces the `todo!("Phase 17 WALLET-02 wires bdk_wallet sign per ADR #4")` in `shared/src/bip322/{p2tr,p2sh_p2wpkh}.rs`
+- Remove `sign_simple_test_only` + per-script `sign_for_tests` helpers — close the Phase 17-02 visibility-escalation hole now that production sign bodies exist
+- Per-script witness weight table in `coordinator/src/bitcoin/tx.rs` so mixed rounds produce accurate `fee_share` (current `INPUT_WEIGHT_VBYTES = 68` is P2WPKH-only and over/under-charges P2TR + P2SH-P2WPKH inputs)
+- `docs/AUDIT-CHARTER.md` enumerating in-scope modules + threat models for external auditors (BIP-322 dispatcher + per-script modules, 9 cross-shape rejection properties, v=2 `OwnershipProof` PSBT handling, RSA SecretKey zeroization window)
+- Tighten RSA SecretKey zeroization: wrap `BjSecretKey` in a newtype with explicit `Drop` so the round-end window is bounded (currently best-effort per the D-07 comment at `coordinator/src/blind/rsa.rs:18-22`)
+- Refresh `.cargo/audit.toml` ignore-rationale strings to reference the new AUDIT-CHARTER.md sections and the bounded-window mitigation
+
+**Out of v1.5 scope (deferred to v1.6+):**
 - CARRY-TOR-UAT — Tor-mode verification harness (Phase 8 HUMAN-UAT item 3)
 - CARRY-REPAIR-01-PR — v1.3 REPAIR-01 PR observation closure (v1.4 cut PR is the natural moment)
 - B-03 — Dynamic fee estimation (mempool-aware polling + RBF strategy)
 - TEST-EXT-01/02/03 — Cross-implementation differential fixtures (via `ACken2/bip322-js`); on-chain anchor test; automated v1.3↔v1.4 backwards-compat integration matrix
-- P2WSH multisig BIP-322 support (v1.4 stretch dropped for scope discipline)
+- P2WSH multisig BIP-322 support
 - Mixed output script types (Wasabi 2.0.3-style per-participant output choice)
 
 ## Requirements
@@ -83,7 +91,14 @@ Not yet defined. Run `/gsd:new-milestone` to scope.
 
 ### Active
 
-(None — v1.4 shipped 2026-05-31. Run `/gsd:new-milestone` to scope v1.5.)
+v1.5 Audit-Readiness & Multi-Script Finish (requirements detailed in `.planning/REQUIREMENTS.md`):
+
+- [ ] Production `sign` bodies for P2TR + P2SH-P2WPKH in `shared::bip322` (no bdk dep, callable from any SecretKey context)
+- [ ] Remove `sign_simple_test_only` + per-script `sign_for_tests` test helpers; integration tests call the real dispatcher
+- [ ] Per-script witness weight table in coordinator fee estimator; `ParticipantInput` carries `script_type`; mixed-round fee regression test
+- [ ] `docs/AUDIT-CHARTER.md` scoping external audit (BIP-322 dispatcher + per-script modules, cross-shape rejection properties, v=2 PSBT handling, RSA zeroization window)
+- [ ] Tighten RSA SecretKey zeroization window via newtype + explicit Drop (currently best-effort)
+- [ ] Refresh `.cargo/audit.toml` rationale strings to reference AUDIT-CHARTER.md and v1.4-shipped multi-script reality
 
 ### Out of Scope
 
@@ -177,4 +192,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 after v1.4 BIP-322 Multi-Script Support milestone shipped*
+*Last updated: 2026-05-31 — v1.5 Audit-Readiness & Multi-Script Finish milestone scoped (Phases 19-21)*
