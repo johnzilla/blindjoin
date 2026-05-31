@@ -8,8 +8,8 @@
 //! the rebuild-from-key footgun where the test signer silently ignored its
 //! `_spk` argument). `sign` does NOT depend on `bdk_wallet` (Phase 14 ADR
 //! Decision #4 + Phase 15 CD-6 preserve the shared-crate boundary). The
-//! `sign_for_tests` alias remains for Plan 15-03 integration tests; Plan
-//! 19-02 deletes it.
+//! `sign_for_tests` test-only alias was deleted in Plan 19-02 (BIP322-07) —
+//! production `sign` is now the only sign path.
 
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Network, Script, Witness};
@@ -124,60 +124,3 @@ pub(crate) fn sign(
     Ok(w)
 }
 
-/// Test-only signer producing the `[sig, pubkey]` witness for a P2SH-P2WPKH
-/// SPK. The sighash uses the UNWRAPPED P2WPKH script derived from the pubkey
-/// (per BIP-143 over the redeem), NOT the outer P2SH SPK — this matches the
-/// bip322 crate's internal `verify_full_p2wpkh(is_p2sh=true)` shape at
-/// `verify.rs:167-169`.
-///
-/// `_spk` is the OUTER P2SH SPK (kept in the signature for symmetry with the
-/// other per-script signers); we don't use it directly because the sighash
-/// uses the inner P2WPKH SPK derived from the pubkey.
-///
-/// Plan 15-03 promotes this from `#[cfg(test)] pub(crate)` to `pub(crate)`
-/// (no cfg gate) so the integration-test dispatcher mirror
-/// `super::sign_simple_test_only` (a `#[doc(hidden)] pub fn` in `mod.rs`)
-/// can reach it from external test crates at `shared/tests/*.rs`. Production
-/// callers cannot invoke this fn directly because the per-script module is
-/// `pub(crate)`-only per D-27.
-pub(crate) fn sign_for_tests(_spk: &Script, key: &SecretKey, message: &[u8]) -> Witness {
-    use bitcoin::hashes::Hash;
-    use bitcoin::secp256k1::{Message, Secp256k1};
-    use bitcoin::sighash::{EcdsaSighashType, SighashCache};
-    use bitcoin::{Amount, PublicKey, ScriptBuf};
-
-    let secp = Secp256k1::new();
-    let pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, key);
-    let compressed = PublicKey::new(pubkey);
-    // Derive the UNWRAPPED P2WPKH SPK from the pubkey (this is the sighash SPK).
-    let unwrapped_p2wpkh =
-        ScriptBuf::new_p2wpkh(&compressed.wpubkey_hash().expect("compressed key"));
-
-    let msg_hash = super::bip322_message_hash(message);
-    // The to_spend output's script_pubkey is the OUTER P2SH SPK; we derive it
-    // here so callers can pass `_spk` for symmetry but we actually use the
-    // unwrapped P2WPKH for sighash per BIP-143.
-    let p2sh_spk = ScriptBuf::new_p2sh(&unwrapped_p2wpkh.script_hash());
-    let to_spend = super::build_bip322_to_spend(&p2sh_spk, &msg_hash);
-    let to_sign = super::build_bip322_to_sign(&to_spend);
-
-    let mut cache = SighashCache::new(&to_sign);
-    let sighash = cache
-        .p2wpkh_signature_hash(
-            0,
-            &unwrapped_p2wpkh,
-            Amount::ZERO,
-            EcdsaSighashType::All,
-        )
-        .expect("sighash on well-formed to_sign");
-
-    let secp_msg = Message::from_digest(sighash.to_byte_array());
-    let sig = secp.sign_ecdsa(&secp_msg, key);
-    let mut sig_bytes = sig.serialize_der().to_vec();
-    sig_bytes.push(0x01); // SIGHASH_ALL
-
-    let mut w = Witness::new();
-    w.push(sig_bytes);
-    w.push(pubkey.serialize());
-    w
-}

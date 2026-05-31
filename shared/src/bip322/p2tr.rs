@@ -5,8 +5,8 @@
 //! per CONTEXT D-116, lifted from the prior `sign_for_tests` helper with the
 //! D-111 spk↔key cross-check inserted at the top. `sign` does NOT depend on
 //! `bdk_wallet` (Phase 14 ADR Decision #4 + Phase 15 CD-6 preserve the
-//! shared-crate boundary). The `sign_for_tests` alias remains for Plan 15-03
-//! integration tests; Plan 19-02 deletes it.
+//! shared-crate boundary). The `sign_for_tests` test-only alias was deleted
+//! in Plan 19-02 (BIP322-07) — production `sign` is now the only sign path.
 
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Network, Script, Witness};
@@ -104,53 +104,3 @@ pub(crate) fn sign(
     Ok(w)
 }
 
-/// Test-only signer producing a valid 64-byte Schnorr keyspend witness.
-///
-/// Uses the 8-step BIP-341 sequence from Phase 14 Sprint-0-B (and RESEARCH
-/// Pattern 4): build to_spend → build to_sign → Keypair::from_secret_key →
-/// tap_tweak → taproot_key_spend_signature_hash → sign_schnorr_no_aux_rand →
-/// push 64 bytes into Witness. This is the load-bearing test signer that
-/// Plan 15-03 consumes for per-script positive-vector tests.
-///
-/// Plan 15-03 promotes this from `#[cfg(test)] pub(crate)` to `pub(crate)`
-/// (no cfg gate) so the integration-test dispatcher mirror
-/// `super::sign_simple_test_only` (a `#[doc(hidden)] pub fn` in `mod.rs`)
-/// can reach it from external test crates at `shared/tests/*.rs`. Production
-/// callers cannot invoke this fn directly because the per-script module is
-/// `pub(crate)`-only per D-27.
-pub(crate) fn sign_for_tests(spk: &Script, key: &SecretKey, message: &[u8]) -> Witness {
-    use bitcoin::hashes::Hash;
-    use bitcoin::key::{Keypair, TapTweak};
-    use bitcoin::secp256k1::{Message, Secp256k1};
-    use bitcoin::sighash::{Prevouts, SighashCache, TapSighashType};
-    use bitcoin::{Amount, TxOut};
-
-    let msg_hash = super::bip322_message_hash(message);
-    let to_spend = super::build_bip322_to_spend(spk, &msg_hash);
-    let to_sign = super::build_bip322_to_sign(&to_spend);
-
-    let secp = Secp256k1::new();
-    let keypair = Keypair::from_secret_key(&secp, key);
-    let tweaked = keypair.tap_tweak(&secp, None).to_keypair();
-
-    let mut cache = SighashCache::new(&to_sign);
-    let sighash = cache
-        .taproot_key_spend_signature_hash(
-            0,
-            &Prevouts::All(&[TxOut {
-                value: Amount::ZERO,
-                script_pubkey: spk.to_owned(),
-            }]),
-            TapSighashType::Default,
-        )
-        .expect("sighash on well-formed to_sign");
-
-    let sig = secp.sign_schnorr_no_aux_rand(
-        &Message::from_digest(sighash.to_byte_array()),
-        &tweaked,
-    );
-
-    let mut w = Witness::new();
-    w.push(sig.as_ref());
-    w
-}

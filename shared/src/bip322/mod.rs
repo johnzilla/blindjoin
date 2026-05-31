@@ -321,48 +321,6 @@ pub fn p2sh_p2wpkh_final_script_sig(pubkey: &bitcoin::secp256k1::PublicKey) -> S
 }
 
 // ---------------------------------------------------------------------------
-// sign_simple_test_only — integration-test dispatcher mirror.
-//
-// Plan 15-03 BIP322-04 scope: per-script positive vectors + sign↔verify
-// roundtrips MUST run end-to-end against the dispatcher API so a future
-// dispatcher regression surfaces in CI. Production `sign_simple` for P2TR
-// and P2SH-P2WPKH is `todo!()` per CD-6 (Phase 17 WALLET-02 wires bdk),
-// so this fn provides the test-only path: routes P2WPKH to the
-// fully-implemented production `p2wpkh::sign`, and routes P2TR +
-// P2SH-P2WPKH to the per-script `sign_for_tests` helpers that produce
-// canonical witnesses without depending on `bdk_wallet` from `shared/`.
-//
-// Visibility: marked `#[doc(hidden)]` so it does NOT appear in the public
-// `cargo doc` output of `shared::bip322`. The plan's CD-6 extension
-// permits this minimal addition to the public-by-symbol API surface — the
-// `_test_only` suffix and `#[doc(hidden)]` attribute together signal that
-// production callers (coordinator, client, liquidity-bot) MUST NOT invoke
-// this fn. `#[cfg(test)]` cannot be used here because integration tests
-// at `shared/tests/*.rs` are compiled as external crates that only see
-// shared's PUBLIC API; lib-test-only items remain unreachable. The
-// V1.4-CRIT-01 spoofing vector remains statically constrained: the
-// dispatcher routes by `ScriptType` exclusively (no per-script `pub fn
-// verify_p2wpkh` exists for a caller to spoof against), and a caller
-// invoking `sign_simple_test_only` with a mismatched `ScriptType` against
-// an SPK still receives the same arity-check + bip322-crate-verify
-// rejection at verify time per D-31.
-// ---------------------------------------------------------------------------
-
-#[doc(hidden)]
-pub fn sign_simple_test_only(
-    script_type: ScriptType,
-    spk: &Script,
-    key: &bitcoin::secp256k1::SecretKey,
-    message: &[u8],
-) -> Result<Witness, Bip322Error> {
-    match script_type {
-        ScriptType::P2wpkh => p2wpkh::sign(spk, key, message),
-        ScriptType::P2tr => Ok(p2tr::sign_for_tests(spk, key, message)),
-        ScriptType::P2shP2wpkh => Ok(p2sh_p2wpkh::sign_for_tests(spk, key, message)),
-    }
-}
-
-// ---------------------------------------------------------------------------
 // 26-LOC bip322 crate adapter — Sprint-0-A:145-175 verbatim per D-26.
 // Wraps `bip322::verify_simple(&Address, message, Witness)` into our
 // `(spk, witness, message, network)` wire shape. Error mapping preserves
