@@ -168,6 +168,41 @@ impl BdkClientWallet {
         }
 
         let bdk_net = bdk_network(network);
+        // WR-03 (Phase 19 review): the original `contains("/0/*)")` heuristic
+        // silently misclassified several real-world descriptor shapes:
+        //   1. Checksummed descriptors (`...#abc12345`) — `replacen` produces
+        //      an internal descriptor whose checksum no longer matches the
+        //      replaced body; bdk_wallet rejects it with a confusing parse
+        //      error rather than a "checksums not supported" message.
+        //   2. BIP-389 multi-path descriptors (`...<0;1>/*`) — the literal
+        //      `/0/*)` substring is absent, so they fall through to
+        //      `Wallet::create_single`, silently dropping the combined
+        //      external+internal keychain semantics the user encoded.
+        //   3. Non-standard derivation paths (`.../0/0)`) — also fall
+        //      through to `create_single`, silently inconsistent with the
+        //      user's intent.
+        //
+        // Fix: fail fast with a clear message when we see those shapes, so
+        // a user with a checksummed or multi-path descriptor learns it is
+        // not supported rather than getting a misleading bdk parse error.
+        // The supported template is exactly the one `generate()` produces:
+        // `<wrapper>(<key>/<bip>'/0'/0'/0/*)` (with the trailing `)` for
+        // single-wrapper, or `))` for `sh(wpkh(...))`).
+        if external_desc.contains('#') {
+            return Err(anyhow!(
+                "descriptor checksums (`#…`) are not supported — drop the \
+                 checksum suffix; the wallet derives external+internal \
+                 keychains internally from the `/0/*` template"
+            ));
+        }
+        if external_desc.contains('<') && external_desc.contains('>') {
+            return Err(anyhow!(
+                "BIP-389 multi-path descriptors (`<a;b>`) are not supported — \
+                 supply only the external keychain template `/0/*`; the \
+                 wallet derives the internal `/1/*` keychain automatically"
+            ));
+        }
+
         // Single-key (non-derivation) descriptors lack the `/0/*` template path.
         // bdk_wallet 2.3 rejects `Wallet::create(d, d)` with "External and
         // internal descriptors are the same" — use `Wallet::create_single` for
