@@ -41,6 +41,22 @@ The coordinator will start, publish its address to the PKARR DHT, and wait for p
 
 To get a signet UTXO for the bot, use the [signet faucet](https://signet.bc-2.jp/).
 
+## Privacy Considerations
+
+blindjoin accepts mixed input script types (P2WPKH, P2TR, P2SH-P2WPKH) in a
+single round. This maximizes the anonymity set across address types but
+creates a chain-analysis signal: a CoinJoin transaction with a wildly
+heterogeneous input set is visually distinguishable from a uniform-script
+CoinJoin. Privacy-sensitive users who require uniform-script rounds can run
+a dedicated coordinator with a single `allow_*` flag enabled.
+
+The bundled liquidity bot rotates the script type it submits across rounds.
+This prevents the bot's UTXOs from forming a uniform-script-type fingerprint
+(which would otherwise identify the bot's participation by cross-round
+correlation). Rotation is round-robin across the operator-configured
+`BLINDJOIN_BOT_SCRIPT_TYPES`; each run is single-shot and uses a fresh
+wallet, so output addresses do not cluster across rounds.
+
 ## Build from Source
 
 Requires Rust 1.89+ and cargo (the floor is set by `arti-client` 0.41).
