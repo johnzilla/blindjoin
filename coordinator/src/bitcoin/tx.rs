@@ -2,17 +2,59 @@ use bitcoin::{
     Amount, OutPoint, Psbt, ScriptBuf, Transaction, TxIn, TxOut,
     Sequence, Witness,
 };
+use shared::bip322::ScriptType;
 
 /// P2WPKH dust threshold: 294 sats (standard relay dust limit).
 /// If change would be less than this, fold it into fee. (TX-04)
 const DUST_THRESHOLD_SATS: u64 = 294;
 
-/// Estimated weight per input (P2WPKH): 68 vbytes
-const INPUT_WEIGHT_VBYTES: u64 = 68;
-/// Estimated weight per output (P2WPKH): 31 vbytes
-const OUTPUT_WEIGHT_VBYTES: u64 = 31;
-/// Fixed TX overhead: 10 vbytes (version, locktime, vin/vout counts)
+/// Fixed TX overhead: 10 vbytes (version, locktime, vin/vout counts).
+/// Script-independent — the only weight constant that stays a plain const after
+/// Phase 20's per-script weight table replaced INPUT_WEIGHT_VBYTES /
+/// OUTPUT_WEIGHT_VBYTES with `script_input_vbytes` / `script_output_vbytes`.
 const TX_OVERHEAD_VBYTES: u64 = 10;
+
+/// Input vbytes per BIP-141 worst-case witness, conservative-rounded-UP
+/// (raw value → ceil(witness/4) via integer-arithmetic `(w + 3) / 4`).
+///
+/// **CRIT-01 discipline:** `st` is coordinator-derived from the on-chain
+/// `script_pubkey` by the BIP-322 ownership-proof dispatcher (see
+/// `coordinator/src/bitcoin/utxo.rs`), never from a client-supplied wire
+/// field. Phase 20 plumbs the already-derived value through `UtxoDetails`
+/// → `RegisteredInput` → `ParticipantInput`; the fee path NEVER re-derives
+/// the script type itself.
+pub const fn script_input_vbytes(st: ScriptType) -> u64 {
+    match st {
+        // 41 non_witness (32 prev_txid + 4 vout + 1 script_sig_len(0) + 4 sequence)
+        // + 108 witness (1 stack_count + 1 sig_len(72) + 72 DER+SIGHASH_ALL
+        // + 1 pk_len(33) + 33 compressed pk) / 4 = 27
+        // = 68 vB
+        ScriptType::P2wpkh => 68,
+        ScriptType::P2tr => 58,
+        // P2TR derivation: 41 non_witness (same as P2WPKH)
+        // + 66 witness (1 stack_count + 1 sig_len(64) + 64 Schnorr SIGHASH_DEFAULT)
+        //   → ceil(66/4) = 17
+        // = 58 vB. ROADMAP SC#1 cites 57 (floor of 57.5); STATE.md §v1.5 design
+        // notes mandates UP-rounding so the coordinator never underpays fees on
+        // a mixed round — 58 is the load-bearing value (raw 57.5, round UP).
+        // 64 non_witness (32 prev_txid + 4 vout + 1 script_sig_len(23) + 23 redeem
+        // wrapper + 4 sequence) + 108 witness (same as P2WPKH) / 4 = 27
+        // = 91 vB
+        ScriptType::P2shP2wpkh => 91,
+    }
+}
+
+/// Output vbytes — exact bytes (outputs have no segwit discount, no rounding).
+pub const fn script_output_vbytes(st: ScriptType) -> u64 {
+    match st {
+        // 8 value + 1 script_len(22) + 22 (OP_0 OP_PUSHBYTES_20 <20>) = 31
+        ScriptType::P2wpkh => 31,
+        // 8 value + 1 script_len(34) + 34 (OP_1 OP_PUSHBYTES_32 <32>) = 43
+        ScriptType::P2tr => 43,
+        // 8 value + 1 script_len(23) + 23 (OP_HASH160 OP_PUSHBYTES_20 <20> OP_EQUAL) = 32
+        ScriptType::P2shP2wpkh => 32,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ParticipantInput {
@@ -61,11 +103,18 @@ pub fn build_coinjoin_psbt(
     }
     let n = inputs.len() as u64;
 
-    // Estimate size assuming all participants have change outputs (upper bound)
+    // Estimate size assuming all participants have change outputs (upper bound).
+    //
+    // Phase 20 Task 1 (transitional): per-input weight is uniformly P2WPKH because
+    // ParticipantInput.script_type doesn't yet exist (Task 2 adds the field and
+    // replaces this with a per-input sum). The numeric outcome is byte-identical
+    // to the pre-Phase-20 formula (`script_input_vbytes(P2wpkh) = 68`,
+    // `script_output_vbytes(P2wpkh) = 31`) — preserves the v1.3 `full_round`
+    // invariant during the Task 1 → Task 2 window.
     let num_change_outputs = n;
     let estimated_vsize = TX_OVERHEAD_VBYTES
-        + n * INPUT_WEIGHT_VBYTES
-        + (n + num_change_outputs) * OUTPUT_WEIGHT_VBYTES;
+        + n * script_input_vbytes(ScriptType::P2wpkh)
+        + (n + num_change_outputs) * script_output_vbytes(ScriptType::P2wpkh);
     let total_fee = estimated_vsize * fee_rate_sat_per_vbyte;
     let fee_share = total_fee / n;  // each participant pays fee_share
 
@@ -220,5 +269,45 @@ mod tests {
             assert!(psbt_input.witness_utxo.is_some(),
                 "Input {} must have witness_utxo set for SegWit signing", i);
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase 20 Task 1 (FEE-01): per-script vbyte table pin tests.
+    //
+    // These 6 tests pin `script_input_vbytes` / `script_output_vbytes` against
+    // their BIP-141 derivation. Each assertion is the audit-charter artifact
+    // for Phase 21: a refactor that silently changes a value breaks a test.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn script_input_vbytes_p2wpkh_is_68() {
+        assert_eq!(script_input_vbytes(ScriptType::P2wpkh), 68);
+    }
+
+    #[test]
+    fn script_input_vbytes_p2tr_is_58_up_rounded() {
+        // 41 + ceil(66/4) = 41 + 17 = 58. ROADMAP says 57 (floor); STATE.md §v1.5
+        // design notes mandates UP-rounding — 58 is correct.
+        assert_eq!(script_input_vbytes(ScriptType::P2tr), 58);
+    }
+
+    #[test]
+    fn script_input_vbytes_p2sh_p2wpkh_is_91() {
+        assert_eq!(script_input_vbytes(ScriptType::P2shP2wpkh), 91);
+    }
+
+    #[test]
+    fn script_output_vbytes_p2wpkh_is_31() {
+        assert_eq!(script_output_vbytes(ScriptType::P2wpkh), 31);
+    }
+
+    #[test]
+    fn script_output_vbytes_p2tr_is_43() {
+        assert_eq!(script_output_vbytes(ScriptType::P2tr), 43);
+    }
+
+    #[test]
+    fn script_output_vbytes_p2sh_p2wpkh_is_32() {
+        assert_eq!(script_output_vbytes(ScriptType::P2shP2wpkh), 32);
     }
 }
