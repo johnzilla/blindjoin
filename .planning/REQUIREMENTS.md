@@ -27,9 +27,9 @@
 
 ### Audit Scope & Charter (`AUDIT-*`)
 
-- [ ] **AUDIT-01**: Publish `docs/AUDIT-CHARTER.md` (committed in `main`, linked from `README.md` §Security Model). Structure: (1) in-scope modules with line/file references — `shared::bip322` dispatcher + per-script modules, `coordinator/src/bitcoin/utxo.rs::validate_utxo` (CRIT-01 cross-check), `coordinator/src/blind/rsa.rs` (RSA SecretKey lifecycle), `client/src/round/input.rs` (v2 OwnershipProof PSBT envelope construction); (2) threat models per module (V1.4-CRIT-01 spoofing, V1.4-CRIT-02 silent sighash regression, V1.4-MIN-02 uniform-script fingerprint, RSA Marvin Attack residual exposure); (3) cross-shape rejection properties (the 9 D-34 cases in `shared/tests/bip322_cross_shape.rs` enumerated explicitly); (4) v=2 `OwnershipProof` PSBT handling (the full-BIP-174 shape, Pitfall 1, `decode_psbt_input_witness` boundary); (5) RSA SecretKey zeroization window (post AUDIT-03 bounded form); (6) out-of-scope (Tor circuit-isolation correctness — relies on arti-client; PKARR DHT — relies on pkarr crate); (7) residual risks accepted with rationale; (8) glossary mapping CRIT-01, MIN-02, ADR Decision #N, etc. to plain audit language.
+- [x] **AUDIT-01**: Publish `docs/AUDIT-CHARTER.md` (committed in `main`, linked from `README.md` §Security Model). Structure: (1) in-scope modules with line/file references — `shared::bip322` dispatcher + per-script modules, `coordinator/src/bitcoin/utxo.rs::validate_utxo` (CRIT-01 cross-check), `coordinator/src/blind/rsa.rs` (RSA SecretKey lifecycle), `client/src/round/input.rs` (v2 OwnershipProof PSBT envelope construction); (2) threat models per module (V1.4-CRIT-01 spoofing, V1.4-CRIT-02 silent sighash regression, V1.4-MIN-02 uniform-script fingerprint, RSA Marvin Attack residual exposure); (3) cross-shape rejection properties (the 9 D-34 cases in `shared/tests/bip322_cross_shape.rs` enumerated explicitly); (4) v=2 `OwnershipProof` PSBT handling (the full-BIP-174 shape, Pitfall 1, `decode_psbt_input_witness` boundary); (5) RSA SecretKey zeroization window (post AUDIT-03 bounded form); (6) out-of-scope (Tor circuit-isolation correctness — relies on arti-client; PKARR DHT — relies on pkarr crate); (7) residual risks accepted with rationale; (8) glossary mapping CRIT-01, MIN-02, ADR Decision #N, etc. to plain audit language.
 
-- [ ] **AUDIT-02**: Update `.cargo/audit.toml` ignore-rationale strings to (a) reference the relevant `docs/AUDIT-CHARTER.md` section anchor per ignored advisory; (b) the RUSTSEC-2023-0071 (rsa Marvin Attack) entry's rationale paragraph references the AUDIT-03 bounded-window mitigation (not "best-effort" anymore); (c) "Reviewed: 2026-05-26" header bumped to the v1.5-ship date; (d) any v1.4 transitive deps that have advisories opened since the v1.3 review get explicit ignore-or-fix decisions with rationale (no silent additions).
+- [x] **AUDIT-02**: Update `.cargo/audit.toml` ignore-rationale strings to (a) reference the relevant `docs/AUDIT-CHARTER.md` section anchor per ignored advisory; (b) the RUSTSEC-2023-0071 (rsa Marvin Attack) entry's rationale paragraph references the AUDIT-03 bounded-window mitigation (not "best-effort" anymore); (c) "Reviewed: 2026-05-26" header bumped to the v1.5-ship date; (d) any v1.4 transitive deps that have advisories opened since the v1.3 review get explicit ignore-or-fix decisions with rationale (no silent additions).
 
 - [x] **AUDIT-03**: Tighten RSA `BjSecretKey` zeroization window — wrap `BjSecretKey` in a coordinator-local `RoundSecretKey(BjSecretKey)` newtype with an explicit `Drop` impl that zeroes the in-process buffer at round end (or as soon as the last blind-sign call returns, whichever the state machine permits). Replaces the "best-effort" qualification in the D-07 comment at `coordinator/src/blind/rsa.rs:18-22` with an *explicitly bounded* window expressible as a Rust lifetime ("the secret key is live for the duration of `Round.state.signer: Option<RoundSecretKey>` and is dropped (and zeroed) on `Round.complete()` / `Round.abort()` / `Round.timeout()`"). Test: after `Round::complete`, the `RoundSecretKey` instance no longer exists and any in-process scan of the round-state allocation does not contain the original DER bytes (best-effort RAM scan test acceptable; the structural lifetime bound is the load-bearing claim).
 
@@ -74,9 +74,9 @@ Explicitly excluded with reasoning to prevent re-adding later.
 | FEE-01 | Phase 20 | Not started |
 | FEE-02 | Phase 20 | Not started |
 | FEE-03 | Phase 20 | Not started |
-| AUDIT-01 | Phase 21 | Not started |
-| AUDIT-02 | Phase 21 | Not started |
-| AUDIT-03 | Phase 21 | Not started |
+| AUDIT-01 | Phase 21 | Complete (21-02, commit 92ae533) |
+| AUDIT-02 | Phase 21 | Complete (21-02, commit 92ae533) |
+| AUDIT-03 | Phase 21 | Complete (21-01) |
 
 **Coverage:**
 - v1.5 requirements: 9 total

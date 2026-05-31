@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
-status: executing
-last_updated: "2026-05-31T23:09:38.027Z"
+status: verifying
+last_updated: "2026-05-31T23:23:31.764Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 5
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 21 (audit-charter-zeroization-tightening) — EXECUTING
-Plan: 2 of 2
-Status: Plan 21-01 complete; ready to execute 21-02
-Last activity: 2026-05-31 -- 21-01 complete (RoundSecretKey newtype + Option<RsaBlindSigner> bounded-lifetime refactor; all 6 cross-phase invariants green)
+Phase: 21 (audit-charter-zeroization-tightening) — EXECUTION COMPLETE
+Plan: 2 of 2 (complete)
+Status: Phase complete — ready for verification (AUDIT-01 + AUDIT-02 + AUDIT-03 all closed)
+Last activity: 2026-05-31 -- 21-02 complete (docs/AUDIT-CHARTER.md + .cargo/audit.toml refresh + README §Security Model callout shipped in single atomic commit 92ae533 per D-133a; all cross-phase invariants green: cargo audit 0/0, full_round 8/8, mixed_script_e2e 1/1, clippy 0 warnings)
 
 ## Project Reference
 
@@ -33,7 +33,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 - ✅ **Phase 19** — Multi-Script Signing Finish (BIP322-05, BIP322-06, BIP322-07) — execution complete, awaiting verification
 - ✅ **Phase 20** — Mixed-Round Fee Accuracy (FEE-01, FEE-02, FEE-03) — execution complete, awaiting verification
-- ⬜ **Phase 21** — Audit Charter & Zeroization Tightening (AUDIT-01, AUDIT-02, AUDIT-03)
+- ✅ **Phase 21** — Audit Charter & Zeroization Tightening (AUDIT-01, AUDIT-02, AUDIT-03) — execution complete, awaiting verification
 
 ## Blockers
 
@@ -83,6 +83,10 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 - **Plan 21-01** (2026-05-31): `RoundSecretKey(BjSecretKey)` newtype shipped in `coordinator/src/blind/rsa.rs` with empty-crypto `Drop` body emitting a PII-safe `tracing::debug!` event under target `blindjoin::audit`. Per 21-RESEARCH OQ1 the wrapped `rsa::RsaPrivateKey` already implements UNCONDITIONAL `Drop` + `ZeroizeOnDrop` (`rsa-0.9.10/src/key.rs:76-84`, no feature flag); DER-roundtrip and replace-with-dummy approaches are strictly worse (extra allocation / ~100ms keygen for identical outcome). The newtype's value is **lifetime expression**, not redundant in-place scrub.
 - **Plan 21-01** (2026-05-31): `RoundStateInner.rsa_signer` refactored from bare `RsaBlindSigner` to `Option<RsaBlindSigner>` (D-128). The bounded-lifetime claim is now expressible as a Rust type signature at `state.rs:110` — load-bearing AUDIT-03 mitigation per REQUIREMENTS. New structural FSM test `round_secret_key_dropped_on_round_end` is the unconditional CI gate; sibling best-effort scrub `round_secret_key_buffer_overwritten_on_drop` is sanity-only and ignored on non-Linux per CD-50.
 - **Plan 21-01** (2026-05-31): D-07 comment at `coordinator/src/blind/rsa.rs:18-22` rewritten per D-132 — old "best-effort only" qualifier removed (upstream `rsa 0.9.10` Drop chain runs deterministically). New comment cites the transitive `rsa::RsaPrivateKey` Drop chain by file:line, names `Option<RsaBlindSigner>` as the lifetime bound, names `transition_to(Phase::Idle)` as the trigger, and ends with charter anchor `docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window` — which Plan 21-02 materializes (the forward reference is intentional per the cross-phase invariant boundary).
+- **Plan 21-02** (2026-05-31): `docs/AUDIT-CHARTER.md` shipped at 574 LOC with 8 H2 sections in REQUIREMENTS AUDIT-01 mandated order; hybrid voice (tables §1/§3/§6/§8, narrative §2/§4/§5/§7) per D-134. Closes AUDIT-01.
+- **Plan 21-02** (2026-05-31): `.cargo/audit.toml` refreshed — RUSTSEC-2023-0071 rationale paragraph rewritten per D-139 + 21-RESEARCH OQ1 to name AUDIT-03 bounded-window mitigation explicitly (drops "destroys the key via `zeroize`" phrasing in favor of citing the transitive `<rsa::RsaPrivateKey as Drop>::drop` chain at `rsa-0.9.10/src/key.rs:76-82` bounded by `Option<RsaBlindSigner>` on `RoundStateInner`, verified by `round_secret_key_dropped_on_round_end`); 3 closing anchor lines appended; `Reviewed:` date bumped to 2026-05-31 (D-140). 3 ignore IDs preserved verbatim per OQ3. Closes AUDIT-02.
+- **Plan 21-02** (2026-05-31, D-133a): all 3 artifacts (charter + audit.toml + README §Security Model callout) shipped in commit 92ae533 as a single atomic landing — prevents the anchor-drift window where audit.toml references charter headings that don't yet exist on the branch. The 4-way navigation loop (code ↔ charter ↔ audit.toml ↔ README) is intact at every commit boundary.
+- **Plan 21-02** (2026-05-31, CD-49 slug-refinement): the §5 H2 heading is `## RSA Secret Key Zeroization Window` (with space between "Secret" and "Key") so GitHub's markdown auto-slugger produces `rsa-secret-key-zeroization-window` — matching the anchor cited by `rsa.rs` D-07 comment + `audit.toml` RUSTSEC-2023-0071 closing line. The §7 H3 sub-headings use colon form (`### Residual Risks: cargo-audit Advisories` etc.) NOT em-dash form so the slug is clean `residual-risks-cargo-audit-advisories` without a double-hyphen. GitHub's slugger does not split CamelCase nor collapse repeated hyphens; CD-49 grants this discretion explicitly.
 
 ## Performance Metrics
 
@@ -92,5 +96,6 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 | 19    | 02   | 7 min    | 2     | 7     | 2026-05-31 |
 | 20    | 01   | 17 min   | 3     | 9     | 2026-05-31 |
 | 21    | 01   | 7 min    | 3     | 6     | 2026-05-31 |
+| 21    | 02   | 11 min   | 3     | 3     | 2026-05-31 |
 
 (v1.5 metrics will accumulate per-phase. Cumulative trends live in `RETROSPECTIVE.md`. v1.4 milestone-scoped metrics live in `milestones/v1.4-*` archives.)

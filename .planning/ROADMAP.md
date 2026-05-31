@@ -122,16 +122,16 @@ Plans:
   4. Test `round_secret_key_zeroes_on_drop` in `coordinator/src/blind/rsa.rs::tests` constructs a `RoundSecretKey`, drops it, and asserts the underlying buffer no longer matches the original DER bytes (best-effort RAM scan acceptable per the existing `blind-rsa-signatures 0.17.x` limitation — the structural lifetime bound is the load-bearing claim).
   5. v1.3 `full_round::*` 8/8 + v1.4 `mixed_script_e2e_three_clients_broadcast` + Phase 20 fee tests all green at the plan boundary; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo audit` returns 0 vulnerabilities with the refreshed `audit.toml`.
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
 **Wave 1**
 
 - [x] 21-01-PLAN.md — RoundSecretKey newtype + Option<RsaBlindSigner> refactor + 2 tests (structural FSM + best-effort RAM scan) + D-07 comment rewrite + 4 call-site fix-ups (closes AUDIT-03)
 
-**Wave 2** *(blocked on Wave 1 completion)*
+**Wave 2**
 
-- [ ] 21-02-PLAN.md — docs/AUDIT-CHARTER.md (8 sections) + .cargo/audit.toml charter-anchor refresh + RUSTSEC-2023-0071 rewrite + README §Security Model callout — single atomic commit per D-133a (closes AUDIT-01 + AUDIT-02)
+- [x] 21-02-PLAN.md — docs/AUDIT-CHARTER.md (8 sections) + .cargo/audit.toml charter-anchor refresh + RUSTSEC-2023-0071 rewrite + README §Security Model callout — single atomic commit per D-133a (closes AUDIT-01 + AUDIT-02)
 
 
 ## Cross-Phase Invariant (v1.5)
