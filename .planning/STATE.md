@@ -3,31 +3,31 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
 status: executing
-last_updated: "2026-05-31T22:29:01.087Z"
-last_activity: 2026-05-31 -- Phase 21 planning complete
+last_updated: "2026-05-31T23:09:38.027Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 5
-  completed_plans: 3
-  percent: 60
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 21
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-31 -- Phase 21 planning complete
+Phase: 21 (audit-charter-zeroization-tightening) — EXECUTING
+Plan: 2 of 2
+Status: Plan 21-01 complete; ready to execute 21-02
+Last activity: 2026-05-31 -- 21-01 complete (RoundSecretKey newtype + Option<RsaBlindSigner> bounded-lifetime refactor; all 6 cross-phase invariants green)
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 21 — audit charter & zeroization tightening
+**Current focus:** Phase 21 — audit-charter-zeroization-tightening
 
 ## Milestone Map
 
@@ -80,6 +80,9 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 - **Plan 20-01** (2026-05-31): `BipConfig::allowed_set` returns `impl Iterator<Item = ScriptType> + '_` (CD-43 default); iteration order is implementation-defined — callers MUST NOT depend on order (use `supported()` for the alphabetical PKARR-canonical order). The `estimate_fee_share` use case is `max(...)` which is commutative.
 - **Plan 20-01** (2026-05-31): FEE-03 baseline test hardcodes `266` with inline derivation comment per D-125 (NOT a `v14_formula()` helper — hardcoded number + comment is more durable for the audit-charter artifact Phase 21 cites).
 - **Plan 20-01** (2026-05-31, Rule 1): `coordinator/src/round/blame.rs` test fixtures (3 `RegisteredInput` literals at lines 277/284/302) required `script_type` field refresh — plan enumeration listed signing.rs sites but missed blame.rs `detect_non_signers_*` tests. Auto-fixed; pattern is the same (P2WPKH default for tests that don't exercise fee math).
+- **Plan 21-01** (2026-05-31): `RoundSecretKey(BjSecretKey)` newtype shipped in `coordinator/src/blind/rsa.rs` with empty-crypto `Drop` body emitting a PII-safe `tracing::debug!` event under target `blindjoin::audit`. Per 21-RESEARCH OQ1 the wrapped `rsa::RsaPrivateKey` already implements UNCONDITIONAL `Drop` + `ZeroizeOnDrop` (`rsa-0.9.10/src/key.rs:76-84`, no feature flag); DER-roundtrip and replace-with-dummy approaches are strictly worse (extra allocation / ~100ms keygen for identical outcome). The newtype's value is **lifetime expression**, not redundant in-place scrub.
+- **Plan 21-01** (2026-05-31): `RoundStateInner.rsa_signer` refactored from bare `RsaBlindSigner` to `Option<RsaBlindSigner>` (D-128). The bounded-lifetime claim is now expressible as a Rust type signature at `state.rs:110` — load-bearing AUDIT-03 mitigation per REQUIREMENTS. New structural FSM test `round_secret_key_dropped_on_round_end` is the unconditional CI gate; sibling best-effort scrub `round_secret_key_buffer_overwritten_on_drop` is sanity-only and ignored on non-Linux per CD-50.
+- **Plan 21-01** (2026-05-31): D-07 comment at `coordinator/src/blind/rsa.rs:18-22` rewritten per D-132 — old "best-effort only" qualifier removed (upstream `rsa 0.9.10` Drop chain runs deterministically). New comment cites the transitive `rsa::RsaPrivateKey` Drop chain by file:line, names `Option<RsaBlindSigner>` as the lifetime bound, names `transition_to(Phase::Idle)` as the trigger, and ends with charter anchor `docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window` — which Plan 21-02 materializes (the forward reference is intentional per the cross-phase invariant boundary).
 
 ## Performance Metrics
 
@@ -88,5 +91,6 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 | 19    | 01   | 11 min   | 4     | 5     | 2026-05-31 |
 | 19    | 02   | 7 min    | 2     | 7     | 2026-05-31 |
 | 20    | 01   | 17 min   | 3     | 9     | 2026-05-31 |
+| 21    | 01   | 7 min    | 3     | 6     | 2026-05-31 |
 
 (v1.5 metrics will accumulate per-phase. Cumulative trends live in `RETROSPECTIVE.md`. v1.4 milestone-scoped metrics live in `milestones/v1.4-*` archives.)

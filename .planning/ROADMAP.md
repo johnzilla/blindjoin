@@ -122,12 +122,12 @@ Plans:
   4. Test `round_secret_key_zeroes_on_drop` in `coordinator/src/blind/rsa.rs::tests` constructs a `RoundSecretKey`, drops it, and asserts the underlying buffer no longer matches the original DER bytes (best-effort RAM scan acceptable per the existing `blind-rsa-signatures 0.17.x` limitation — the structural lifetime bound is the load-bearing claim).
   5. v1.3 `full_round::*` 8/8 + v1.4 `mixed_script_e2e_three_clients_broadcast` + Phase 20 fee tests all green at the plan boundary; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo audit` returns 0 vulnerabilities with the refreshed `audit.toml`.
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 21-01-PLAN.md — RoundSecretKey newtype + Option<RsaBlindSigner> refactor + 2 tests (structural FSM + best-effort RAM scan) + D-07 comment rewrite + 4 call-site fix-ups (closes AUDIT-03)
+- [x] 21-01-PLAN.md — RoundSecretKey newtype + Option<RsaBlindSigner> refactor + 2 tests (structural FSM + best-effort RAM scan) + D-07 comment rewrite + 4 call-site fix-ups (closes AUDIT-03)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -172,7 +172,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
 | 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete    | 2026-05-31 |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete    | 2026-05-31 |
-| 21. Audit Charter & Zeroization Tightening | v1.5 | 0/2 | Planned     | — |
+| 21. Audit Charter & Zeroization Tightening | v1.5 | 1/2 | In Progress|  |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
