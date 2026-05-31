@@ -181,6 +181,21 @@ pub enum Bip322Error {
     },
     #[error("unsupported script type")]
     UnsupportedScriptType,
+    /// Script-type derivation mismatch — dual meaning per Phase 19 CONTEXT
+    /// D-112 (CD-36 default = doc-comment update for discoverability):
+    /// - **Verify side:** declared (CLI/wire-supplied) script type does not
+    ///   match the script type derived from the on-chain `script_pubkey` via
+    ///   `detect_script_type`. The original Phase 15 use (V1.4-CRIT-01
+    ///   spoofing rejection).
+    /// - **Sign side** (Phase 19 Plan 19-01 reuse): in `p2tr::sign` and
+    ///   `p2sh_p2wpkh::sign`, the caller-supplied `script_pubkey` does not
+    ///   match the derivation from the caller-supplied `SecretKey`. Here
+    ///   `declared` = the script type derived from the on-chain
+    ///   `script_pubkey` (via `detect_script_type`), and `derived` = the
+    ///   script type the SecretKey corresponds to (per D-111 + D-112 + D-113).
+    ///
+    /// PII safety unchanged: Display interpolates only the two ScriptType
+    /// enum values — no key, address, or pubkey bytes appear in the message.
     #[error("declared script_type {declared:?} does not match on-chain {derived:?}")]
     ScriptTypeMismatch {
         declared: ScriptType,
@@ -255,9 +270,16 @@ pub fn verify_simple(
 
 /// Sign a BIP-322 Simple proof for the given script type.
 ///
-/// Per CD-6: P2WPKH ships a full production body in Phase 15 (carried over
-/// from the v1.3 path); P2TR and P2SH-P2WPKH bodies are `todo!()` and are
-/// filled in by Phase 17 WALLET-02 (bdk_wallet sign path per ADR Decision #4).
+/// All three per-script sign bodies ship production code:
+/// - **P2WPKH** since Phase 15 (carried over from the v1.3 path).
+/// - **P2TR** since Phase 19 Plan 19-01 (BIP-341 Schnorr keypath,
+///   SIGHASH_DEFAULT, deterministic via `sign_schnorr_no_aux_rand`).
+/// - **P2SH-P2WPKH** since Phase 19 Plan 19-01 (BIP-143 ECDSA over the
+///   UNWRAPPED P2WPKH redeem, RFC 6979 deterministic).
+///
+/// The P2TR and P2SH-P2WPKH bodies cross-check that `spk` matches the
+/// derivation from `key` (D-111 defense-in-depth) — a mismatch returns
+/// [`Bip322Error::ScriptTypeMismatch`] BEFORE any sighash work.
 pub fn sign_simple(
     script_type: ScriptType,
     spk: &Script,
@@ -269,6 +291,33 @@ pub fn sign_simple(
         ScriptType::P2tr => p2tr::sign(spk, key, message),
         ScriptType::P2shP2wpkh => p2sh_p2wpkh::sign(spk, key, message),
     }
+}
+
+/// Build the `final_script_sig` for a P2SH-P2WPKH input spending a UTXO
+/// controlled by `pubkey`. Per BIP-141 nested-SegWit:
+/// `scriptSig = OP_PUSHBYTES_22 <redeem>` where
+/// `redeem = OP_0 OP_PUSHBYTES_20 <HASH160(pubkey)>` (22 bytes).
+///
+/// Output bytes: `0x16 0x00 0x14 <20-byte HASH160(pubkey)>` — 23 bytes total
+/// (1-byte push opcode + 22-byte redeem). Phase 19 Plan 19-01 D-109 sibling
+/// to [`sign_simple`] — surfacing the script-specific helper without widening
+/// the dispatcher contract (no `match script_type` here).
+///
+/// Infallible: takes a 33-byte compressed `secp256k1::PublicKey`, so
+/// `bitcoin::PublicKey::new(_).wpubkey_hash()` always returns `Some(_)`.
+/// Lowest-privilege input — no secret material crosses the function boundary.
+pub fn p2sh_p2wpkh_final_script_sig(pubkey: &bitcoin::secp256k1::PublicKey) -> ScriptBuf {
+    let compressed = bitcoin::PublicKey::new(*pubkey);
+    let wpkh = compressed
+        .wpubkey_hash()
+        .expect("compressed pubkey always has wpubkey_hash");
+    let redeem = ScriptBuf::new_p2wpkh(&wpkh);
+    bitcoin::blockdata::script::Builder::new()
+        .push_slice(
+            <&bitcoin::script::PushBytes>::try_from(redeem.as_bytes())
+                .expect("22-byte redeem fits push limit (520 bytes)"),
+        )
+        .into_script()
 }
 
 // ---------------------------------------------------------------------------
@@ -563,5 +612,90 @@ mod tests {
                 "PII leak: 'address:' in {case}"
             );
         }
+    }
+
+    // --- Plan 19-01 Task 3 — p2sh_p2wpkh_final_script_sig helper (D-108) + ---
+    // --- D-111 cross-check rejection unit tests (CD-37 default = yes).     ---
+
+    #[test]
+    fn p2sh_p2wpkh_final_script_sig_derives_correctly() {
+        use bitcoin::secp256k1::PublicKey as SecpPublicKey;
+
+        // BIP-141 nested-SegWit shape:
+        //   scriptSig = OP_PUSHBYTES_22 || redeem
+        //   redeem    = OP_0 || OP_PUSHBYTES_20 || HASH160(pubkey)
+        // Total = 1 (push opcode) + 22 (redeem) = 23 bytes.
+        // Per Phase 19 RESEARCH §Q3 the byte count is 23, NOT 24 (CONTEXT
+        // D-110 off-by-one corrected — the redeem is the PUSHED data, the
+        // push opcode itself is a separate 1-byte prefix).
+        let secp = Secp256k1::new();
+        let sk = fixture_secret_key();
+        let pk = SecpPublicKey::from_secret_key(&secp, &sk);
+
+        let script_sig = p2sh_p2wpkh_final_script_sig(&pk);
+        let bytes = script_sig.as_bytes();
+
+        assert_eq!(
+            bytes.len(),
+            23,
+            "scriptSig must be 23 bytes (1-byte push opcode + 22-byte redeem)"
+        );
+        assert_eq!(bytes[0], 0x16, "first byte must be OP_PUSHBYTES_22");
+        assert_eq!(bytes[1], 0x00, "redeem byte 0 must be OP_0");
+        assert_eq!(bytes[2], 0x14, "redeem byte 1 must be OP_PUSHBYTES_20");
+
+        let compressed = PublicKey::new(pk);
+        let expected_wpkh = compressed.wpubkey_hash().expect("compressed");
+        let expected_hash160: &[u8] = <WPubkeyHash as AsRef<[u8]>>::as_ref(&expected_wpkh);
+        assert_eq!(
+            &bytes[3..23],
+            expected_hash160,
+            "trailing 20 bytes = HASH160(pubkey)"
+        );
+    }
+
+    #[test]
+    fn p2tr_sign_rejects_p2sh_p2wpkh_spk_with_p2tr_key() {
+        // D-111 cross-check (P2TR side): the supplied secret key derives a
+        // P2TR output key, but the caller passed a P2SH-P2WPKH spk. The
+        // sign body must reject with ScriptTypeMismatch BEFORE any sighash
+        // work, with `declared = P2shP2wpkh` (from detect_script_type) and
+        // `derived = P2tr` (from the key's script type).
+        let spk = fixture_p2sh_spk();
+        let key = fixture_secret_key();
+        let err = sign_simple(ScriptType::P2tr, &spk, &key, b"x")
+            .expect_err("P2TR sign with P2SH-P2WPKH spk must reject");
+        assert!(
+            matches!(
+                err,
+                Bip322Error::ScriptTypeMismatch {
+                    declared: ScriptType::P2shP2wpkh,
+                    derived: ScriptType::P2tr,
+                }
+            ),
+            "expected ScriptTypeMismatch{{P2shP2wpkh, P2tr}}, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn p2sh_p2wpkh_sign_rejects_p2tr_spk_with_p2sh_p2wpkh_key() {
+        // D-111 cross-check (P2SH-P2WPKH side): the supplied secret key
+        // derives the unwrapped P2WPKH redeem (and thus the P2SH outer SPK),
+        // but the caller passed a P2TR spk. The sign body must reject with
+        // ScriptTypeMismatch BEFORE any sighash work.
+        let spk = fixture_p2tr_spk();
+        let key = fixture_secret_key();
+        let err = sign_simple(ScriptType::P2shP2wpkh, &spk, &key, b"x")
+            .expect_err("P2SH-P2WPKH sign with P2TR spk must reject");
+        assert!(
+            matches!(
+                err,
+                Bip322Error::ScriptTypeMismatch {
+                    declared: ScriptType::P2tr,
+                    derived: ScriptType::P2shP2wpkh,
+                }
+            ),
+            "expected ScriptTypeMismatch{{P2tr, P2shP2wpkh}}, got: {err:?}"
+        );
     }
 }
