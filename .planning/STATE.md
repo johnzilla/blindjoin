@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
 status: executing
-last_updated: "2026-05-31T03:44:40.625Z"
-last_activity: 2026-05-31 -- Phase 19 planning complete
+last_updated: "2026-05-31T17:02:54.146Z"
+last_activity: 2026-05-31 -- Plan 19-01 completed (BIP322-05 + BIP322-06 shipped; 4 commits)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -17,17 +17,17 @@ progress:
 
 ## Current Position
 
-Phase: 19 (not started — discuss/plan-phase pending)
-Plan: —
-Status: Ready to execute
-Last activity: 2026-05-31 -- Phase 19 planning complete
+Phase: 19 (multi-script-signing-finish) — EXECUTING
+Plan: 2 of 2
+Status: Plan 19-01 complete (BIP322-05 + BIP322-06 shipped); Plan 19-02 ready to execute (BIP322-07 removal + caller migration)
+Last activity: 2026-05-31 -- Plan 19-01 4-task execution complete
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 19 — Multi-Script Signing Finish (production sign bodies + remove test-only mirror)
+**Current focus:** Phase 19 — multi-script-signing-finish
 
 ## Milestone Map
 
@@ -67,6 +67,17 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 - Phase 20's per-script weight table: use `bitcoin::Weight::from_witness_data_size` or hand-derived vbyte numbers from BIP-141 (P2WPKH input ~68 vB, P2TR input ~57.5 vB, P2SH-P2WPKH input ~91 vB; outputs P2WPKH 31 vB, P2TR 43 vB, P2SH-P2WPKH 32 vB). Rounding policy needs to be conservative (round UP) so the coordinator doesn't underpay fees on a mixed round.
 - Phase 21's AUDIT-CHARTER.md should be structured as: in-scope modules (with line/file references), out-of-scope explicitly listed, threat models per module, residual risks accepted, and a glossary mapping audit terminology to project terms (CRIT-01, V1.4-MIN-02, etc.).
 
+## Recent Plan Decisions
+
+- **Plan 19-01** (2026-05-31): Production `sign` bodies shipped for P2TR (BIP-341 Schnorr keypath via `sign_schnorr_no_aux_rand`) and P2SH-P2WPKH (BIP-143 ECDSA over unwrapped P2WPKH redeem) in `shared::bip322`. D-111 spk↔key cross-check at the TOP of each new body — defense-in-depth for the Phase 21 audit charter's T-19-A mitigation claim.
+- **Plan 19-01** (2026-05-31): Added `pub fn p2sh_p2wpkh_final_script_sig(pubkey) -> ScriptBuf` helper (D-109) — sibling to `sign_simple`, produces 23-byte BIP-141 nested-SegWit scriptSig. RESEARCH §Q3 corrected CONTEXT D-110 byte-count off-by-one (23, not 24).
+- **Plan 19-01** (2026-05-31): Byte-equality parity with bdk_wallet 2.3 PROVEN for both P2TR (`sign_schnorr_no_aux_rand` on both sides) and P2SH-P2WPKH (ECDSA RFC 6979 deterministic). T-19-C empirical mitigation in `client/tests/wallet_sign_roundtrip.rs`.
+- **Plan 19-01** (2026-05-31, Rule 3): `BdkClientWallet::from_descriptor` now supports single-key non-derivation descriptors via `Wallet::create_single` branch (gated on `/0/*)` template marker). RESEARCH §Q2 named the descriptor shape; the wrapper change to support it surfaced during parity-test execution.
+
 ## Performance Metrics
+
+| Phase | Plan | Duration | Tasks | Files | Date |
+|-------|------|----------|-------|-------|------|
+| 19    | 01   | 11 min   | 4     | 5     | 2026-05-31 |
 
 (v1.5 metrics will accumulate per-phase. Cumulative trends live in `RETROSPECTIVE.md`. v1.4 milestone-scoped metrics live in `milestones/v1.4-*` archives.)

@@ -76,7 +76,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 19-01-PLAN.md — Ship production p2tr::sign + p2sh_p2wpkh::sign bodies, D-111 spk↔key cross-check, p2sh_p2wpkh_final_script_sig helper + 3 unit tests, 2 byte-equality parity tests in client/tests/wallet_sign_roundtrip.rs (closes BIP322-05 + BIP322-06)
+- [x] 19-01-PLAN.md — Ship production p2tr::sign + p2sh_p2wpkh::sign bodies, D-111 spk↔key cross-check, p2sh_p2wpkh_final_script_sig helper + 3 unit tests, 2 byte-equality parity tests in client/tests/wallet_sign_roundtrip.rs (closes BIP322-05 + BIP322-06) — **shipped 2026-05-31** (4 commits: `0b64e41`, `ffcfb9d`, `2d8c7f6`, `d1425fd`)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -152,7 +152,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
-| 19. Multi-Script Signing Finish | v1.5 | 0/2 | Planning | — |
+| 19. Multi-Script Signing Finish | v1.5 | 1/2 | Executing | — |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 0/? | Not started | — |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 0/? | Not started | — |
 
