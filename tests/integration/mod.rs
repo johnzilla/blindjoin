@@ -24,6 +24,8 @@ mod multi_script_client;
 mod multi_script_validate;
 mod rate_limiting;
 mod round_bootstrap;
+#[cfg(feature = "v13-binary-compat")]
+mod v13_binary_compat;       // Phase 18 18-03 — v1.3-binary compat gate (opt-in)
 
 // ---------------------------------------------------------------------------
 // Phase 18 18-01 promoted helpers — moved from full_round.rs to mod.rs so
