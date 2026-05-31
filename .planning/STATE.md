@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
-status: verifying
-last_updated: "2026-05-31T23:23:31.764Z"
+status: milestone_complete
+last_updated: 2026-05-31T23:51:33.134Z
 last_activity: 2026-05-31
 progress:
   total_phases: 3
@@ -11,23 +11,24 @@ progress:
   total_plans: 5
   completed_plans: 5
   percent: 100
+stopped_at: Milestone complete (Phase 21 was final phase)
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 21 (audit-charter-zeroization-tightening) — EXECUTION COMPLETE
-Plan: 2 of 2 (complete)
-Status: Phase complete — ready for verification (AUDIT-01 + AUDIT-02 + AUDIT-03 all closed)
-Last activity: 2026-05-31 -- 21-02 complete (docs/AUDIT-CHARTER.md + .cargo/audit.toml refresh + README §Security Model callout shipped in single atomic commit 92ae533 per D-133a; all cross-phase invariants green: cargo audit 0/0, full_round 8/8, mixed_script_e2e 1/1, clippy 0 warnings)
+Phase: 21
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-05-31
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 21 — audit-charter-zeroization-tightening
+**Current focus:** Milestone complete
 
 ## Milestone Map
 

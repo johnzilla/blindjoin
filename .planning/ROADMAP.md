@@ -63,7 +63,7 @@
 
 - [x] **Phase 19: Multi-Script Signing Finish** — Ship production `sign` bodies for `shared::bip322::{p2tr,p2sh_p2wpkh}::sign` (replacing the `todo!("Phase 17 WALLET-02 wires bdk_wallet sign per ADR #4")`) and remove the `#[doc(hidden)] sign_simple_test_only` mirror + per-script `sign_for_tests` helpers, strengthening the V1.4-CRIT-01 dispatcher-only public surface. (planning) (completed 2026-05-31)
 - [x] **Phase 20: Mixed-Round Fee Accuracy** — Replace the hardcoded `INPUT_WEIGHT_VBYTES = 68` / `OUTPUT_WEIGHT_VBYTES = 31` in `coordinator/src/bitcoin/tx.rs` with a per-script weight table; thread `ScriptType` through `ParticipantInput`; coordinator passes `bip_config.output_script_type` to fee math; add v1.4-fee-byte-equality test + mixed-script fee-divergence sanity test. (planning) (completed 2026-05-31)
-- [ ] **Phase 21: Audit Charter & Zeroization Tightening** — Publish `docs/AUDIT-CHARTER.md` scoping external audit (BIP-322 dispatcher + per-script modules, 9 cross-shape rejection properties, v=2 `OwnershipProof` PSBT handling, RSA SecretKey zeroization window); refresh `.cargo/audit.toml` rationale strings to reference charter sections; wrap `BjSecretKey` in a `RoundSecretKey` newtype with explicit `Drop` so the zeroization window is *explicitly bounded* via Rust lifetime, not "best-effort". Depends on Phases 19+20 landing so the charter can describe production state. (planning)
+- [x] **Phase 21: Audit Charter & Zeroization Tightening** — Publish `docs/AUDIT-CHARTER.md` scoping external audit (BIP-322 dispatcher + per-script modules, 9 cross-shape rejection properties, v=2 `OwnershipProof` PSBT handling, RSA SecretKey zeroization window); refresh `.cargo/audit.toml` rationale strings to reference charter sections; wrap `BjSecretKey` in a `RoundSecretKey` newtype with explicit `Drop` so the zeroization window is *explicitly bounded* via Rust lifetime, not "best-effort". Depends on Phases 19+20 landing so the charter can describe production state. (planning) (completed 2026-05-31)
 
 ## Phase Details
 
@@ -122,7 +122,7 @@ Plans:
   4. Test `round_secret_key_zeroes_on_drop` in `coordinator/src/blind/rsa.rs::tests` constructs a `RoundSecretKey`, drops it, and asserts the underlying buffer no longer matches the original DER bytes (best-effort RAM scan acceptable per the existing `blind-rsa-signatures 0.17.x` limitation — the structural lifetime bound is the load-bearing claim).
   5. v1.3 `full_round::*` 8/8 + v1.4 `mixed_script_e2e_three_clients_broadcast` + Phase 20 fee tests all green at the plan boundary; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo audit` returns 0 vulnerabilities with the refreshed `audit.toml`.
 
-**Plans:** 2/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 **Wave 1**
@@ -172,7 +172,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
 | 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete    | 2026-05-31 |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete    | 2026-05-31 |
-| 21. Audit Charter & Zeroization Tightening | v1.5 | 1/2 | In Progress|  |
+| 21. Audit Charter & Zeroization Tightening | v1.5 | 2/2 | Complete    | 2026-05-31 |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
