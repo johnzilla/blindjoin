@@ -23,7 +23,7 @@
 
 use bitcoin::Network;
 use client::wallet::BdkClientWallet;
-use shared::bip322::{verify_simple, ScriptType};
+use shared::bip322::{sign_simple, verify_simple, ScriptType};
 use std::str::FromStr;
 
 // Placeholder outpoint accepted by all three wallet constructors. BIP-322
@@ -176,6 +176,174 @@ async fn signed_proof_script_type_matches_wallet_script_type() {
     let signed = w.sign_bip322(TEST_MESSAGE).expect("sign_bip322 should succeed");
     assert_eq!(signed.script_type, w.script_type());
     assert_eq!(signed.script_type, ScriptType::P2wpkh);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 19 Plan 19-01 — BIP322-05 SC#1 byte-equality parity tests
+// (D-118 + D-119; T-19-C mitigation).
+//
+// Asserts that `shared::bip322::sign_simple` produces the SAME witness bytes
+// as `BdkClientWallet::sign_bip322` for the same (key, message). Safe per
+// Phase 19 RESEARCH §Q1: bdk_wallet 2.3 uses `sign_schnorr_no_aux_rand`
+// (deterministic) for P2TR; P2SH-P2WPKH uses `sign_ecdsa` (RFC 6979
+// deterministic). Both tests use single-key WIF descriptors (RESEARCH §Q2:
+// bdk_wallet 2.3 accepts `tr(<WIF>)` and `sh(wpkh(<WIF>))` directly), and
+// recover the SAME SecretKey from `TEST_WIF` so both signing paths see an
+// identical (key, message) input.
+//
+// Network: Regtest (NOT the file's NET = Signet) — TEST_WIF is the canonical
+// Bitcoin Core regtest "Hello World" WIF and bdk's WIF parser requires the
+// network to match.
+// ---------------------------------------------------------------------------
+
+const PARITY_TEST_MESSAGE: &str = "blindjoin:19-01:parity:byte-for-byte";
+
+/// Recover the secp256k1 SecretKey from the file's TEST_WIF constant.
+fn parity_secret_key() -> bitcoin::secp256k1::SecretKey {
+    bitcoin::PrivateKey::from_wif(TEST_WIF)
+        .expect("test WIF is valid")
+        .inner
+}
+
+/// Derive the on-chain P2TR address controlling the UTXO spent by the
+/// parity test wallet (Note A in RESEARCH §Q2).
+fn parity_p2tr_address() -> bitcoin::Address {
+    use bitcoin::key::TapTweak;
+    use bitcoin::secp256k1::{Keypair, Secp256k1};
+
+    let secp = Secp256k1::new();
+    let sk = parity_secret_key();
+    let keypair = Keypair::from_secret_key(&secp, &sk);
+    let tweaked = keypair.tap_tweak(&secp, None);
+    let tweaked_xonly = tweaked.to_keypair().x_only_public_key().0;
+    bitcoin::Address::p2tr_tweaked(
+        tweaked_xonly.dangerous_assume_tweaked(),
+        Network::Regtest,
+    )
+}
+
+/// Derive the on-chain P2SH-P2WPKH address controlling the UTXO spent by
+/// the parity test wallet (Note A in RESEARCH §Q2).
+fn parity_p2sh_p2wpkh_address() -> bitcoin::Address {
+    use bitcoin::secp256k1::Secp256k1;
+
+    let secp = Secp256k1::new();
+    let sk = parity_secret_key();
+    let pk = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &sk);
+    let compressed = bitcoin::PublicKey::new(pk);
+    let wpkh = compressed.wpubkey_hash().expect("compressed key");
+    let redeem = bitcoin::ScriptBuf::new_p2wpkh(&wpkh);
+    bitcoin::Address::p2sh(&redeem, Network::Regtest).expect("p2sh derivation")
+}
+
+#[tokio::test]
+async fn p2tr_shared_sign_matches_bdk_sign_byte_for_byte() {
+    // D-118: SC#1 byte-equality closure (T-19-C mitigation). Safe per
+    // RESEARCH §Q1 — bdk_wallet 2.3 uses sign_schnorr_no_aux_rand and our
+    // shared::bip322::p2tr::sign body (Plan 19-01 Task 1) uses the SAME
+    // call; both produce identical 64-byte BIP-341 SIGHASH_DEFAULT
+    // signatures over the canonical BIP-322 to_sign sighash.
+    let descriptor = format!("tr({TEST_WIF})");
+    let utxo_address = parity_p2tr_address();
+    let wallet = BdkClientWallet::from_descriptor(
+        &descriptor,
+        DUMMY_OUTPOINT,
+        &utxo_address.to_string(),
+        Network::Regtest,
+        ScriptType::P2tr,
+    )
+    .expect("P2TR single-key WIF descriptor should construct");
+
+    let spk = wallet.script_pubkey();
+    let sk = parity_secret_key();
+
+    // Defensive sanity: catch a regression in bdk's single-key descriptor
+    // parsing BEFORE the sign call. The wallet's on-chain SPK must
+    // byte-equal the SPK derived from the same SecretKey.
+    let expected_spk: bitcoin::ScriptBuf = utxo_address.script_pubkey();
+    assert_eq!(
+        spk, expected_spk,
+        "wallet.script_pubkey() must byte-equal the SPK derived from TEST_WIF"
+    );
+
+    let bdk_signed = wallet
+        .sign_bip322(PARITY_TEST_MESSAGE)
+        .expect("bdk sign_bip322 (P2TR descriptor) should succeed");
+
+    let shared_witness = sign_simple(
+        ScriptType::P2tr,
+        &spk,
+        &sk,
+        PARITY_TEST_MESSAGE.as_bytes(),
+    )
+    .expect("shared::bip322::sign_simple P2TR should succeed");
+
+    assert_eq!(
+        bdk_signed.witness, shared_witness,
+        "P2TR bdk vs shared::bip322 witnesses must be byte-equal (D-118)"
+    );
+
+    // Belt-and-suspenders: both witnesses must verify under verify_simple.
+    verify_simple(
+        ScriptType::P2tr,
+        &spk,
+        &shared_witness,
+        PARITY_TEST_MESSAGE.as_bytes(),
+        Network::Regtest,
+    )
+    .expect("P2TR parity witness must verify under verify_simple");
+}
+
+#[tokio::test]
+async fn p2sh_p2wpkh_shared_sign_matches_bdk_sign_byte_for_byte() {
+    // D-119: SC#2 byte-equality. ECDSA via sign_ecdsa is RFC 6979
+    // deterministic on BOTH sides — byte-equality always holds with no
+    // aux-rand caveat.
+    let descriptor = format!("sh(wpkh({TEST_WIF}))");
+    let utxo_address = parity_p2sh_p2wpkh_address();
+    let wallet = BdkClientWallet::from_descriptor(
+        &descriptor,
+        DUMMY_OUTPOINT,
+        &utxo_address.to_string(),
+        Network::Regtest,
+        ScriptType::P2shP2wpkh,
+    )
+    .expect("P2SH-P2WPKH single-key WIF descriptor should construct");
+
+    let spk = wallet.script_pubkey();
+    let sk = parity_secret_key();
+
+    let expected_spk: bitcoin::ScriptBuf = utxo_address.script_pubkey();
+    assert_eq!(
+        spk, expected_spk,
+        "wallet.script_pubkey() must byte-equal the SPK derived from TEST_WIF"
+    );
+
+    let bdk_signed = wallet
+        .sign_bip322(PARITY_TEST_MESSAGE)
+        .expect("bdk sign_bip322 (P2SH-P2WPKH descriptor) should succeed");
+
+    let shared_witness = sign_simple(
+        ScriptType::P2shP2wpkh,
+        &spk,
+        &sk,
+        PARITY_TEST_MESSAGE.as_bytes(),
+    )
+    .expect("shared::bip322::sign_simple P2SH-P2WPKH should succeed");
+
+    assert_eq!(
+        bdk_signed.witness, shared_witness,
+        "P2SH-P2WPKH bdk vs shared::bip322 witnesses must be byte-equal (D-119)"
+    );
+
+    verify_simple(
+        ScriptType::P2shP2wpkh,
+        &spk,
+        &shared_witness,
+        PARITY_TEST_MESSAGE.as_bytes(),
+        Network::Regtest,
+    )
+    .expect("P2SH-P2WPKH parity witness must verify under verify_simple");
 }
 
 // Defensive: ensure the deterministic outpoint placeholder is itself parseable

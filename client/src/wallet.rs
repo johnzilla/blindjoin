@@ -160,19 +160,26 @@ impl BdkClientWallet {
             ));
         }
 
-        // Derive internal (change) descriptor by replacing last "/0/*" with "/1/*"
-        let internal_desc = if external_desc.contains("/0/*)") {
-            external_desc.replacen("/0/*)", "/1/*)", 1)
-        } else {
-            // Fallback: use external for both (single-key non-derivation case)
-            external_desc.to_string()
-        };
-
         let bdk_net = bdk_network(network);
-        let inner = Wallet::create(external_desc.to_string(), internal_desc)
-            .network(bdk_net)
-            .create_wallet_no_persist()
-            .map_err(|e| anyhow!("Failed to create bdk wallet from descriptor: {e}"))?;
+        // Single-key (non-derivation) descriptors lack the `/0/*` template path.
+        // bdk_wallet 2.3 rejects `Wallet::create(d, d)` with "External and
+        // internal descriptors are the same" — use `Wallet::create_single` for
+        // the keychain-less case. Phase 19 Plan 19-01 Task 4 [Rule 3 — Bug]
+        // surfaced this when constructing single-key WIF descriptor wallets
+        // (`tr(<WIF>)`, `sh(wpkh(<WIF>))`) for the bdk-vs-shared parity tests
+        // in client/tests/wallet_sign_roundtrip.rs.
+        let inner = if external_desc.contains("/0/*)") {
+            let internal_desc = external_desc.replacen("/0/*)", "/1/*)", 1);
+            Wallet::create(external_desc.to_string(), internal_desc)
+                .network(bdk_net)
+                .create_wallet_no_persist()
+                .map_err(|e| anyhow!("Failed to create bdk wallet from descriptor: {e}"))?
+        } else {
+            Wallet::create_single(external_desc.to_string())
+                .network(bdk_net)
+                .create_wallet_no_persist()
+                .map_err(|e| anyhow!("Failed to create bdk wallet from descriptor: {e}"))?
+        };
 
         // Derive utxo_script_pubkey from the provided bech32 address
         let addr = bitcoin::Address::from_str(utxo_address)
