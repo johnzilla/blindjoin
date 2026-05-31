@@ -61,7 +61,7 @@
 
 ### 🚧 v1.5 Audit-Readiness & Multi-Script Finish (Phases 19-21)
 
-- [ ] **Phase 19: Multi-Script Signing Finish** — Ship production `sign` bodies for `shared::bip322::{p2tr,p2sh_p2wpkh}::sign` (replacing the `todo!("Phase 17 WALLET-02 wires bdk_wallet sign per ADR #4")`) and remove the `#[doc(hidden)] sign_simple_test_only` mirror + per-script `sign_for_tests` helpers, strengthening the V1.4-CRIT-01 dispatcher-only public surface. (planning)
+- [x] **Phase 19: Multi-Script Signing Finish** — Ship production `sign` bodies for `shared::bip322::{p2tr,p2sh_p2wpkh}::sign` (replacing the `todo!("Phase 17 WALLET-02 wires bdk_wallet sign per ADR #4")`) and remove the `#[doc(hidden)] sign_simple_test_only` mirror + per-script `sign_for_tests` helpers, strengthening the V1.4-CRIT-01 dispatcher-only public surface. (planning) (completed 2026-05-31)
 - [ ] **Phase 20: Mixed-Round Fee Accuracy** — Replace the hardcoded `INPUT_WEIGHT_VBYTES = 68` / `OUTPUT_WEIGHT_VBYTES = 31` in `coordinator/src/bitcoin/tx.rs` with a per-script weight table; thread `ScriptType` through `ParticipantInput`; coordinator passes `bip_config.output_script_type` to fee math; add v1.4-fee-byte-equality test + mixed-script fee-divergence sanity test. (planning)
 - [ ] **Phase 21: Audit Charter & Zeroization Tightening** — Publish `docs/AUDIT-CHARTER.md` scoping external audit (BIP-322 dispatcher + per-script modules, 9 cross-shape rejection properties, v=2 `OwnershipProof` PSBT handling, RSA SecretKey zeroization window); refresh `.cargo/audit.toml` rationale strings to reference charter sections; wrap `BjSecretKey` in a `RoundSecretKey` newtype with explicit `Drop` so the zeroization window is *explicitly bounded* via Rust lifetime, not "best-effort". Depends on Phases 19+20 landing so the charter can describe production state. (planning)
 
@@ -72,7 +72,7 @@
 **Goal**: `shared::bip322` ships production `sign` bodies for all 3 script types via the `pub(crate) fn sign` surface, and the test-only escape hatches (`sign_simple_test_only` + per-script `sign_for_tests` helpers) are gone — V1.4-CRIT-01 dispatcher-only invariant is now load-bearing at the type level with no holes.
 **Depends on**: v1.4 ship (Phase 18 closed; `bip322 = "=0.0.10"` adapter at `shared/src/bip322/mod.rs::verify_via_bip322_crate` is the reference pattern for the symmetric sign path).
 **Requirements**: BIP322-05, BIP322-06, BIP322-07
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 **Wave 1**
 
@@ -80,7 +80,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 19-02-PLAN.md — Delete sign_simple_test_only + per-script sign_for_tests helpers, migrate 6 callsites to sign_simple, refresh doc-comments, grep-verify zero residual references (closes BIP322-07)
+- [x] 19-02-PLAN.md — Delete sign_simple_test_only + per-script sign_for_tests helpers, migrate 6 callsites to sign_simple, refresh doc-comments, grep-verify zero residual references (closes BIP322-07)
 
 **Success Criteria** (what must be TRUE):
 
@@ -152,7 +152,7 @@ These items appear in `REQUIREMENTS.md` Future Requirements and are NOT mapped t
 | 16. Coordinator Integration & Advertisement | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 17. Client Multi-Script Wallet & Discovery | v1.4 | 3/3 | Complete | 2026-05-30 |
 | 18. Mixed-Script E2E + Liquidity Bot | v1.4 | 3/3 | Complete | 2026-05-31 |
-| 19. Multi-Script Signing Finish | v1.5 | 1/2 | Executing | — |
+| 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete   | 2026-05-31 |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 0/? | Not started | — |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 0/? | Not started | — |
 

@@ -13,7 +13,7 @@
 
 - [x] **BIP322-06**: `shared::bip322::p2sh_p2wpkh::sign` ships a production body — BIP-143 ECDSA sign over the unwrapped P2WPKH redeem script's sighash; produces a 2-element witness `[der_sig+SIGHASH_ALL, compressed_pubkey]` AND the `final_script_sig = OP_PUSHBYTES_22 OP_0 <20-byte HASH160(pubkey)>` (the P2SH wrapper); cross-check: HASH160(redeemScript) matches the P2SH `script_pubkey` hash160; replaces `todo!` at `shared/src/bip322/p2sh_p2wpkh.rs`. — **closed Plan 19-01 (commits `ffcfb9d` body + `2d8c7f6` helper + unit test + `d1425fd` parity test)**
 
-- [ ] **BIP322-07**: Remove `#[doc(hidden)] pub fn sign_simple_test_only` from `shared/src/bip322/mod.rs:302-314` and remove the per-script `pub(crate) fn sign_for_tests` helpers in `p2tr.rs` + `p2sh_p2wpkh.rs` (and the unused `p2wpkh.rs::sign_for_tests` mirror); all integration tests at `shared/tests/{per_script_vectors,bip322_cross_shape}.rs` call the real dispatcher `sign_simple`. Net effect: the `shared::bip322` public surface shrinks back to `verify_simple` + `sign_simple` + `detect_script_type` + `ScriptType` + `Bip322Error` (CRIT-01 dispatcher-only invariant strengthened — no test-only escape hatch).
+- [x] **BIP322-07**: Remove `#[doc(hidden)] pub fn sign_simple_test_only` from `shared/src/bip322/mod.rs:302-314` and remove the per-script `pub(crate) fn sign_for_tests` helpers in `p2tr.rs` + `p2sh_p2wpkh.rs` (and the unused `p2wpkh.rs::sign_for_tests` mirror); all integration tests at `shared/tests/{per_script_vectors,bip322_cross_shape}.rs` call the real dispatcher `sign_simple`. Net effect: the `shared::bip322` public surface shrinks back to `verify_simple` + `sign_simple` + `detect_script_type` + `ScriptType` + `Bip322Error` (CRIT-01 dispatcher-only invariant strengthened — no test-only escape hatch).
 
 ### Mixed-Round Fee Accuracy (`FEE-*`)
 
@@ -70,7 +70,7 @@ Explicitly excluded with reasoning to prevent re-adding later.
 |-------------|-------|--------|
 | BIP322-05 | Phase 19 | ✅ Complete (Plan 19-01) |
 | BIP322-06 | Phase 19 | ✅ Complete (Plan 19-01) |
-| BIP322-07 | Phase 19 | Not started (Plan 19-02) |
+| BIP322-07 | Phase 19 | ✅ Complete (Plan 19-02) |
 | FEE-01 | Phase 20 | Not started |
 | FEE-02 | Phase 20 | Not started |
 | FEE-03 | Phase 20 | Not started |

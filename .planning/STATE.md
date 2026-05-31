@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
-status: executing
-last_updated: "2026-05-31T17:02:54.146Z"
-last_activity: 2026-05-31 -- Plan 19-01 completed (BIP322-05 + BIP322-06 shipped; 4 commits)
+status: verifying
+last_updated: "2026-05-31T17:15:58.847Z"
+last_activity: 2026-05-31 -- Plan 19-02 completed (BIP322-07 closed; 2 commits; Phase 19 ready for verification)
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 19 (multi-script-signing-finish) — EXECUTING
-Plan: 2 of 2
-Status: Plan 19-01 complete (BIP322-05 + BIP322-06 shipped); Plan 19-02 ready to execute (BIP322-07 removal + caller migration)
-Last activity: 2026-05-31 -- Plan 19-01 4-task execution complete
+Phase: 19 (multi-script-signing-finish) — EXECUTION COMPLETE
+Plan: 2 of 2 (BIP322-05 + BIP322-06 in Plan 19-01; BIP322-07 in Plan 19-02)
+Status: Phase complete — ready for verification
+Last activity: 2026-05-31 -- Plan 19-02 4 callsites migrated to sign_simple; shared::bip322 public surface shrunk to 9 symbols
 
 ## Project Reference
 
@@ -31,7 +31,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 ## Milestone Map
 
-- 🚧 **Phase 19** — Multi-Script Signing Finish (BIP322-05, BIP322-06, BIP322-07)
+- ✅ **Phase 19** — Multi-Script Signing Finish (BIP322-05, BIP322-06, BIP322-07) — execution complete, awaiting verification
 - ⬜ **Phase 20** — Mixed-Round Fee Accuracy (FEE-01, FEE-02, FEE-03)
 - ⬜ **Phase 21** — Audit Charter & Zeroization Tightening (AUDIT-01, AUDIT-02, AUDIT-03)
 
@@ -73,11 +73,14 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 - **Plan 19-01** (2026-05-31): Added `pub fn p2sh_p2wpkh_final_script_sig(pubkey) -> ScriptBuf` helper (D-109) — sibling to `sign_simple`, produces 23-byte BIP-141 nested-SegWit scriptSig. RESEARCH §Q3 corrected CONTEXT D-110 byte-count off-by-one (23, not 24).
 - **Plan 19-01** (2026-05-31): Byte-equality parity with bdk_wallet 2.3 PROVEN for both P2TR (`sign_schnorr_no_aux_rand` on both sides) and P2SH-P2WPKH (ECDSA RFC 6979 deterministic). T-19-C empirical mitigation in `client/tests/wallet_sign_roundtrip.rs`.
 - **Plan 19-01** (2026-05-31, Rule 3): `BdkClientWallet::from_descriptor` now supports single-key non-derivation descriptors via `Wallet::create_single` branch (gated on `/0/*)` template marker). RESEARCH §Q2 named the descriptor shape; the wrapper change to support it surfaced during parity-test execution.
+- **Plan 19-02** (2026-05-31): BIP322-07 closed — `#[doc(hidden)] pub fn sign_simple_test_only` deleted from `shared::bip322::mod`; per-script `pub(crate) fn sign_for_tests` helpers deleted from `p2tr.rs`, `p2sh_p2wpkh.rs`, `p2wpkh.rs`. 4 test callsites (per_script_vectors import + 2 sign sites + multi_script_validate import + sign_witness helper) migrated to production `sign_simple` dispatcher; 2 `tests/integration/mod.rs` doc-comments refreshed (CD-39 default). The 9 cross-shape rejection cases now exercise production sign bodies.
+- **Plan 19-02** (2026-05-31): `shared::bip322` public surface now shrunk to exactly 9 symbols (`ScriptType`, `Bip322Error`, `detect_script_type`, `verify_simple`, `sign_simple`, `p2sh_p2wpkh_final_script_sig`, `bip322_message_hash`, `build_bip322_to_spend`, `build_bip322_to_sign`) — V1.4-CRIT-01 dispatcher-only invariant load-bearing at the type level with no test-only mirror. Phase 21 audit charter can now describe the surface without a "but also there's this `#[doc(hidden)]` thing" footnote.
 
 ## Performance Metrics
 
 | Phase | Plan | Duration | Tasks | Files | Date |
 |-------|------|----------|-------|-------|------|
 | 19    | 01   | 11 min   | 4     | 5     | 2026-05-31 |
+| 19    | 02   | 7 min    | 2     | 7     | 2026-05-31 |
 
 (v1.5 metrics will accumulate per-phase. Cumulative trends live in `RETROSPECTIVE.md`. v1.4 milestone-scoped metrics live in `milestones/v1.4-*` archives.)
