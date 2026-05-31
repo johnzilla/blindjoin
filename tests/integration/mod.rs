@@ -652,7 +652,18 @@ pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
                     });
 
                 let outpoint = format!("{}:{}", funding_txid_str, out.index);
-                let value_sats = (out.value * 100_000_000.0).round() as u64;
+                // WR-04 (Phase 19 review): use `Amount::from_btc` for the
+                // BTC→sats conversion rather than the raw `f64 * 100_000_000.0`
+                // cast. The rust-bitcoin helper performs the multiplication
+                // with explicit overflow / non-finite / out-of-range checks,
+                // which the prior `as u64` cast silently lacked (a value
+                // above `u64::MAX` would saturate; NaN would produce 0).
+                let value_sats = Amount::from_btc(out.value)
+                    .unwrap_or_else(|_| panic!(
+                        "out-of-range BTC value from get_raw_transaction_verbose: {}",
+                        out.value
+                    ))
+                    .to_sat();
                 (outpoint, value_sats)
             })
             .collect();
@@ -940,7 +951,16 @@ pub async fn fund_regtest_typed(
                     });
 
                 let outpoint = bitcoin::OutPoint::new(txid, out.index as u32);
-                let value_sats = (out.value * 100_000_000.0).round() as u64;
+                // WR-04 (Phase 19 review): use `Amount::from_btc` for the
+                // BTC→sats conversion rather than the raw `f64 * 100_000_000.0`
+                // cast — bounds-checks the value rather than silently
+                // saturating on overflow / 0-on-NaN.
+                let value_sats = Amount::from_btc(out.value)
+                    .unwrap_or_else(|_| panic!(
+                        "out-of-range BTC value from get_raw_transaction_verbose: {}",
+                        out.value
+                    ))
+                    .to_sat();
                 TypedUtxoHandle {
                     script_type: p.script_type,
                     outpoint,
