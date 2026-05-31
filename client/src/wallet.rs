@@ -5,6 +5,7 @@ use bdk_wallet::{KeychainKind, Wallet};
 #[allow(deprecated)]
 use bdk_wallet::signer::SignOptions;
 use shared::bip322::ScriptType;
+use zeroize::Zeroizing;
 
 /// BIP-322 ownership proof produced by [`BdkClientWallet::sign_bip322`].
 ///
@@ -54,7 +55,12 @@ pub struct BdkClientWallet {
     /// needed for BIP-322 and PSBT signing.
     utxo_script_pubkey: ScriptBuf,
     /// The WIF key string, stored for secret_key_for_signing (WIF wallets only).
-    wif_key: Option<String>,
+    ///
+    /// WR-05 (Phase 19 review): wrapped in `zeroize::Zeroizing<String>` so the
+    /// underlying heap allocation is zeroed when the wallet drops, instead of
+    /// being freed-but-uncleared (the classic "heap reuse" leak — a later
+    /// allocation in the same process could read the WIF off freed pages).
+    wif_key: Option<Zeroizing<String>>,
     /// The descriptor's outer-wrapper type. Set at construction; single source of
     /// truth for downstream consumers (Phase 17 17-02 sign dispatcher + 17-03
     /// discovery check). Per D-62 the wallet KNOWS its type — never re-detected
@@ -112,7 +118,8 @@ impl BdkClientWallet {
             network,
             utxo_outpoint: outpoint,
             utxo_script_pubkey,
-            wif_key: Some(wif.to_string()),
+            // WR-05: zeroize the WIF heap allocation on wallet drop.
+            wif_key: Some(Zeroizing::new(wif.to_string())),
             // D-61: from_wif is P2WPKH-only — hardcode here so the cross-phase
             // invariant (tests/integration/full_round.rs) stays bit-exact.
             script_type: ScriptType::P2wpkh,
@@ -403,7 +410,14 @@ impl BdkClientWallet {
     /// Used by generate_bip322_witness in input.rs. Only valid for from_wif wallets.
     /// Panics for descriptor/generated wallets — those should use wallet.sign() directly.
     pub fn secret_key_for_signing(&self) -> bitcoin::secp256k1::SecretKey {
-        let wif = self.wif_key.as_deref()
+        // WR-05: `Zeroizing<String>` derefs to `String` (Deref) and from there
+        // to `&str` — `as_deref()` is no longer applicable for the
+        // double-wrap, so go through `as_ref()` and `String::as_str()`
+        // explicitly to read the WIF without copying it onto the stack.
+        let wif: &str = self
+            .wif_key
+            .as_ref()
+            .map(|z| z.as_str())
             .expect("secret_key_for_signing: not available for descriptor wallets. \
                      Use wallet.sign() for BIP-322 with non-WIF wallets.");
         bitcoin::PrivateKey::from_wif(wif)
