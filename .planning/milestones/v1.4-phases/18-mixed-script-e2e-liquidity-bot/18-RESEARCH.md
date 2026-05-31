@@ -928,7 +928,7 @@ Plan-phase 18-VERIFICATION.md records:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 None remaining that block plan-phase. All 4 numbered questions resolved with concrete recommendations:
 - Q1: GO (B1.b descriptor-funding path); `BdkClientWallet.utxo_outpoint` is `pub` and assignable post-construction.

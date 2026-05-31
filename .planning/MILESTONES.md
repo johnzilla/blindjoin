@@ -1,5 +1,27 @@
 # Milestones
 
+## v1.4 BIP-322 Multi-Script Support (Shipped: 2026-05-31)
+
+**Phases completed:** 5 phases (14-18), 15 plans, ~3-day milestone
+**Code diff (ex-planning):** 48 files changed, +8,409 / -843 across coordinator, client, shared, liquidity-bot, tests, CI
+**Notes:** No pre-close milestone audit (close approved without it, matching the v1.3 convention). All 14 v1.4 requirements validated; 0 known gaps. v1.3 P2WPKH-only `full_round::*` integration invariant held green at every phase boundary (8/8 PASS). v1.3 → v1.4 backwards-compat verified inline against a pinned v1.3 binary at SHA `05f21438`.
+
+**Key accomplishments:**
+
+- **Eliminated the `is_p2wpkh()` registration gate** — coordinator now accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs via a `match version { 1 => v1_path, 2 => v2_path }` dispatcher that derives `ScriptType` from on-chain `script_pubkey` and cross-checks against the client-declared type (V1.4-CRIT-01 spoofing mitigation; load-bearing, CI grep-gated on both client AND coordinator side via the `crit-01-grep-check` jobs)
+- **`shared::bip322` multi-script verifier/signer** — adopted `bip322 = "=0.0.10"` crate (Sprint-0-A GO) via a 26-LOC zero-lossy adapter behind a dispatcher-only public surface (makes V1.4-CRIT-01 spoofing **statically unreachable** at the type level); per-script positive vectors + 9 cross-shape rejection tests against the vendored official BIP-322 fixtures (upstream SHA `d77863fb9e` pinned); 10-variant `Bip322Error` taxonomy; `bip322-pin-check` CI grep gate; auto-fixed 2 latent v1.3 bugs in `build_bip322_to_sign` (`Version::TWO` should be `Version(0)`; `ScriptBuf::new_op_return([])` should be bare `OP_RETURN`)
+- **Coordinator advertisement** — `BipConfig { allow_p2wpkh, allow_p2tr, allow_p2sh_p2wpkh, output_script_type }` validated fail-fast at boot via `CoordinatorConfig::validate()` (rejects all-false; rejects output_script_type outside the allowed set); PKARR record bumped `0.1.0 → 0.2.0` with B3 compact field names (`v`/`sst`/`ost`) and a CI byte-budget regression gate at **209 bytes** with a 62-byte real Tor v3 `.onion` (11-byte headroom under the 220-byte threshold); `/round/info` exposes `supported_script_types` as a JSON array with `#[serde(default)]` on both ends for v1.3↔v1.4 bidirectional compat
+- **Client multi-script wallet + fail-fast discovery** — `--type {p2wpkh|p2tr|p2sh-p2wpkh}` CLI flag emits **literal** BIP-84/86/49 descriptor templates with coin=0' across all networks per RESEARCH Pitfall 2 (bdk_wallet's `Bip84/86/49` helpers would auto-select coin=1' on testnet/signet and break v1.3 byte-equivalence); `BdkClientWallet::sign_bip322` routes WIF wallets through `shared::bip322::sign_simple` and descriptor wallets through bdk_wallet 2.3's PSBT signer per Sprint-0-B PASS (bdk path adopted; D-15 80-LOC manual fallback retired for v1.4); `discover_coordinator(pkarr_pubkey, required_script_type)` rejects mismatched coordinators with `UnsupportedScriptType` *before* opening any Tor circuit (V1.4-MOD-03 fail-fast)
+- **WALLET-04 v1.3↔v1.4 compatibility shim** — v1.4 client detects pre-`0.2.0` PKARR / missing `/round/info` field via `CoordinatorInfo.capabilities.is_legacy` and emits the legacy witness-only `OwnershipProof` array-of-hex wire format (CD-7 two-phase try-parse preserves bit-exact v1.3 compat); critical Pitfall 5 correction caught in Phase 17-03: without `#[serde(rename = "v")]` on the v1.4 client decoder, every v1.4 coordinator would silently appear legacy on every connection — breaking WALLET-04 in the wrong direction. Other direction (v1.3 client → v1.4 coordinator) verified inline against a pinned v1.3 binary (SHA `05f21438`)
+- **Mixed-script E2E acceptance gate + liquidity bot multi-script** — `mixed_script_e2e_three_clients_broadcast` runs 1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH input through INPUT_REG → BROADCAST in a single `cargo test` run (reuses `BitcoindGuard` + `require_bitcoind!()` unchanged from v1.3, zero `Box::leak` in new test files); liquidity bot rotates `script_types` per round via `BLINDJOIN_BOT_SCRIPT_TYPES` CSV + persistent rotation counter file (defeats V1.4-MIN-02 uniform-script fingerprint); README §Privacy Considerations documents the chain-analysis tradeoff of mixed-script rounds (Phase 14 CD-3 carry-forward)
+
+**Known gaps recorded at close:**
+- 14 pre-existing clippy lints in `shared/src/bip322/*` deferred per SCOPE BOUNDARY rule; logged in `.planning/phases/16-coordinator-integration-advertisement/deferred-items.md`. Suggested follow-up: box the `bip322::Error` source on `CrateVerifyFailed`, or `#[allow]` at module level with rationale.
+- TEST-EXT-03 (automated v1.3↔v1.4 backwards-compat integration matrix) deferred — WALLET-04 covers v1.4→v1.3 informally + Phase 18-03 verifies v1.3→v1.4 against a pinned binary, but no automated grid in v1.4.
+- CARRY-REPAIR-01-PR (v1.3 REPAIR-01 PR observation closure) still pending — the v1.4 cut PR is the natural moment to discharge this but is NOT a v1.4 code deliverable per REPAIR-01 lesson #5.
+
+---
+
 ## v1.3 Test Infrastructure & Operational Hardening (Shipped: 2026-05-29)
 
 **Phases completed:** 5 phases (9-13), 13 plans, ~4-day milestone

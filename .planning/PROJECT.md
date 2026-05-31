@@ -12,35 +12,26 @@ Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs 
 
 ## Current State
 
-v1.4 Phase 14 (Sprint-0 Spikes + Discuss-Phase Decisions) complete 2026-05-30 — gating ADR phase. Two timeboxed spikes on quarantined branches resolved all 4 v1.4 Open Decisions: Decision #1 ACCEPTED ADOPT `bip322 = "=0.0.10"` (transitive `bitcoin v0.32.8` at depth 1, `cargo audit` clean, 26-LOC adapter sketch with zero lossy conversions); Decision #2 ACCEPTED mixed rounds; Decision #3 ACCEPTED B2 PSBT-input wire shape with `version: u8` envelope; Decision #4 ACCEPTED bdk path (bdk_wallet 2.3 produces a valid 64-byte Schnorr keypath witness in `psbt.inputs[0].final_script_witness[0]` and verifies via `secp256k1::verify_schnorr` against the BIP-341 keyspend sighash). v1.4 ADR ratified at `.planning/decisions/v1.4-adr.md`. D-21 structural invariant held: zero production-code commits on main from Phase 14 — spike branches `spike/14-A-bip322-cargo-tree` and `spike/14-B-bdk-p2tr-poc` pushed to origin for reproducibility and never merged. Phase 15 (Shared Crate Multi-Script Contract) unblocked.
+v1.4 BIP-322 Multi-Script Support **shipped 2026-05-31** (5 phases, 15 plans, ~3 days). Broadened CoinJoin participation from P2WPKH-only to P2WPKH + P2TR + P2SH-P2WPKH UTXOs. The `is_p2wpkh()` hard gate at `coordinator/src/bitcoin/utxo.rs:119` is gone — coordinator now accepts all three script types via a `match version { 1 => v1_path, 2 => v2_path }` dispatcher that derives `ScriptType` from on-chain `script_pubkey` and cross-checks against the client-declared type (V1.4-CRIT-01 spoofing mitigation; CI grep-gated on both client and coordinator sides). `shared::bip322` adopted the upstream `bip322 = "=0.0.10"` crate via a 26-LOC zero-lossy adapter behind a dispatcher-only public surface that makes V1.4-CRIT-01 spoofing **statically unreachable** at the type level. PKARR record bumped `0.1.0 → 0.2.0` with B3 compact field names (`v`/`sst`/`ost`) — production-onion measured 209 bytes, 11-byte headroom under the 220-byte threshold. Client wallet supports `--type {p2wpkh|p2tr|p2sh-p2wpkh}` with literal BIP-84/86/49 descriptors (coin=0' across all networks per RESEARCH Pitfall 2); `discover_coordinator(pkarr_pubkey, required_script_type)` rejects mismatched coordinators with `UnsupportedScriptType` BEFORE opening any Tor circuit (V1.4-MOD-03 fail-fast). WALLET-04 compatibility shim verified bidirectionally: v1.4→v1.3 via the CD-7 two-phase try-parse encoder (byte-identical v1.3 array-of-hex output in the legacy branch); v1.3→v1.4 inline against a pinned v1.3 binary at SHA `05f21438`. Acceptance gate `mixed_script_e2e_three_clients_broadcast` runs 1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH input through INPUT_REG → BROADCAST. Liquidity bot rotates `script_types` per round via `BLINDJOIN_BOT_SCRIPT_TYPES` CSV (defeats V1.4-MIN-02 uniform-script fingerprint). v1.3 P2WPKH-only `full_round::*` invariant held green at every v1.4 phase boundary (8/8 PASS).
 
-v1.3 Test Infrastructure & Operational Hardening shipped 2026-05-29 (5 phases, 13 plans, 4 days). Made the integration test feedback loop trustworthy: CI now installs a pinned bitcoind v30.2 (`actions/cache@v4` + PGP-verified install), the entire `tests/integration/` tree has zero `Box::leak` (clean process lifecycle via `BitcoindGuard` RAII + `require_bitcoind!()` macro), `CONTRIBUTING.md` documents the canonical invocation, and any test using corepc-node's typed `Client` must declare an explicit `features = ["NN_M"]` (CI grep gate). REPAIR-01 closed locally — all 8 `full_round::*` tests green on pinned brew bitcoind v31 via a chain of direct fixes (RSA SPKI handshake, bdk_wallet 2.3 `trust_witness_utxo`, wire-format `Witness` consensus encoding, real on-chain `witness_utxo` values, ban-check ordering, error-body surfacing). Full PR observation closure pending v1.4 cut.
-
-Shipped to date: v1.0 MVP → v1.1 Security & Availability → v1.2 Production Readiness → v1.3 Test Infrastructure (10 phases total across 4 milestones; 6,490 Rust LOC across coordinator/client/shared).
-Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio, tower_governor 0.8, tower-http 0.6, corepc-node 0.12 (features pinned), bitcoind v30.2.
+Shipped to date: v1.0 MVP → v1.1 Security & Availability → v1.2 Production Readiness → v1.3 Test Infrastructure → v1.4 BIP-322 Multi-Script (15 phases total across 5 milestones; ~11,296 Rust LOC across coordinator/client/shared/liquidity-bot).
+Tech stack: axum 0.8, arti-client 0.41, blind-rsa-signatures, bdk_wallet 2.3, pkarr, tokio, tower_governor 0.8, tower-http 0.6, corepc-node 0.12 (features pinned), bitcoind v30.2, `bip322 = "=0.0.10"` (pinned, adapter at `shared/src/bip322/mod.rs`).
 Coordinator runs as Tor v3 hidden service. Client uses per-phase isolated Tor circuits.
-PKARR DHT discovery live. Docker Compose stack operational.
-CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned, bitcoind cached + PGP-verified, corepc-node feature pin enforced.
-Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance, real on-chain witness_utxo values in PSBT assembly.
+PKARR DHT discovery live with `v0.2.0` schema advertising `sst`/`ost`. Docker Compose stack operational.
+CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned, bitcoind cached + PGP-verified, corepc-node feature pin enforced, `bip322-pin-check` enforces the `=0.0.10` pin, `crit-01-grep-check` (coordinator) + `crit-01-client-grep-check` (client) enforce CRIT-01 invariant tokens.
+Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance, real on-chain witness_utxo values in PSBT assembly, multi-script ownership-proof dispatcher with on-chain cross-check.
 
-## Current Milestone: v1.4 BIP-322 Multi-Script Support
+## Next Milestone: v1.5 (Planning)
 
-**Goal:** Broaden CoinJoin participation to P2TR and P2SH-P2WPKH UTXOs, eliminating the P2WPKH-only registration gate and making the "forward-compatible with all address types" claim match reality.
+Not yet defined. Run `/gsd:new-milestone` to scope.
 
-**Target features:**
-- Adopt the official `bip322` crate (rust-bitcoin org) in place of `shared/src/bip322.rs` — discuss-phase verifies crate version stability before commit; fallback is to extend the custom impl
-- Remove the `is_p2wpkh()` hard gate at [coordinator/src/bitcoin/utxo.rs:119](coordinator/src/bitcoin/utxo.rs:119)
-- Add P2TR (BIP-86 single-key Taproot) and P2SH-P2WPKH support across client signing, wire types, and coordinator verification
-- Coordinator advertises supported script types via PKARR record + `/round/info` so clients reject mismatched coordinators before registration
-- Liquidity bot updated to generate test UTXOs across all supported script types
-- Per-script-type property tests over BIP-322 spec vectors
-- End-to-end integration test: full CoinJoin round with mixed P2WPKH + P2TR + P2SH-P2WPKH participants on regtest
-
-**Out of v1.4 scope (deferred to v1.5+):**
-- Tor-mode verification harness (Phase 8 HUMAN-UAT item 3 carry-forward)
-- REPAIR-01 PR observation closure (currently closed-local only)
-- P2WSH multisig (multi-key sighash complexity — stretch goal)
-- B-03 dynamic fee estimation
+**Carry-forward items tracked for v1.5+:**
+- CARRY-TOR-UAT — Tor-mode verification harness (Phase 8 HUMAN-UAT item 3)
+- CARRY-REPAIR-01-PR — v1.3 REPAIR-01 PR observation closure (v1.4 cut PR is the natural moment)
+- B-03 — Dynamic fee estimation (mempool-aware polling + RBF strategy)
+- TEST-EXT-01/02/03 — Cross-implementation differential fixtures (via `ACken2/bip322-js`); on-chain anchor test; automated v1.3↔v1.4 backwards-compat integration matrix
+- P2WSH multisig BIP-322 support (v1.4 stretch dropped for scope discipline)
+- Mixed output script types (Wasabi 2.0.3-style per-participant output choice)
 
 ## Requirements
 
@@ -81,17 +72,18 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - ✓ `full_round.rs` repaired — all 8 tests pass against pinned bitcoind v31 via direct code commits (RSA SPKI handshake, bdk_wallet 2.3 `trust_witness_utxo`, wire-format `Witness` consensus encoding, real on-chain `witness_utxo`, ban-check ordering, error-body surfacing) — v1.3 Phases 10-13 (REPAIR-01 closed-local; full PR observation pending v1.4 cut)
 - ✓ Any test using corepc-node's typed `Client` declares an explicit version feature (CI grep gate enforces) — v1.3 Phase 10 (REPAIR-02)
 
+- ✓ Adopted upstream `bip322 = "=0.0.10"` crate (rust-bitcoin org) behind a 26-LOC zero-lossy adapter at `shared/src/bip322/mod.rs`; pinned via `bip322-pin-check` CI grep gate — v1.4 Phase 15 (BIP322-01..03)
+- ✓ Removed coordinator P2WPKH-only registration gate at `coordinator/src/bitcoin/utxo.rs`; multi-script ownership-proof dispatcher accepts P2WPKH + P2TR + P2SH-P2WPKH with on-chain `ScriptType` cross-check (V1.4-CRIT-01 mitigation, statically unreachable via dispatcher-only public surface) — v1.4 Phase 16 (ADVERT-03)
+- ✓ Coordinator publishes `supported_script_types` via PKARR record `v0.2.0` (`sst`/`ost` compact fields, 209-byte production-onion measurement, 11-byte headroom) and `/round/info` JSON array; clients reject mismatched coordinators via `DiscoveryError::UnsupportedScriptType` BEFORE opening any Tor circuit — v1.4 Phase 16 + Phase 17 (ADVERT-01, ADVERT-02, WALLET-03)
+- ✓ Client signs BIP-322 ownership proofs for P2WPKH + P2TR + P2SH-P2WPKH via `BdkClientWallet::sign_bip322` (WIF → `shared::bip322::sign_simple`; descriptor → bdk_wallet 2.3 PSBT signer per Sprint-0-B PASS) — v1.4 Phase 17 (WALLET-01, WALLET-02)
+- ✓ v1.3↔v1.4 backwards-compat shim — v1.4 client → v1.3 coordinator emits byte-identical v1.3 array-of-hex `OwnershipProof` via CD-7 two-phase try-parse; v1.3 client → v1.4 coordinator verified inline against pinned v1.3 binary SHA `05f21438` — v1.4 Phase 17 + Phase 18 (WALLET-04)
+- ✓ Liquidity bot generates UTXOs across all enabled script types via `BLINDJOIN_BOT_SCRIPT_TYPES` CSV + per-round rotation counter file (defeats V1.4-MIN-02 uniform-script fingerprint) — v1.4 Phase 18 (INTEG-02)
+- ✓ End-to-end mixed-script integration test: `mixed_script_e2e_three_clients_broadcast` runs 1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH input through INPUT_REG → BROADCAST on regtest; reuses `BitcoindGuard` + `require_bitcoind!()` from v1.3 unchanged — v1.4 Phase 18 (INTEG-01)
+- ✓ Per-script positive property tests + 9 cross-shape rejection tests against the vendored official BIP-322 `basic-test-vectors.json` (upstream SHA `d77863fb9e` pinned) — v1.4 Phase 15 (BIP322-04)
+
 ### Active
 
-v1.4 BIP-322 Multi-Script Support (requirements detailed in `.planning/REQUIREMENTS.md`):
-
-- [ ] Adopt or pin a production-viable BIP-322 Simple implementation covering P2WPKH, P2TR, P2SH-P2WPKH
-- [ ] Remove coordinator P2WPKH-only registration gate; verify ownership proofs for all supported script types
-- [ ] Coordinator publishes supported script types via PKARR + `/round/info`; clients reject mismatched coordinators pre-registration
-- [ ] Client signs ownership proofs for P2TR and P2SH-P2WPKH UTXOs alongside existing P2WPKH path
-- [ ] Liquidity bot generates test UTXOs across all supported script types
-- [ ] End-to-end integration test: full CoinJoin round with mixed-script-type participants on regtest
-- [ ] Per-script-type property tests against BIP-322 spec vectors
+(None — v1.4 shipped 2026-05-31. Run `/gsd:new-milestone` to scope v1.5.)
 
 ### Out of Scope
 
@@ -115,6 +107,7 @@ v1.4 BIP-322 Multi-Script Support (requirements detailed in `.planning/REQUIREME
 - **v1.1 shipped:** CI/CD security gates (test/clippy/audit on PRs and releases), coordinator DoS hardening (RPC before lock, RSA caching), supply-chain hardening (SHA-pinned actions, release checksums).
 - **v1.2 shipped:** Public-endpoint DoS resistance via tower_governor + tower-http (per-route rate limits, request timeouts, Tor accept-loop semaphore cap), 4 operator-tunable config knobs validated at startup, release clearnet refusal.
 - **v1.3 shipped:** Trustworthy integration-test feedback loop — pinned bitcoind v30.2 in CI (cached + PGP-verified), `BitcoindGuard` RAII + `require_bitcoind!()` macro eliminate `Box::leak` and the pipe-buffer stdout-hang, `CONTRIBUTING.md` documents the canonical invocation, corepc-node feature pin enforced by CI grep gate, REPAIR-01 closed locally (all 8 `full_round::*` tests green) via direct fixes for RSA SPKI handshake, bdk_wallet 2.3 segwit signing, partial-sig wire format, and coordinator witness_utxo correctness.
+- **v1.4 shipped:** Multi-script BIP-322 coordinator+client — accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs via a `match version` dispatcher with on-chain CRIT-01 cross-check (dispatcher-only public surface on `shared::bip322` makes spoofing statically unreachable at the type level); upstream `bip322 = "=0.0.10"` crate adopted via a 26-LOC zero-lossy adapter; PKARR record `v0.2.0` with B3 compact field names advertises `sst`/`ost` in 209 bytes (11-byte headroom under 220-byte threshold); fail-fast discovery rejects mismatched coordinators BEFORE opening any Tor circuit; v1.3↔v1.4 backwards-compat shim verified bidirectionally (CD-7 two-phase try-parse encoder + pinned v1.3 binary at SHA `05f21438`); mixed-script acceptance gate completes 1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH input through BROADCAST; liquidity bot rotates `script_types` per round. v1.3 `full_round::*` invariant held green at every v1.4 phase boundary.
 
 ## Constraints
 
@@ -153,6 +146,18 @@ v1.4 BIP-322 Multi-Script Support (requirements detailed in `.planning/REQUIREME
 | client signs PSBT with `SignOptions { trust_witness_utxo: true }` (bdk_wallet 2.3) | Client populates witness_utxo from its own trusted regtest RPC; full BIP-143 non_witness_utxo path was heavier and unnecessary given trust boundary | ✓ Good — narrowly scoped fix with D-08 block comment explaining safety boundary |
 | Partial-sig wire format = consensus-serialized `bitcoin::Witness` (not raw DER) | Coordinator deserializes via `bitcoin::Witness` consensus encoding; raw DER on the wire produced silent HTTP 400 | ✓ Good — wire-format mismatch was the root of the 6th orthogonal blocker |
 | Coordinator uses real on-chain UTXO values in PSBT `witness_utxo` (not zero placeholders) | bdk_wallet sighash computation requires the actual amount; zero placeholders produced invalid signatures | ✓ Good — closed the last input-amount source of REPAIR-01 failures |
+| ADOPT upstream `bip322 = "=0.0.10"` over extending custom impl (v1.4 ADR Decision #1) | Sprint-0-A returned GO across all 3 D-02 gates: bitcoin v0.32.8 transitive pin (no graph fork), cargo audit clean, 26-LOC zero-lossy adapter sketch; 3 new transitives (`bip322`, `snafu`, `snafu-derive`) accepted | ✓ Good — single source of truth, no custom sighash math; CI grep-gated `bip322-pin-check` enforces the exact pin |
+| Mixed rounds (one queue for all 3 script types, single output script type per round) — v1.4 ADR Decision #2 | Segregated rounds fragment anonymity sets; mixed rounds preserve denomination uniformity; outputs single-type per round per operator config; no per-script-type min-participant gate; coordinator advertises supported set only, not per-round counts (exact partition vector would leak correlation) | ✓ Good — heterogeneous-input chain-analysis tradeoff documented in README §Privacy Considerations |
+| B2 base64 PSBT-input wire shape with `version: u8` envelope (v1.4 ADR Decision #3) | v1.4 `OwnershipProof` carries `psbt_input_b64: String` + `version: u8` where 1 = v1.3 shape, 2 = v1.4 PSBT shape; wire-format roundtrip test ships FIRST per v1.3 REPAIR-01 lesson #1 | ✓ Good — CD-7 two-phase try-parse preserves bit-exact v1.3 compat; FULL BIP-174 PSBT shape on the wire (NOT bare `psbt::Input`) per RESEARCH Pitfall 1 |
+| bdk path for P2TR sign (v1.4 ADR Decision #4) | Sprint-0-B PASS — bdk_wallet 2.3 produces a valid 64-byte Schnorr keypath witness for BIP-322 P2TR PSBTs; `secp256k1::verify_schnorr` returned `Ok(())`; D-15 80-LOC manual fallback retired for v1.4 | ✓ Good — uniform PSBT-sign path across all 3 descriptor types; v1.5 swap target if bdk regresses on taproot keyspend |
+| Sprike-on-quarantined-branches gating pattern (Phase 14) | D-21 structural invariant: zero production-code commits from a gating ADR phase; spike branches `spike/14-A-*` + `spike/14-B-*` pushed to origin for reproducibility, NEVER merged | ✓ Good — pattern worth repeating when load-bearing decisions are unresolved at milestone start |
+| Dispatcher-only public surface on `shared::bip322` (D-27) | Per-script `verify`/`sign` are `pub(crate)`-only; only `verify_simple` + `sign_simple` are `pub`; client-declared `script_type` cannot bypass dispatch | ✓ Good — V1.4-CRIT-01 spoofing vector statically unreachable at the type level (defense-in-depth alongside coordinator on-chain cross-check + 2 CI grep gates) |
+| CRIT-01 cross-check derives `ScriptType` from on-chain `script_pubkey`, never from client declaration | Spoofing vector: client declares `p2wpkh` for a P2TR UTXO → coordinator's per-script sighash math diverges from actual chain | ✓ Good — enforced by `crit-01-grep-check` (coordinator) + `crit-01-client-grep-check` (client) CI jobs requiring ≥1 `CRIT-01` token in the relevant files |
+| B3 PKARR compact field names (`v`/`sst`/`ost`) landed atomically with the `v0.2.0` schema bump (Phase 16-03) | 56-byte savings preserved 11 bytes of headroom under the 220-byte budget for the all-3 supported_types CSV (production-onion measured 209 bytes); a 4th script type in v1.5 will need a new encoding strategy | ✓ Good — CI byte-budget regression gate at `coordinator_packet_under_220_byte_budget_production_onion` |
+| Literal BIP-84/86/49 descriptor templates with coin=0' across ALL networks (NOT bdk_wallet's `Bip84/86/49` helpers) | bdk_wallet's helpers auto-select coin=1' on testnet/signet, which would break v1.3 byte-equivalence and the cross-phase invariant (Pitfall 2) | ✓ Good — v1.3 `full_round::*` invariant held green at every v1.4 phase boundary |
+| Pitfall-5 `#[serde(rename = "v")]` correction on v1.4 client `BlindjoinRecord` decoder (Phase 17-03) | Without the rename, every v1.4 coordinator would silently appear legacy on every connection — breaking WALLET-04 in the wrong direction. Caught load-bearing during plan execution | ✓ Good — preserves the v1.3↔v1.4 compat invariant; the wrong-direction failure would have been silent |
+| `final_script_sig` on `Bip322SignedProof` (NOT just witness stack) for P2SH-P2WPKH | RESEARCH Pitfall 7: P2SH-P2WPKH ownership proofs require BOTH the witness AND the P2SH script_sig (the wrapper); witness alone fails coordinator-side reconstruction | ✓ Good — v=2 envelope carries final_script_sig in the PSBT; encoder/decoder roundtrip tested in `shared/tests/ownership_proof_roundtrip.rs` |
+| WALLET-04 compat shim is one-way (v1.4 → v1.3); other direction verified by running an actual pinned v1.3 binary | TEST-EXT-03 (automated v1.3↔v1.4 compat grid) is long-term fix; v1.4 ships informal one-direction shim + Phase 18-03 pinned-binary verification for the other direction (SHA `05f21438`) | ⚠ Revisit at v1.5 — automated CI grid would catch silent compat regressions that pinned-binary verification only catches at ship time |
 
 ## Evolution
 
@@ -172,4 +177,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-30 after v1.4 Phase 14 (Sprint-0 Spikes + Discuss-Phase Decisions) complete*
+*Last updated: 2026-05-31 after v1.4 BIP-322 Multi-Script Support milestone shipped*
