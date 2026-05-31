@@ -88,13 +88,13 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - ✓ Liquidity bot generates UTXOs across all enabled script types via `BLINDJOIN_BOT_SCRIPT_TYPES` CSV + per-round rotation counter file (defeats V1.4-MIN-02 uniform-script fingerprint) — v1.4 Phase 18 (INTEG-02)
 - ✓ End-to-end mixed-script integration test: `mixed_script_e2e_three_clients_broadcast` runs 1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH input through INPUT_REG → BROADCAST on regtest; reuses `BitcoindGuard` + `require_bitcoind!()` from v1.3 unchanged — v1.4 Phase 18 (INTEG-01)
 - ✓ Per-script positive property tests + 9 cross-shape rejection tests against the vendored official BIP-322 `basic-test-vectors.json` (upstream SHA `d77863fb9e` pinned) — v1.4 Phase 15 (BIP322-04)
+- ✓ Production `sign` bodies for P2TR (BIP-341 Schnorr keypath via `sign_schnorr_no_aux_rand`) and P2SH-P2WPKH (BIP-143 ECDSA over unwrapped P2WPKH redeem) shipped in `shared::bip322`; D-111 spk↔key cross-check at the top of each new body (T-19-A defense-in-depth); byte-equality with `BdkClientWallet::sign_bip322` proven empirically in `client/tests/wallet_sign_roundtrip.rs` (T-19-C) — v1.5 Phase 19 (BIP322-05, BIP322-06)
+- ✓ `sign_simple_test_only` + per-script `sign_for_tests` helpers removed; all callsites (`shared/tests/per_script_vectors.rs`, `tests/integration/multi_script_validate.rs`) migrated to the production `sign_simple` dispatcher; V1.4-CRIT-01 dispatcher-only invariant now load-bearing at the type level with no test-only hole — v1.5 Phase 19 (BIP322-07)
 
 ### Active
 
 v1.5 Audit-Readiness & Multi-Script Finish (requirements detailed in `.planning/REQUIREMENTS.md`):
 
-- [ ] Production `sign` bodies for P2TR + P2SH-P2WPKH in `shared::bip322` (no bdk dep, callable from any SecretKey context)
-- [ ] Remove `sign_simple_test_only` + per-script `sign_for_tests` test helpers; integration tests call the real dispatcher
 - [ ] Per-script witness weight table in coordinator fee estimator; `ParticipantInput` carries `script_type`; mixed-round fee regression test
 - [ ] `docs/AUDIT-CHARTER.md` scoping external audit (BIP-322 dispatcher + per-script modules, cross-shape rejection properties, v=2 PSBT handling, RSA zeroization window)
 - [ ] Tighten RSA SecretKey zeroization window via newtype + explicit Drop (currently best-effort)
@@ -192,4 +192,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 — v1.5 Audit-Readiness & Multi-Script Finish milestone scoped (Phases 19-21)*
+*Last updated: 2026-05-31 — v1.5 Phase 19 complete (Multi-Script Signing Finish: BIP322-05, BIP322-06, BIP322-07 closed)*
