@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-01T21:32:00.000Z"
+last_updated: "2026-06-01T21:39:00.000Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -18,9 +18,9 @@ progress:
 ## Current Position
 
 Phase: 22 (base-image-digest-drift-detection) — EXECUTING
-Plan: 4 of 6
-Status: Ready to execute (Plan 22-03 shipped commits `4a0b59f` + `7556c1b`)
-Last activity: 2026-06-01 — completed 22-03-PLAN.md (release.yml + docker.yml composite-action wiring; DRIFT-03 satisfied)
+Plan: 5 of 6
+Status: Ready to execute (Plan 22-04 shipped commit `fae501f`)
+Last activity: 2026-06-01 — completed 22-04-PLAN.md (digest-drift-check.yml scheduled workflow with Pitfall 9 idempotency; DRIFT-02 satisfied)
 
 ## Project Reference
 
@@ -108,6 +108,8 @@ v1.6 Phase 22 plan decisions:
 - **Plan 22-02: Inline the auditor-grepable trailer per error path** (not via a `POLICY_REF` shell variable) — the acceptance criterion `grep -c 'Refusing to build without a valid manifest' >= 4` counts FILE LINES, not runtime expansions. Inlining the literal trailer in each of the 4 error echos puts the auditor-grep property at the file level as well as the runtime-log level. Final count: 7 matching lines in `.github/actions/read-base-digests/action.yml`.
 - **Plan 22-03: Followed RESEARCH.md §5.1 verbatim — no additional echo step in release.yml** — the orchestrator's `<plan_specifics>` mentioned an optional "Echo canonical digests for audit log" step, but PLAN.md locks the shape to RESEARCH.md §5.1 lines 562-571 which does NOT include such a step, and the composite action already echoes the parsed digests to stdout (action.yml lines 107-109). ROADMAP SC#3 audit-observability is satisfied by the composite action's own audit trail without a redundant echo in the consumer workflow.
 - **Plan 22-03: `build-args:` placed between `labels:` and `cache-from:` in docker/build-push-action with: block** — PATTERNS §3 line 317 locks this insertion point; keeps deterministic-build inputs (tags, labels, build-args) grouped before cache-handling fields, mirroring the existing `tags: |` pipe-multiline shape on the same step.
+- **Plan 22-04: Paraphrased deliberately-omitted-scope names in the `permissions:` comment** rather than quoting their YAML keys verbatim. The PLAN's acceptance criteria run `! grep -q 'pull-requests:'` and `! grep -q 'id-token:'` as LINE-LEVEL auditor-grepable invariants — those assertions fail when the comment block literally contains the omitted-scope key strings, even though the runtime permission gate is correct. The rewritten comment uses `PR-write`, `packages`, and `id-token` (without the literal `:` suffix on `pull-requests` and `id-token`) so the audit gate is satisfied at the file level too. Establishes a reusable "auditor-grepable deliberately-omitted-scopes" pattern for Phase 23 (cosign) and Phase 25 (reproducible-verify) workflows.
+- **Plan 22-04: Followed RESEARCH.md §4 verbatim for the workflow YAML shape** — the locked structure (top-of-file comment block → `env:` → `on:` → `permissions:` → `jobs.drift-check:`) is the single source of truth for both DRIFT-02 implementation and the prose-comment-as-contract pattern future supply-chain workflows will mirror. Self-bootstrapping label via `gh label create digest-drift ... 2>/dev/null || true` eliminates the manual repo-setup step.
 
 ## Performance Metrics
 
@@ -120,9 +122,11 @@ v1.6 Phase 22:
 | 22-01 | docker/digests.txt canonical manifest | (see Plan 22-01 SUMMARY) | — | 1 |
 | 22-02 | read-base-digests composite action | ~5 min | 1 | 1 |
 | 22-03 | release.yml + docker.yml composite-action wiring (DRIFT-03) | ~6 min | 2 | 2 |
+| 22-04 | digest-drift-check.yml scheduled workflow (DRIFT-02) | ~7 min | 1 | 1 |
 
 ## Operator Next Steps
 
 - v1.6 roadmap approved with 4 phases (22-25) covering 14 requirements (14/14 coverage, no orphans).
-- **Next:** `/gsd:discuss-phase 22` (Base-Image Digest Drift Detection — lowest risk, builds digest discipline before signing layers on top).
-- After Phase 22 ships: Phase 23 (cosign image attestations + SLSA + SBOM — the load-bearing piece).
+- Phase 22 in progress: 4/6 plans complete (22-01, 22-02, 22-03, 22-04). DRIFT-01 + DRIFT-02 + DRIFT-03 all shipped.
+- **Next:** `/gsd:execute-phase 22` to continue with Plan 22-05 (SECURITY.md + CONTRIBUTING.md prose — D-05 prose half of the gate).
+- After Phase 22 closes via Plan 22-06 (HUMAN-UAT): Phase 23 (cosign image attestations + SLSA + SBOM — the load-bearing piece).

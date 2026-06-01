@@ -91,7 +91,7 @@
 - [x] 22-01-PLAN.md — Create canonical `docker/digests.txt` manifest + `.github/CODEOWNERS` governance gate (DRIFT-01)
 - [x] 22-02-PLAN.md — Create `.github/actions/read-base-digests/` composite action with fail-fast regex validation (DRIFT-01)
 - [x] 22-03-PLAN.md — Wire `release.yml` + `docker.yml` to consume the composite action; thread `DEBIAN_REF` + `CARGO_CHEF_REF` build-args from manifest (DRIFT-03)
-- [ ] 22-04-PLAN.md — Create `.github/workflows/digest-drift-check.yml` scheduled workflow with Pitfall 9 idempotency + `docker buildx imagetools inspect` resolution (DRIFT-02)
+- [x] 22-04-PLAN.md — Create `.github/workflows/digest-drift-check.yml` scheduled workflow with Pitfall 9 idempotency + `docker buildx imagetools inspect` resolution (DRIFT-02)
 - [ ] 22-05-PLAN.md — Update `SECURITY.md` §Supply-chain status + add `CONTRIBUTING.md` §Bumping base-image digests (D-05 prose half of the gate)
 - [ ] 22-06-PLAN.md — Human-UAT: branch-protection toggle + fresh-machine rehearsal of ROADMAP SC#1-4
 
@@ -152,7 +152,7 @@
 | 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete | 2026-05-31 |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete | 2026-05-31 |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 2/2 | Complete | 2026-05-31 |
-| 22. Base-Image Digest Drift Detection | v1.6 | 2/6 | In Progress|  |
+| 22. Base-Image Digest Drift Detection | v1.6 | 4/6 | In Progress|  |
 | 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 0/? | Not started | — |
 | 24. Release Tarball Signing (cosign + SLSA + PGP) | v1.6 | 0/? | Not started | — |
 | 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/? | Not started | — |
