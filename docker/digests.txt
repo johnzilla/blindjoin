@@ -4,11 +4,5 @@
 # Parsed by .github/actions/read-base-digests/action.yml — exact line shape
 # is contract: <image>:<tag>@sha256:<HEX>, one per line, comments + blanks
 # allowed.
-#
-# NOTE: digest values below are sentinel placeholders captured at planning
-# time. They will be re-resolved on a clean ubuntu-24.04 runner during the
-# Phase 22 Plan 06 HUMAN-UAT rehearsal via
-#   docker buildx imagetools inspect <image>:<tag> --format '{{.Manifest.Digest}}'
-# and the rehearsal PR will overwrite them with the canonical values.
-debian:bookworm-slim@sha256:0000000000000000000000000000000000000000000000000000000000000000
-lukemathwalker/cargo-chef:latest-rust-1@sha256:0000000000000000000000000000000000000000000000000000000000000000
+debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
+lukemathwalker/cargo-chef:latest-rust-1@sha256:e606721f52d95169364bf39cae726a94ed8b397625011ccfaa8340db488b823b
