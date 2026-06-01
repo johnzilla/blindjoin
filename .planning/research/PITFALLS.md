@@ -1,291 +1,187 @@
-# PITFALLS — v1.4 BIP-322 Multi-Script Support
+# PITFALLS — v1.6 Supply-Chain Attestation
 
-**Domain:** Adding P2TR + P2SH-P2WPKH BIP-322 Simple ownership proof support to existing single-script (P2WPKH-only) CoinJoin coordinator + client
-**Researched:** 2026-05-29
-**Overall confidence:** MEDIUM-HIGH (HIGH on protocol/spec; MEDIUM on crate version specifics; LOW on bdk_wallet 2.3+ minor-version API churn)
-
-This document scopes pitfalls to **v1.4 multi-script-type integration**. v1.0 cross-cutting CoinJoin pitfalls (tagging attack, blame-shrinkage, denomination fingerprinting, etc.) remain in force and live in git history at the prior `.planning/research/PITFALLS.md` baseline — this v1.4 version is a delta.
+**Domain:** Adding cosign image attestations, cosign blob signing, reproducible builds, and automated digest drift checks to blindjoin v1.5's release pipeline.
+**Researched:** 2026-06-01
+**Overall confidence:** HIGH on cosign/sigstore failure modes (well-documented community failures since 2022); MEDIUM on Rust reproducibility long tail (project-specific); HIGH on GHA OIDC quirks.
 
 ---
 
-## CRITICAL
+## Pitfall 1 — cosign verify identity regex too narrow (or too wide)
 
-### V1.4-CRIT-01: Address-Type Spoofing via Client-Claimed Script Type
+**Bites because:** `cosign verify --certificate-identity` exact-matches the SAN claim from the Fulcio cert. The SAN includes the workflow file path + ref. If you write the verification command in SECURITY.md with `--certificate-identity 'https://github.com/johnzilla/blindjoin/.github/workflows/docker.yml@refs/tags/v1.6.0'`, it works for v1.6.0 only. Every subsequent release breaks the documented command.
 
-**What goes wrong:** Client submits `ownership_proof` declaring "this is a P2TR witness," but the UTXO at `txid:vout` is actually P2WPKH (or vice versa). Coordinator dispatches to the P2TR verifier whose semantics differ (e.g. P2TR uses x-only pubkeys via taproot tweaking, not HASH160 binding), so a P2TR verifier handed a P2WPKH-shaped witness can produce false positives. Worst case: attacker who controls one UTXO claims a verifier that gives them ownership of a different UTXO.
+**Prevention strategy:** Use `--certificate-identity-regexp 'https://github.com/johnzilla/blindjoin/\.github/workflows/(docker|release)\.yml@refs/tags/v.*'` — narrow enough to bind to the specific workflows + tag namespace, wide enough to survive across releases. Document the regex in SECURITY.md, not a specific identity.
 
-**Why it happens:** Natural API is `OwnershipProof { witness_stack, script_type: ScriptType }` — and trusting the client field is one line shorter than re-deriving from the on-chain UTXO.
+**Don't go too wide:** `--certificate-identity-regexp 'https://github.com/johnzilla/.*'` is exploitable — any workflow in any of your repos can produce a "valid" signature for blindjoin. Bind to the workflow file.
 
-**Precedent:** Generic verification-bypass class. Same shape as JWT `alg=none` and PKCS#1-v1.5 / RSA-PSS dispatch bugs.
-
-**Prevention (LOAD-BEARING):**
-- **Script type MUST be derived from `txout.script_pubkey`, never accepted from the client.** Dispatch: `let script_type = classify(&txout.script_pubkey)?; verify_for(script_type, &ownership_proof, &message)`.
-- Single enum `ScriptType { P2WPKH, P2TR, P2SH_P2WPKH }` from `classify(spk) -> Result<ScriptType, UnsupportedScriptType>` with **no fallthrough default arm**.
-- `OwnershipProof` wire type carries ONLY witness stack bytes (and any annex/script-path data), never a script-type tag.
-- Property test: feed P2WPKH witness against P2TR script_pubkey — verifier MUST reject. Repeat for all 9 (script_pubkey × witness-shape) combinations.
-
-**Detection in code review:**
-- Any `match ownership_proof.script_type` block in coordinator → reject.
-- Any wire-type field that influences verifier dispatch → reject.
-- A `Bip322Verifier` trait with `verify(witness, message)` (no `script_pubkey`) → can be misdispatched.
-
-**Phase:** Plan-phase per-script-type verifier task. Discuss-phase locks in "script type is derived, not declared" as non-negotiable invariant.
+**Phase:** Phase 23 (cosign image attestations) — write the canonical regex, use it in both Phase 23 and Phase 24 docs.
 
 ---
 
-### V1.4-CRIT-02: Sighash Silent Failures Across Script Types
+## Pitfall 2 — Forgetting `id-token: write` permission scope
 
-**What goes wrong:** Each script type uses a structurally different sighash:
+**Bites because:** cosign keyless signing requires a GitHub OIDC token, which requires `id-token: write` permission on the job. The default `permissions:` for a workflow run is `read-all`; cosign sign will fail with `signing keyless: getting signer: getting signer: fulcio: 400 Bad Request` — opaque error that doesn't immediately point at the permission.
 
-- **P2WPKH** (BIP-143 segwit v0): `SighashCache::p2wpkh_signature_hash(index, script_code, value, sighash_type)` where `script_code` is the *implicit* P2PKH scriptCode `OP_DUP OP_HASH160 <pkh> OP_EQUALVERIFY OP_CHECKSIG`, not the raw P2WPKH script.
-- **P2SH-P2WPKH** (BIP-143 wrapped): same sighash *math* as P2WPKH, but witness program's pubkey is wrapped in `OP_0 <pkh>` redeemScript that must match `HASH160(redeemScript) == p2sh hash`. Sighash uses the *underlying P2WPKH* scriptCode, not the P2SH script_pubkey.
-- **P2TR key-path** (BIP-341 schnorr): `SighashCache::taproot_key_spend_signature_hash(index, &prevouts, sighash_type)` — fundamentally different (tagged hash `TapSighash`, sighash epoch byte, all prevouts required). Schnorr (BIP-340) not ECDSA. SIGHASH_DEFAULT (0x00) is the 64-byte form; SIGHASH_ALL (0x01) is the 65-byte form.
+**Prevention strategy:** Add `id-token: write` to the specific job (not workflow-wide — narrower scope is better). Add a comment line above the permissions block explaining what each scope is for. CI smoke-test on workflow_dispatch BEFORE the first tagged release uses it.
 
-A verifier using the wrong sighash routine produces a "valid" hash that doesn't match what the network computes. Test vectors generated by the same wrong code pass; only on-chain anchor or third-party implementation (Bitcoin Core `verifymessage`, `ACken2/bip322-js`) surfaces the bug.
-
-**v1.0 → v1.4 carry-forward of the v1.3 REPAIR-01 lesson:** partial-sig wire-format mismatch (DER vs consensus-encoded `bitcoin::Witness`) was silent in this same way — both ends looked right in isolation; only the cross-implementation byte stream surfaced it.
-
-**Why it happens:**
-- Copy-paste P2WPKH verifier into P2TR verifier, change spk check, leave BIP-143 sighash call intact.
-- For P2SH-P2WPKH: implementer treats script_pubkey as scriptCode for sighash. Bitcoin Core requires the unwrapped P2WPKH scriptCode as the implicit scriptCode.
-
-**Prevention (LOAD-BEARING):**
-- **Per-script-type property tests against the official BIP-322 `basic-test-vectors.json`** (bitcoin/bips repo). Each verifier independently passes every vector in its class.
-- **Cross-implementation round-trip test**: for each script type, sign with `bdk_wallet` (or raw secp256k1 + sighash), verify with the official `bip322` crate AND with our in-tree verifier. Either failure ⇒ witness invalid. This is the cross-check that would have caught REPAIR-01 in v1.3.
-- **Regtest on-chain anchor test**: produce a BIP-322 witness for a regtest UTXO, then construct the equivalent real spending transaction using the same key and sighash routine, broadcast it. If bitcoind accepts the real spend, the sighash math is correct.
-- For P2TR: distinguish SIGHASH_DEFAULT (64-byte sig) from SIGHASH_ALL (65-byte sig with trailing `0x01`). BIP-322 §6 permits both for P2TR; segwit v0 requires SIGHASH_ALL only.
-
-**Detection in code review:**
-- `SighashCache::p2wpkh_signature_hash` in the P2TR verifier path.
-- `from_der` or `Signature::from_der` in the P2TR verifier path (P2TR uses 64-byte schnorr).
-- A "shared" sighash helper switching on `script_type` internally — concentrates exactly the bug class V1.4-CRIT-01 warns against. Three separate verifier functions with no shared dispatch.
-
-**Phase:** Per-script-type verifier task, gated by property-test passing the entire BIP-322 spec vector set for that script type.
+**Phase:** Phase 23 — first phase that needs OIDC. Phase 24 inherits the pattern.
 
 ---
 
-### V1.4-CRIT-03: bip322 Crate Pre-1.0 API Risk
+## Pitfall 3 — Rekor transparency log is mandatory (and what to do when it's not available)
 
-**What goes wrong:** `rust-bitcoin/bip322` crate stalled at 0.0.10 for ~9 months (last published ~September 2025; no releases through 2026-05-29). Adopting it mid-milestone and then having the API churn in a patch-version update (pre-1.0 SemVer treats `0.x → 0.y` as breaking) forces re-implementation of every call site — the same forensic pattern as v1.3 REPAIR-01.
+**Bites because:** cosign sign defaults to logging the signature to public Rekor. If the runner can't reach Rekor (network flake, sigstore outage, airgapped runner), `cosign sign` hangs or fails. Operators verifying ALSO consult Rekor by default — `cosign verify` without internet → fails.
 
-**Why it happens:** Default `cargo add bip322` picks up latest, which may be a fresh release with API changes from whatever was current at discuss-phase.
+**Prevention strategy:**
+- Signer side: don't set `--no-tlog-upload` (default behavior is correct — log to Rekor).
+- Verifier side: document the standard verify command in SECURITY.md, AND document `--insecure-ignore-tlog` for airgapped operators with an explicit risk callout ("Skipping Rekor verification means a future attacker who compromises your local Fulcio root could backdate a signature").
+- For the project's release pipeline itself: if `cosign sign` fails on a release because Rekor is down, the right move is to RETRY, not to skip logging. Document this in the release runbook.
 
-**Stack research finding:** Stack agent recommends extending custom `shared/src/bip322.rs` (~205 LOC) rather than adopting the crate, because (a) 9 months of silence is a maintenance-cadence red flag, (b) bdk_wallet doesn't ship BIP-322 signing anyway so client-side code must be ours either way, (c) `bitcoin 0.32.x` already provides every primitive needed (`SighashCache`, `verify_schnorr`, `XOnlyPublicKey`, `is_p2tr/is_p2sh/is_p2wpkh`).
-
-**Prevention (LOAD-BEARING):**
-- **Discuss-phase decides: extend-custom (recommended) vs adopt-crate.** If adopt-crate is chosen:
-  - **Pin exact version (`bip322 = "=0.X.Y"`)** in `Cargo.toml`. No `^`, no `~`.
-  - **API contract test in `shared/`**: every method we use from the bip322 crate has a `#[test]` exercising that exact signature with known-good witness + result. Breaking changes localized at compile.
-  - **Fallback plan documented**: "If crate unsuitable, extend in-tree `shared/src/bip322.rs` with per-script-type verifiers — copy from rust-bitcoin source if license-compatible (MIT/Apache-2.0)."
-- **Sprint-0 spike**: `cargo tree -p bip322 0.0.10` verify pin against `bitcoin 0.32.x`. Gate question for the adopt-crate fallback.
-- **Adopt only if Sprint-0 verifies clean version pin AND discuss-phase explicitly accepts 0.0.x stability risk.**
-
-**Phase:** Discuss-phase lock-in. Plan-phase first task is the Sprint-0 spike.
+**Phase:** Phase 23 + Phase 24 (cosign signing surfaces).
 
 ---
 
-## MODERATE
+## Pitfall 4 — SHA pin discipline on sigstore actions
 
-### V1.4-MOD-01: OwnershipProof Wire-Format Evolution Without Versioning
+**Bites because:** `sigstore/cosign-installer@v3` is a floating tag. The sigstore team releases frequently; a v3.1 → v3.2 transition can quietly change cosign install behavior. The project's existing GHA discipline (everything SHA-pinned) must extend to new actions.
 
-**What goes wrong:** Today, `OwnershipProof.witness_stack` is `Vec<Vec<u8>>` — flat list of byte arrays, JSON-encoded as hex array. Sufficient for P2WPKH (2 items: sig, pubkey) and P2TR key-path (1 item: 64- or 65-byte schnorr sig), but **breaks down for P2SH-P2WPKH**, which requires both witness stack AND the P2SH redeemScript transmitted (redeemScript is not derivable from script_pubkey alone — only HASH160 is on-chain).
+**Prevention strategy:** At adoption, pin every new action by SHA with a `# v3.X.Y` comment. Add a CI grep gate (mirroring the existing `crit-01-grep-check` pattern) that fails if any action ref doesn't have the form `@<40-hex>` — catches future regressions.
 
-Naive extension "add `redeem_script: Option<String>`" breaks any client pre-dating the change unless `#[serde(default)]`. The v1.0 lesson "NO `#[serde(deny_unknown_fields)]`" in `shared/src/protocol.rs` partially protects (older coordinators drop unknown fields), but older *clients* sending only witness stack to a newer coordinator fail P2SH-P2WPKH verification.
+Add the new sigstore actions to a tracked list in `SECURITY.md` so dependabot/renovate-style bumps are reviewed against the list.
 
-**This is the v1.3 REPAIR-01 wire-format lesson generalized.**
-
-**Prevention:**
-- **Discuss-phase decision: how does P2SH-P2WPKH carry the redeemScript?** Architecture researcher recommends PSBT-input shape (`base64-encoded bitcoin::psbt::Input`) over tagged-enum extension — conservative, future-proof, aligns with PSBT-everywhere semantics.
-- **Property test at wire level**: for each script type, encode `OwnershipProof`, decode coordinator-side, encode back — bytewise identical.
-- **Coordinator advertises `protocol_version: u32`** in `/info` and PKARR record (e.g., `protocol_version: 2` for v1.4). Older clients see `protocol_version: 2` and abort with "this coordinator requires a newer client."
-
-**Phase:** Plan-phase task for OwnershipProof shape change. Roundtrip serialization test ships before either coordinator or client uses new shape.
+**Phase:** Phase 23 — first sigstore action adoption. Document the pin discipline; reuse in Phase 24, Phase 25.
 
 ---
 
-### V1.4-MOD-02: PKARR Record Schema Evolution Breaks Discovery
+## Pitfall 5 — `actions/attest-build-provenance` vs `slsa-framework/slsa-github-generator` confusion
 
-**What goes wrong:** v1.4 adds `supported_script_types: ["p2wpkh", "p2tr", "p2sh-p2wpkh"]` to PKARR record. Architecture researcher noted current record is at 215 bytes (under 255-byte DNS TXT limit but at 220-byte warn threshold). Older clients parsing strictly interpret a v1.4 record as malformed, or infer P2WPKH-only by default and mis-register.
+**Bites because:** Two paths to SLSA provenance on GHA:
+- `actions/attest-build-provenance` — maintained by GitHub, simpler API, lives inside the existing job.
+- `slsa-framework/slsa-github-generator` — original sigstore-community path, requires using a REUSABLE workflow (different YAML shape — `uses: slsa-framework/...` at workflow level, not action level).
 
-**Features researcher recommends:** compact CSV (`"script_types": "p2sh-p2wpkh,p2tr,p2wpkh"`) in TXT JSON to respect 255-byte budget. `/round/info` JSON uses proper array (no budget constraint).
+Mixing them silently produces two competing attestations; verifiers may pick the wrong one.
 
-**Prevention:**
-- **Versioned key**: add `_blindjoin_v=2` TXT record alongside script-type record. Clients seeing `v=2` know to look for `supported_script_types`; clients pre-dating v1.4 see no `v` and assume `v=1` (P2WPKH-only).
-- **Default behavior when field missing**: client treats absence of `supported_script_types` as `["p2wpkh"]` — matches v1.0 implicit contract. CI-tested.
-- **Coordinator publishes both `v=2` and legacy `v=1`-shape record for a transition period (one milestone)** so older clients still resolve. Drop `v=1` in v1.5.
-- **Integration test**: discover v1.4 coordinator with simulated v1.0 client — client either resolves to P2WPKH-only or refuses cleanly, never silently mis-registers.
+**Prevention strategy:** Pick ONE. **Recommend `actions/attest-build-provenance`** for v1.6 — simpler integration with existing matrix-style `docker.yml`, no workflow restructure. Documentation in this phase's PLAN.md must name this choice + cite the rationale (SECURITY.md should explain what the verifier downloads + how to read it).
 
-**Phase:** Plan-phase task pairs with `/round/info` field addition.
+**Phase:** Phase 23 — locked at planning time.
 
 ---
 
-### V1.4-MOD-03: `/round/info` Field Addition Without Coordinated Client Update
+## Pitfall 6 — Rust reproducible-build long tail
 
-**What goes wrong:** Coordinator's `InfoResponse` (`shared/src/protocol.rs:13-28`) gets `supported_script_types`. Forward-compat already in place (no `deny_unknown_fields`). But client *logic* relies on knowing what's supported: v1.0 client trying to register P2TR UTXO with v1.4 coordinator that does NOT support P2TR (operator disabled it) gets generic `UnsupportedScriptType` at registration time, after Tor circuit built. UX worsens; debugging is opaque.
+**Bites because:** Even with `--remap-path-prefix` + `SOURCE_DATE_EPOCH` + `--locked`, Rust binaries can fail bit-for-bit reproducibility due to:
+- `proc-macro` crates that use `Instant::now()` at compile time (rare but real)
+- `build.rs` scripts that consult `env::current_dir()` or `chrono::Local::now()`
+- LLVM optimizations on certain targets producing nondeterministic ordering
+- Cargo's incremental compilation interfering — must use a clean target dir
+- Random hash for `dyn Trait` vtable inclusion order
 
-**Prevention:**
-- **Client uses `supported_script_types` field if present; falls back to `["p2wpkh"]` if absent**.
-- **Client checks UTXO's script type against `supported_script_types` BEFORE registering** — fail fast.
-- **`/info` carries `protocol_version: u32`** alongside script-type list. Client refuses `protocol_version > known_max` with "please upgrade" error.
+**Prevention strategy:**
+- First reproducibility run on a clean runner: capture EVERY diff between two builds. Most are fixable; a few are upstream-blocked.
+- Add `CARGO_INCREMENTAL=0` to release.yml's env (already implicit on CI but make explicit).
+- Use `diffoscope` to diagnose binary diffs (it's the standard reproducibility tool).
+- Accept the realistic v1.6 target: bit-for-bit reproducibility ON `ubuntu-latest` (same image SHA) with documented env. Cross-distro reproducibility is v1.7+.
+- Document KNOWN sources of nondeterminism in `docs/REPRODUCIBLE-BUILD.md` so a failed verifier rebuild can be triaged ("did one of these change?") instead of being treated as a supply-chain compromise.
 
-**Phase:** Plan-phase, paired with V1.4-MOD-02.
-
----
-
-### V1.4-MOD-04: bdk_wallet Mixed-Descriptor Wallet Support Unclear
-
-**What goes wrong:** User holds UTXOs across multiple script types (P2WPKH legacy, P2TR fresh, P2SH-P2WPKH old exchange withdrawal). Current client uses single `Wallet` with `wpkh(...)` descriptor. Adding P2TR registration requires either (a) second `Wallet` per script type, or (b) loading multiple descriptors into one wallet. bdk_wallet's standard architecture is two-keychain (external + internal) per Wallet — multi-script-type-per-Wallet is not first-class.
-
-`bdk_wallet/issues/394` and `590` (mid-2026) indicate active topic but no production-ready 2.3 solution. **`bdk_wallet/issues/150` (BIP-322 message signing) open since May 2023 with no resolution** — meaning BIP-322 signer code must be ours regardless of which path is chosen.
-
-**Prevention — discuss-phase picks one:**
-1. **One Wallet per script type** (simplest; client config 3× more complex — user provides 3 descriptors). **Recommended.**
-2. **Single Wallet, key-only signing** (use bdk_wallet for P2WPKH; for P2TR + P2SH-P2WPKH, derive key from same xpriv and sign manually using `secp256k1` + `bitcoin::sighash`, bypassing bdk_wallet broader machinery). BIP-322 signing path is narrow (1 input, 1 output, no fee estimation).
-3. **Wait for bdk_wallet 3.0** (currently `-rc` per public release data) — adopt if 3.0 ships multi-script during v1.4; otherwise pick (1) or (2).
-- **Pin bdk_wallet to exact version** (v1.3 REPAIR-02 carry-forward).
-- **Sprint-0 spike**: 50-line throwaway deriving P2TR address from `tr(...)` descriptor in bdk_wallet 2.3 + signing BIP-322 message. If API doesn't expose what we need, pivot to (2) in discuss-phase, not mid-implementation.
-
-**Phase:** Discuss-phase. Mid-implementation pivots here are expensive.
+**Phase:** Phase 25 — entirely.
 
 ---
 
-### V1.4-MOD-05: bdk_wallet 2.3 → 2.4+ Minor-Version API Churn
+## Pitfall 7 — Reproducibility verifier false-positives on time-of-build env drift
 
-**What goes wrong:** v1.3 records that bdk_wallet 2.3 introduced `SignOptions { trust_witness_utxo: true }` requirement and real on-chain `witness_utxo` values. If we end up on bdk_wallet 2.4 or 3.0-rc during v1.4 (for Taproot signing API improvement), BIP-322 signing path plumbing may shift again. bdk_wallet 3.0 release notes introduce "major API changes including persistent UTXO locking, structured wallet events, and adopts NetworkKind throughout the codebase" — not a stable target.
+**Bites because:** The scheduled `reproducible-verify.yml` rebuilds the v1.6.0 tarball on a runner image SHA that may have drifted since the original ship. `ubuntu-latest` is a moving target — the runner image rotates roughly monthly. A monthly verifier run may rebuild on a NEW runner image and find a diff that's not a supply-chain issue, just a runner update.
 
-**Prevention:**
-- **Pin `bdk_wallet = "=2.3.x"` in `Cargo.toml`. No `^`. CI grep gate** (analogous to corepc-node pin from v1.3 REPAIR-02).
-- **Do not upgrade mid-milestone** unless critical bug forces it; if forced, treat upgrade as its own plan with its own verification phase.
-- **API surface tests for `SignOptions`** specifically — encode known-good signing flow as `#[test]` so subsequent `SignOptions` rename surfaces at compile time.
+**Prevention strategy:**
+- Pin the runner image SHA in `docs/REPRODUCIBLE-BUILD.md` AND in `reproducible-verify.yml`'s `runs-on: ubuntu-24.04` (explicit version, not `ubuntu-latest`). 
+- When `ubuntu-24.04` itself is upgraded by GH, that's a documented breaking event — the verifier should fail, the maintainer should re-confirm reproducibility on the new image, and `REPRODUCIBLE-BUILD.md` should be updated.
+- The verifier's failure message must distinguish "runner image drift" from "actual sha256 mismatch on identical env".
 
-**Phase:** Sprint 0 — set pin, set CI gate.
-
----
-
-### V1.4-MOD-06: CoinJoin Privacy — Mixed vs Segregated Script-Type Rounds
-
-**What goes wrong:** Two competing privacy stories:
-
-1. **Segregated rounds (one script type per round)** preserve the v1.0 invariant "do not mix address types in the same round — different output types break the equal-value guarantee visually." All inputs P2WPKH; all outputs P2WPKH. Maximum within-round indistinguishability but tiny anonymity sets per script type until each type has independent liquidity.
-
-2. **Mixed rounds (any script type can join)** maximize anonymity set per round but create a chain-analysis signal: "this transaction has a wildly heterogeneous input set with equal-value outputs" is itself a CoinJoin fingerprint, AND per-input script type leaks individual UTXOs to the round.
-
-**Features researcher recommends mixed rounds (Option B) following Wasabi 2.0.3 precedent** (zkSNACKs PR #8912). Wasabi argues mixed is fine because Round ID guarantee means all honest liquidity contributes to anon set. **But for blindjoin's RSA-blind-signature model, the credentials-based Round-ID equivalence doesn't directly apply** — unlinkability comes from the blind signature, not from credential equivalence.
-
-**Decision is contested between researchers.** Pitfalls research defaults to segregated (privacy-conservative); Features research recommends mixed (anon-set-maximizing, Wasabi-precedent). **Must be resolved in discuss-phase before plan-phase starts** — coordinator round-state machine and PKARR schema both depend on the answer.
-
-**Mitigation if mixed chosen:**
-- Clients produce outputs of randomly-selected supported script type, not their input's script type (mimicking Wasabi 2.0.3).
-- Document privacy trade-off explicitly in README's privacy section.
-
-**Mitigation if segregated chosen:**
-- Liquidity bot maintains UTXOs of all supported types and joins under-filled rounds.
-- Per-round script type published in PKARR + `/round/info`.
-
-**Phase:** Discuss-phase. Deferring is the wrong answer.
+**Phase:** Phase 25.
 
 ---
 
-### V1.4-MOD-07: BIP-322 vs Legacy "Bitcoin Signed Message" Format Confusion
+## Pitfall 8 — Digest-drift false positives from Debian security backports
 
-**What goes wrong:** BIP-322 is NOT the legacy `signmessage`/`verifymessage` format. Legacy uses magic string `"\x18Bitcoin Signed Message:\n" || varstr(message)`. BIP-322 uses tagged hash `SHA256(SHA256("BIP0322-signed-message") || SHA256("BIP0322-signed-message") || message)` and a virtual transaction.
+**Bites because:** `debian:bookworm-slim` gets retagged when Debian releases security-backport patches (e.g. CVE in `apt`). The digest moves but the tag still points at "bookworm-slim". The drift check fires every time — operators tune it out → real supply-chain drift is also tuned out.
 
-Implementer reading BIP-322 quickly and copying a snippet from older Stack Overflow / BIP-137 reference may compute legacy-format hash, then build a BIP-322 virtual transaction — producing a verifier matching nothing. Or accept BIP-322 *or* legacy silently, expanding attack surface.
+**Prevention strategy:**
+- Drift check OPENS AN ISSUE — does not block CI. Issue title includes the previous + current digest + a link to the registry. Human reviews, decides whether to bump `docker/digests.txt` or investigate.
+- For false-positive desensitization: classify drift severity — if the diff is only in `usr/share/doc/` or `/var/lib/dpkg/`, it's a docs/metadata-only retag (low-severity). If `libc6` or `openssl` versions changed, it's substantive (high-severity).
+- Severity classification is OPTIONAL for v1.6; defer to a follow-on if Phase 22 ships and the maintainer sees too many low-severity issues.
 
-Existing impl at `shared/src/bip322.rs:19-27` does this correctly. v1.4 must continue to use this same message-hash function, not legacy format, even though BIP-340 / Taproot has its own tagged-hash conventions (`TapSighash`, `TapBranch`) that look superficially similar.
-
-**Prevention:**
-- **`bip322_message_hash` function in `shared/src/bip322.rs` is the single source of truth.** All three verifiers (P2WPKH, P2TR, P2SH-P2WPKH) call this function. No reimplementation.
-- **Property test against BIP-322 official `basic-test-vectors.json`** — message-hash function independently tested with spec's documented `to_spend_txid` values.
-- **Negative test**: feed legacy-format-signed message to BIP-322 verifier — must reject. Conversely, BIP-322 witness to legacy verifier must reject. No silent acceptance.
-
-**Phase:** Foundational; first plan task confirms message-hash function is reused, not reimplemented per script type.
+**Phase:** Phase 22.
 
 ---
 
-## MINOR
+## Pitfall 9 — Digest-drift check auto-opens duplicate issues
 
-### V1.4-MIN-01: Regtest Test Harness Brittleness with New Script Types
+**Bites because:** The workflow runs daily. If drift persists (and the maintainer hasn't bumped digests.txt yet), each daily run opens a new issue. Issue spam → maintainer mutes notifications → next real drift event missed.
 
-**What goes wrong:** v1.3 hardened the regtest test harness (`BitcoindGuard`, `require_bitcoind!()`, pinned bitcoind v30.2). Adding P2TR + P2SH-P2WPKH means generating those UTXO types. bitcoind `getnewaddress` defaults to bech32m (P2TR) in recent versions, but explicit `address_type` parameter avoids default drift. Coinbase outputs in regtest are P2PK — must mine to wallet address of target type then spend. corepc-node's typed `Client` API surface may have different RPC method shapes for `getnewaddress(address_type)` per feature flag — re-verify against pinned feature.
+**Prevention strategy:**
+- Before opening an issue, `gh issue list --label digest-drift --state open --search "<digest-hex>"` — if an issue already exists for the same image + new-digest pair, skip.
+- Issue title format that's machine-parseable: `[digest-drift] <image>:<tag> moved to sha256:<HEX>`. The check greps for this exact form.
+- Document this in the workflow file with a comment block.
 
-**Prevention:**
-- Each script-type integration test explicitly specifies `getnewaddress` parameters (`bech32m` for P2TR, `p2sh-segwit` for P2SH-P2WPKH, `bech32` for P2WPKH). Never rely on bitcoind defaults.
-- `BitcoindGuard` and `require_bitcoind!()` semantics do NOT change — v1.3 RAII pattern is script-type-agnostic.
-- Liquidity bot updated: `script_types: ["p2wpkh", "p2tr", "p2sh-p2wpkh"]` config field; bot rotates which type it submits to each round.
-
-**Phase:** Test infrastructure plans before verifier plans.
+**Phase:** Phase 22.
 
 ---
 
-### V1.4-MIN-02: Liquidity Bot Becomes Uniform-Script-Type Fingerprint
+## Pitfall 10 — GHCR "Unverified" UI badge confusion
 
-**What goes wrong:** If liquidity bot only submits P2WPKH UTXOs, on a coordinator accepting mixed-script rounds, *bot's inputs are visually identifiable* as the liquidity provider. Even with segregated rounds: if P2TR + P2SH-P2WPKH rounds have only the bot as "always-present" participant, on-chain analysis identifies bot's output by cross-round correlation.
+**Bites because:** GHCR has its own image-signing UI notion separate from cosign. A cosign-signed image may still display as "Unverified" on the GHCR web UI because GHCR's verification doesn't consult Rekor by default. Operators see "Unverified" and conclude the supply chain is broken.
 
-**Prevention:**
-- Bot generates UTXOs across all supported script types in rotation, not pinned to one type.
-- Bot's output addresses derived from separate keychain per round so output clusters don't form.
-- Document bot's privacy posture honestly in README: "the liquidity bot increases anonymity-set fill rate, but its UTXOs are identifiable to operators who run the bot."
+**Prevention strategy:**
+- Document explicitly in SECURITY.md that the cosign verify CLI is the source of truth, NOT the GHCR UI badge.
+- Operators should NOT rely on GHCR's UI for signature confirmation; they should run `cosign verify` directly.
+- This is a UX-not-cryptographic gap; GitHub may add cosign-aware UI in the future, at which point this callout becomes obsolete.
 
-**Phase:** Plan-phase task for liquidity bot updates.
-
----
-
-### V1.4-MIN-03: BIP-322 Simple-vs-Full Wire Form Ambiguity
-
-**What goes wrong:** BIP-322 has Simple (base64 `smp || witness`) and Full (base64 `to_sign` transaction) wire forms. blindjoin uses custom `OwnershipProof { witness_stack: Vec<Vec<u8>> }` — neither. Verifier must reconstruct `to_spend` + `to_sign` from `script_pubkey + message`, then verify supplied `witness_stack` against `to_sign` sighash. Current `shared/src/bip322.rs:34-76` does this correctly for P2WPKH.
-
-When adopting `rust-bitcoin/bip322` crate, the crate may expect Simple or Full form (with `smp` prefix + base64), not our raw `witness_stack`. Bridging requires translating: extract our `witness_stack`, wrap in `Witness`, hand to crate verifier with our reconstructed `to_sign`. Mis-bridging silently mis-calls crate API.
-
-**Prevention:**
-- Maintain our own wire format; use bip322 crate as *verifier only*, not as wire-format codec.
-- Adapter function `verify_with_bip322_crate(script_pubkey, witness_stack, message) -> Result<()>` is the only place that touches the crate. All other code calls this adapter. Apply V1.4-CRIT-03 contract-test pattern.
-
-**Phase:** Plan-phase first crate-adoption task.
+**Phase:** Phase 23 — covered in the SECURITY.md draft update.
 
 ---
 
-## PHASE-SPECIFIC WARNINGS
+## Pitfall 11 — Auto-merging digest bumps undermines the whole supply chain
 
-| Phase / Task Topic | Likely Pitfall | Mitigation |
-|---|---|---|
-| Crate adoption decision (discuss-phase) | bip322 crate pre-1.0 churn (V1.4-CRIT-03) | Pin exact version; document fallback; check crate's own test coverage |
-| Verifier dispatch design | Script-type spoofing (V1.4-CRIT-01) | Derive script type from `script_pubkey`, never client field |
-| Per-script-type verifier impl | Silent sighash failures (V1.4-CRIT-02) | Property tests against BIP-322 spec vectors + cross-impl round-trip + on-chain anchor |
-| OwnershipProof wire format | Schema break for older clients (V1.4-MOD-01) | Versioned `protocol_version`; roundtrip test in shared/; serde defaults |
-| PKARR record schema update | Discovery breaks across versions (V1.4-MOD-02) | Default `supported_script_types` to `["p2wpkh"]` when absent; v=2 alongside v=1 |
-| `/round/info` field addition | Older clients silently mis-register (V1.4-MOD-03) | Client pre-checks script-type support pre-Tor-build |
-| bdk_wallet descriptor strategy | Multi-script unclear in 2.3 (V1.4-MOD-04) | Discuss-phase picks: one Wallet per type OR manual sign bypassing bdk_wallet |
-| Cargo.toml pinning | bdk_wallet 2.x minor churn (V1.4-MOD-05) | Exact `=2.3.x` pin; CI grep gate |
-| Round design (mixed vs segregated) | Privacy regression (V1.4-MOD-06) | **Discuss-phase decides — researchers split; resolve before plan starts** |
-| BIP-322 message hash | Legacy format confusion (V1.4-MOD-07) | Single `bip322_message_hash` reused across verifiers; spec-vector test |
-| Regtest test harness | New address types break v1.3 fixtures (V1.4-MIN-01) | Explicit `getnewaddress` address_type; reuse `BitcoindGuard` unchanged |
-| Liquidity bot update | Uniform-script fingerprint (V1.4-MIN-02) | Rotate script types; honest README disclaimer |
-| Crate-adapter integration | Simple-vs-Full wire form mismatch (V1.4-MIN-03) | Bridge in one adapter; contract-test the adapter |
+**Bites because:** When a digest drift issue lands, the easy fix is "bump the digest in docker/digests.txt and merge". If that bump is auto-merged via a bot (or a fast human review), the project just accepted a base-image change with zero scrutiny — exactly the threat model the supply chain is supposed to mitigate. Worst case: a compromised base image (e.g. xz utils incident, 2024) gets pulled in via auto-merged drift bump.
+
+**Prevention strategy:**
+- Digest-drift check opens an ISSUE, not a PR. Issue → human investigation → human-written PR → human-reviewed merge.
+- If a renovate/dependabot config is added later for other deps, EXCLUDE Docker base images from auto-merge.
+- Document the policy in SECURITY.md + CONTRIBUTING.md.
+
+**Phase:** Phase 22 — sets the policy. SECURITY.md update in Phase 23 reinforces.
 
 ---
 
-## v1.3 REPAIR-01 LESSONS CARRIED FORWARD
+## Pitfall 12 — Releasing the cosign verify command before testing it from a clean machine
 
-1. **Wire format ≠ API shape.** Any wire-format change ships with a roundtrip serialization test in `shared/` BEFORE either coordinator or client uses the new shape.
-2. **bdk_wallet 2.3 segwit signing requires `SignOptions { trust_witness_utxo: true }`** and real on-chain `witness_utxo` values. P2SH-P2WPKH path goes through same machinery — do not retry zero placeholders.
-3. **Pin every dependency referenced by version in a test fixture, and CI-enforce.** bip322 crate, bdk_wallet, corepc-node feature pin — all need exact pins with CI gates.
-4. **When 2-3 carry-forward plans appear with the same shape, abandon Plan.md and pivot to direct bisectable commits.** If multiple orthogonal blockers surface during v1.4 BIP-322 implementation, pivot to `/gsd:debug` early.
-5. **"Closed-local" creates tracking debt.** REPAIR-01 PR observation closure is inherited by v1.4. Do not let v1.4 ship without discharging it — the v1.4 cut PR is the natural moment.
+**Bites because:** "Works on my machine" is the classic. The SECURITY.md update with the cosign verify command needs to be tested by someone who hasn't been involved in the implementation, on a machine with no project-specific config (no `.sigstore/`, no project cosign cache).
+
+**Prevention strategy:**
+- Phase 23 + Phase 24 each have a HUMAN-UAT item: "operator rehearsal of the documented cosign verify command, on a fresh runner image / fresh Docker container". Don't ship without it.
+- Include the exact cosign version operators should install (the project's published verify command should be runnable with cosign 2.5+ specifically — pinning the user-side version avoids breakage if cosign 3.0 changes the CLI).
+
+**Phase:** Phase 23 (image verify) + Phase 24 (blob verify).
 
 ---
 
-## Sources
+## Pitfall 13 — Cosign 3.0 CLI flag drift
 
-- [BIP-322 Spec](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki)
-- [BIP-341 Taproot Spec](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki)
-- [BIP-340 Schnorr Spec](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki)
-- [BIP-143 segwit v0 sighash](https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki)
-- [rust-bitcoin/bip322 GitHub](https://github.com/rust-bitcoin/bip322)
-- [bip322 crate on crates.io](https://crates.io/crates/bip322)
-- [ACken2/bip322-js (cross-impl reference)](https://github.com/ACken2/bip322-js)
-- [bdk_wallet Issue #150 (BIP-322 signing)](https://github.com/bitcoindevkit/bdk_wallet/issues/150)
-- [BDK Issue #394 (P2WPKH to single-sig P2TR wallet)](https://github.com/bitcoindevkit/bdk/issues/394)
-- [Wasabi CoinJoin docs (mixed script types)](https://docs.wasabiwallet.io/using-wasabi/CoinJoin.html)
-- [zkSNACKs WalletWasabi PR #8912 (Taproot coordinator-side)](https://github.com/zkSNACKs/WalletWasabi/pull/8912)
-- [WabiSabi protocol spec](https://github.com/WalletWasabi/WabiSabi/blob/master/protocol.md)
+**Bites because:** cosign 2.x → 3.0 may rename or repurpose flags. SECURITY.md cosign verify commands documented at v1.6 ship may be invalid by the time cosign 3.0 lands. Operators following the doc with cosign 3.0 see cryptic errors.
+
+**Prevention strategy:**
+- Pin a documented cosign version range in SECURITY.md: "tested with cosign 2.5.x; for cosign ≥ 3.0 see [link to cosign migration notes]".
+- Reproducibility verifier + image-sign step in CI use a SHA-pinned `sigstore/cosign-installer` step (Pitfall 4) so the CI side is locked.
+- When cosign 3.0 lands, a separate quick task updates SECURITY.md.
+
+**Phase:** Phase 23, Phase 24.
+
+---
+
+## Cross-phase summary
+
+| Phase | Pitfalls addressed |
+|---|---|
+| Phase 22 (digest drift) | 8, 9, 11 |
+| Phase 23 (image attestations) | 1, 2, 3, 4, 5, 10, 12, 13 |
+| Phase 24 (blob signing) | 1, 2, 3, 4, 12, 13 |
+| Phase 25 (reproducibility) | 6, 7 |
