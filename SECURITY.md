@@ -117,11 +117,46 @@ before pulling a binary or image.
   but blindjoin does not publish a reproducible-build recipe that an
   independent rebuilder can use to certify the official archive matches
   what the source tree produces.
-- **Base image digest pins are manual.** The `docker/Dockerfile` pins
-  `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`
-  by digest as of v1.5, but bumping these digests requires a maintainer
-  to verify the new digest against a clean `docker pull` on a clean
-  runner. There is no automated drift check.
+- **~~Base image digest pins are manual.~~** **Closed in v1.6** — see [Base-image digests (v1.6 onward)](#base-image-digests-v16-onward).
+
+### Base-image digests (v1.6 onward)
+
+blindjoin's `docker/Dockerfile` derives from two upstream base images:
+`debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. As
+of v1.6 (Phase 22), both are pinned by digest in
+[`docker/digests.txt`](docker/digests.txt) — the canonical manifest — and
+every tagged release build passes those digests to `docker buildx build
+--build-arg DEBIAN_REF=… --build-arg CARGO_CHEF_REF=…` automatically via
+[`.github/actions/read-base-digests/`](.github/actions/read-base-digests/).
+
+**`docker/digests.txt` is the canonical record of which upstream base
+images each release was built from.** A release tagged `vX.Y.Z` was built
+against the digests recorded at the same commit. An auditor reproducing
+the build SHOULD use the same digest values.
+
+**The manifest is bumped only by human-reviewed PR.** Both
+`docker/digests.txt` and the parser action are listed in
+[`.github/CODEOWNERS`](.github/CODEOWNERS); branch protection on `main`
+requires maintainer approval on any PR touching either path.
+**Do not auto-merge digest bumps** — auto-merging is the threat model
+this gate exists to close. A compromised upstream base image accepted
+via auto-merge would leak into the next release.
+
+**Drift detection.** A scheduled workflow
+([`.github/workflows/digest-drift-check.yml`](.github/workflows/digest-drift-check.yml))
+runs daily at 09:00 UTC, resolves each pinned tag against the upstream
+registry via `docker buildx imagetools inspect`, and opens a
+`[digest-drift]`-labeled issue if the upstream digest has moved. The
+workflow **opens issues, not PRs**, by design. The issue body includes a
+retag-vs-substantive triage hint and the exact diff command an operator
+can run locally before deciding to accept the new digest.
+
+The workflow is idempotent — re-running it while a drift issue is open
+does not create a duplicate (the search is keyed on the upstream digest
+hex, so two different drifts of the same tag produce two different
+issues). The workflow can be fired manually via `workflow_dispatch` from
+the Actions tab; this is the recommended rehearsal path before pulling
+any digest bump.
 
 ### v1.6 supply-chain plan
 
@@ -136,8 +171,7 @@ The next milestone is expected to close the unsigned-build gap:
 - **Reproducible-build instructions** for the release archive,
   documenting the exact toolchain version, target triple, and build
   command, so an independent rebuilder can compare bytes.
-- **Automated base-image digest drift check** so a stale digest in
-  `docker/Dockerfile` fails CI rather than silently sticking.
+- **~~Automated base-image digest drift check~~** ✓ Shipped in Phase 22 — see [Base-image digests (v1.6 onward)](#base-image-digests-v16-onward).
 
 Until those land, **treat the SHA-256 checksum + the GitHub Release
 provenance as the only assurance the archive came from this project**.
