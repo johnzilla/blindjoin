@@ -62,7 +62,7 @@ Filled by gsd-roadmapper on 2026-06-01 (ROADMAP.md approval). Coverage: **14/14 
 
 | REQ-ID | Phase | Plan(s) |
 |---|---|---|
-| DRIFT-01 | Phase 22 — Base-Image Digest Drift Detection | TBD |
+| DRIFT-01 | Phase 22 — Base-Image Digest Drift Detection | 22-01 (canonical manifest + CODEOWNERS), 22-02 (composite parser action) — in progress |
 | DRIFT-02 | Phase 22 — Base-Image Digest Drift Detection | TBD |
 | DRIFT-03 | Phase 22 — Base-Image Digest Drift Detection | TBD |
 | ATTEST-01 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |

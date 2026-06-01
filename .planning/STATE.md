@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-01T21:20:34.556Z"
+last_updated: "2026-06-01T21:25:40.567Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -18,9 +18,9 @@ progress:
 ## Current Position
 
 Phase: 22 (base-image-digest-drift-detection) — EXECUTING
-Plan: 2 of 6
-Status: Ready to execute
-Last activity: 2026-06-01
+Plan: 3 of 6
+Status: Ready to execute (Plan 22-02 shipped commit `d184845`)
+Last activity: 2026-06-01 — completed 22-02-PLAN.md (read-base-digests composite action)
 
 ## Project Reference
 
@@ -103,9 +103,20 @@ v1.6 roadmap-level decisions (2026-06-01):
 - **`--certificate-identity-regexp` over `--certificate-identity`** (Pitfall 1) — exact identity binding breaks on every new tag. Regex bound to the workflow file + tag namespace survives across releases.
 - **PGP path alongside cosign (SIGN-03), not replacing it** — cosign is the primary path (consistent with image signing); PGP is the redundant non-OIDC alternative for operators who can't reach Sigstore Fulcio/Rekor at verification time.
 
+v1.6 Phase 22 plan decisions:
+
+- **Plan 22-02: Inline the auditor-grepable trailer per error path** (not via a `POLICY_REF` shell variable) — the acceptance criterion `grep -c 'Refusing to build without a valid manifest' >= 4` counts FILE LINES, not runtime expansions. Inlining the literal trailer in each of the 4 error echos puts the auditor-grep property at the file level as well as the runtime-log level. Final count: 7 matching lines in `.github/actions/read-base-digests/action.yml`.
+
 ## Performance Metrics
 
-v1.5 per-phase metrics live in `.planning/milestones/v1.5-ROADMAP.md`. Cumulative cross-milestone trends live in `.planning/RETROSPECTIVE.md`. Will repopulate as v1.6 phases ship.
+v1.5 per-phase metrics live in `.planning/milestones/v1.5-ROADMAP.md`. Cumulative cross-milestone trends live in `.planning/RETROSPECTIVE.md`.
+
+v1.6 Phase 22:
+
+| Plan | Name | Duration | Tasks | Files |
+|------|------|----------|-------|-------|
+| 22-01 | docker/digests.txt canonical manifest | (see Plan 22-01 SUMMARY) | — | 1 |
+| 22-02 | read-base-digests composite action | ~5 min | 1 | 1 |
 
 ## Operator Next Steps
 
