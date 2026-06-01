@@ -71,7 +71,7 @@
 
 ### 📋 v1.6 Supply-Chain Attestation (Phases 22-25) — IN PROGRESS
 
-- [ ] **Phase 22: Base-Image Digest Drift Detection** — Commit a canonical digest manifest and a scheduled drift-check workflow that opens issues (not PRs) on drift, with release builds reading digests from the manifest.
+- [x] **Phase 22: Base-Image Digest Drift Detection** — Commit a canonical digest manifest and a scheduled drift-check workflow that opens issues (not PRs) on drift, with release builds reading digests from the manifest. (completed 2026-06-01)
 - [ ] **Phase 23: cosign Image Attestations + SLSA Provenance + SBOM** — Every ghcr.io image is signed via OIDC keyless flow with SLSA v1.0 provenance, an SPDX SBOM attestation, and a downloadable cosign `.bundle`.
 - [ ] **Phase 24: Release Tarball Signing (cosign + SLSA + PGP)** — Every release tarball ships a cosign signature, SLSA provenance, and a detached PGP signature as a non-OIDC alternative verification path.
 - [ ] **Phase 25: Reproducible-Build Recipe + Scheduled Verifier + Registry** — Publish a reproducible-build recipe, run an `ubuntu-24.04`-pinned monthly verifier that asserts byte-equality and opens issues on drift, and register with reproducible-builds.org.
@@ -93,7 +93,7 @@
 - [x] 22-03-PLAN.md — Wire `release.yml` + `docker.yml` to consume the composite action; thread `DEBIAN_REF` + `CARGO_CHEF_REF` build-args from manifest (DRIFT-03)
 - [x] 22-04-PLAN.md — Create `.github/workflows/digest-drift-check.yml` scheduled workflow with Pitfall 9 idempotency + `docker buildx imagetools inspect` resolution (DRIFT-02)
 - [x] 22-05-PLAN.md — Update `SECURITY.md` §Supply-chain status + add `CONTRIBUTING.md` §Bumping base-image digests (D-05 prose half of the gate)
-- [ ] 22-06-PLAN.md — Human-UAT: branch-protection toggle + fresh-machine rehearsal of ROADMAP SC#1-4
+- [x] 22-06-PLAN.md — Human-UAT: branch-protection toggle + fresh-machine rehearsal of ROADMAP SC#1-4
 
 ### Phase 23: cosign Image Attestations + SLSA Provenance + SBOM
 **Goal**: Every `ghcr.io/<owner>/blindjoin-{coordinator,client,liquidity-bot}:X.Y.Z` image carries a cryptographically verifiable binding to the maintainer's GitHub Actions OIDC identity, the source commit it was built from, and a machine-readable SBOM — all reachable in the registry without maintainer key custody.
@@ -152,7 +152,7 @@
 | 19. Multi-Script Signing Finish | v1.5 | 2/2 | Complete | 2026-05-31 |
 | 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete | 2026-05-31 |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 2/2 | Complete | 2026-05-31 |
-| 22. Base-Image Digest Drift Detection | v1.6 | 5/6 | In Progress|  |
+| 22. Base-Image Digest Drift Detection | v1.6 | 6/6 | Complete    | 2026-06-01 |
 | 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 0/? | Not started | — |
 | 24. Release Tarball Signing (cosign + SLSA + PGP) | v1.6 | 0/? | Not started | — |
 | 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/? | Not started | — |
