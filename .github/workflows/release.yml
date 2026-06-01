@@ -16,6 +16,14 @@ env:
 on:
   push:
     tags: ['v*']
+  # workflow_dispatch enables rehearsal of the check job (release-smoke
+  # gate under BLINDJOIN_REQUIRE_BITCOIND=1 via the composite
+  # install-bitcoind action) without cutting a tag or publishing
+  # artifacts. Trigger from the Actions tab on any branch; the `build`
+  # job below is gated on `refs/tags/*` so a dispatch run runs check
+  # only and stops short of uploading to GitHub Releases. See
+  # .planning/quick/260531-ubf-*/SUMMARY.md for the rehearsal procedure.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -53,6 +61,9 @@ jobs:
     name: Build linux-amd64
     needs: check
     runs-on: ubuntu-latest
+    # Publish gate: only run on a real tag push. workflow_dispatch runs
+    # check-only (the rehearsal path) and never uploads release artifacts.
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

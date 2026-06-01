@@ -16,6 +16,14 @@ env:
 on:
   push:
     tags: ['v*']
+  # workflow_dispatch enables rehearsal of the check job (release-smoke
+  # gate under BLINDJOIN_REQUIRE_BITCOIND=1 via the composite
+  # install-bitcoind action) without cutting a tag or pushing images.
+  # Trigger from the Actions tab on any branch; the `docker` matrix job
+  # below is gated on `refs/tags/*` so a dispatch run runs check only
+  # and stops short of pushing to ghcr.io. See
+  # .planning/quick/260531-ubf-*/SUMMARY.md for the rehearsal procedure.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -47,6 +55,9 @@ jobs:
     name: Docker ${{ matrix.image }}
     needs: check
     runs-on: ubuntu-latest
+    # Publish gate: only run on a real tag push. workflow_dispatch runs
+    # check-only (the rehearsal path) and never pushes images to ghcr.io.
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: read
       packages: write
