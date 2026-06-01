@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
 status: Awaiting next milestone
-last_updated: "2026-06-01T00:41:15.816Z"
-last_activity: 2026-06-01 — Milestone v1.5 completed and archived
+last_updated: "2026-06-01T01:30:00.000Z"
+last_activity: 2026-06-01 — Completed quick task 260531-thw: v1.5 release-readiness P0s (SECURITY.md, CHANGELOG.md, BACKLOG prune, CI release-smoke, Dockerfile pins)
 progress:
   total_phases: 3
   completed_phases: 3
@@ -20,7 +20,7 @@ progress:
 Phase: Milestone v1.5 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-01 — Milestone v1.5 completed and archived
+Last activity: 2026-06-01 — Completed quick task 260531-thw: v1.5 release-readiness P0s (SECURITY.md, CHANGELOG.md, BACKLOG prune, CI release-smoke, Dockerfile pins)
 
 ## Project Reference
 
@@ -38,6 +38,12 @@ Start the next milestone with `/gsd:new-milestone` (questioning → research →
 ## Blockers
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260531-thw | v1.5 release-readiness P0s: SECURITY.md + CHANGELOG.md, BACKLOG prune, CI release-smoke, Dockerfile digest pins | 2026-06-01 | 578a903 | [260531-thw-v1-5-release-readiness-p0s-security-md-c](./quick/260531-thw-v1-5-release-readiness-p0s-security-md-c/) |
 
 ## Deferred Items
 
