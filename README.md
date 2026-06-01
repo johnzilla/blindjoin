@@ -20,6 +20,8 @@ As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of
 
 ## Documentation
 
+- **[Security policy](SECURITY.md)** — how to report a vulnerability (`johnturner@gmail.com`), supported versions, audit-readiness status, and the known supply-chain gaps at v1.5 (unsigned ghcr.io images, sha256-only release archives, no reproducible-build pipeline yet) with the v1.6 closure plan. Read this first if you're considering running a coordinator in any environment where supply-chain assurance matters.
+- **[Changelog](CHANGELOG.md)** — release notes per milestone (v1.0 → v1.5), Keep-a-Changelog format.
 - **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.
 - **[Protocol specification (draft)](docs/PROTOCOL.md)** — BIP-style normative spec of the coordinator–client wire protocol. Work-in-progress; review and issue feedback welcome.
 - **[Technical design](blindjoin-technical-spec.md)** — architectural background and design rationale.
@@ -280,6 +282,13 @@ blindjoin/
 ```
 
 ## Security Model
+
+**Reporting a vulnerability:** see [SECURITY.md](SECURITY.md) for the
+disclosure policy, contact (`johnturner@gmail.com`), supported-versions
+table, and the known supply-chain gaps + v1.6 closure plan. The section
+below describes the protocol-level guarantees and operator-facing
+hardening; the disclosure surface and the audit-readiness pointer live
+in SECURITY.md.
 
 The coordinator **cannot**:
 - Link inputs to outputs (RSA blind signatures, RFC 9474)

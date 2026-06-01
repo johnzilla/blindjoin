@@ -72,6 +72,10 @@ Milestone tags must follow strict 3-part semver: `vMAJOR.MINOR.PATCH` (e.g. `v1.
 
 **Why:** [.github/workflows/docker.yml](.github/workflows/docker.yml) uses `docker/metadata-action` with `type=semver,pattern={{version}}`, which only matches `vX.Y.Z`. A two-part tag like `v1.3` produces zero image tags, and `docker buildx build --push` then fails with `tag is needed when pushing to registry`. The Docker workflow has silently failed on every two-part tag (`v1.0`, `v1.1`, `v1.3`) and only ever succeeded on `v1.0.0`.
 
+**Before tagging:** add a new `## [X.Y.Z] — YYYY-MM-DD` section to [CHANGELOG.md](CHANGELOG.md) and move any unreleased bullets into it. The CHANGELOG is the user-facing release-notes surface; commit it as part of the milestone close, not after the tag.
+
+**Crate versions in `Cargo.toml` stay at `0.1.0`** by policy — see [SECURITY.md § Release versioning policy](SECURITY.md#release-versioning-policy). The git tag is the canonical release identifier; the four workspace crates are unpublished, so bumping their `version =` lines would be churn with no consumer benefit.
+
 **Tagging a milestone close:**
 
 ```bash
