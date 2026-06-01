@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
-status: planning
-last_updated: "2026-06-01T12:00:00.000Z"
-last_activity: 2026-06-01
+status: "Roadmap approved — awaiting `/gsd:discuss-phase 22`"
+last_updated: "2026-06-01T14:14:34.292Z"
+last_activity: 2026-06-01 — v1.6 ROADMAP.md written, REQUIREMENTS.md Traceability filled (14/14 mapped)
 progress:
   total_phases: 4
   completed_phases: 0
@@ -75,6 +75,7 @@ Full list with rationale lives in `.planning/PROJECT.md` §Carry-Forward Items. 
 The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain green at every phase boundary. v1.4 `mixed_script_e2e_three_clients_broadcast` (1 test) MUST also remain green. These are the rollback safety nets that have held since v1.3 REPAIR-01 forensics and v1.4 INTEG-01 acceptance.
 
 v1.6 adds a new category of cross-phase invariants — supply-chain release-pipeline gates — that get enforced in CI as each phase ships:
+
 - Phase 22 onward: `digest-drift-check.yml` runs daily; a `[digest-drift]` issue is acknowledged within the maintainer review SLA before the next release tag.
 - Phase 23 onward: every ghcr.io image push produces a cosign signature + SLSA provenance + SBOM; absence is a release blocker.
 - Phase 24 onward: every release tarball has a cosign `.bundle` + PGP `.asc` companion; absence is a release blocker.
@@ -95,6 +96,7 @@ Full per-milestone invariant detail in `.planning/milestones/v1.5-ROADMAP.md` an
 v1.5 plan decisions archived to `.planning/milestones/v1.5-phases/{19,20,21}-*/`. Cumulative trends live in `.planning/RETROSPECTIVE.md`.
 
 v1.6 roadmap-level decisions (2026-06-01):
+
 - **`actions/attest-build-provenance` over `slsa-framework/slsa-github-generator`** (Pitfall 5) — simpler matrix-style integration with existing `docker.yml`, no workflow restructure. Locked at roadmap level; Phase 23 PLAN.md must cite this choice.
 - **Digest-drift opens issues, not PRs** (Pitfall 11) — auto-merging digest bumps is the supply-chain risk v1.6 is closing. Human review is the whole point.
 - **Verifier pins `ubuntu-24.04`, NOT `ubuntu-latest`** (Pitfall 7) — `ubuntu-latest` rotation would produce false-positive reproducibility regressions every ~month. Explicit version pin makes the breaking event observable.
