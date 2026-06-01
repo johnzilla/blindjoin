@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-01T21:12:50.894Z"
-last_activity: 2026-06-01 -- Phase 22 planning complete
+last_updated: "2026-06-01T21:20:34.556Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -17,17 +17,17 @@ progress:
 
 ## Current Position
 
-Phase: Roadmap approved (Phases 22-25 defined); ready to discuss Phase 22
-Plan: —
+Phase: 22 (base-image-digest-drift-detection) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-06-01 -- Phase 22 planning complete
+Last activity: 2026-06-01
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-06-01 — v1.6 Current Milestone)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** v1.6 Supply-Chain Attestation — closing the unsigned-build gap (cosign on ghcr images, detached signatures on release tarballs, reproducible-build recipe, automated digest drift check). Roadmap approved with 4 phases (22-25) covering 14 requirements.
+**Current focus:** Phase 22 — base-image-digest-drift-detection
 
 ## Milestone Map
 
