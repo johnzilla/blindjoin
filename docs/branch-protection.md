@@ -1,43 +1,65 @@
-# Enabling Branch Protection for CI Gates
+# Branch Protection on `main`
 
-After merging the CI workflow (`.github/workflows/ci.yml`), configure GitHub branch
-protection to make the status checks required. This is a one-time manual step —
-GitHub does not allow programmatic branch protection from within a workflow run.
+`main` is protected by two GitHub Rulesets. Both are configured in the GitHub
+Settings UI under **Settings → Rules → Rulesets** — GitHub does not allow
+programmatic ruleset configuration from within a workflow run.
 
-## Why This Is Necessary
+## Active rulesets
 
-The `ci.yml` workflow runs `cargo test`, `cargo clippy`, and `cargo audit` on every
-pull request. Without branch protection rules, the checks run but do not block merging.
-Required status checks make the CI gate mandatory.
+### `main` (id `17136873`) — v1.6 CODEOWNERS gate
 
-## Setup Steps
+The Phase 22 supply-chain gate. Targets `~DEFAULT_BRANCH` only.
 
-1. Go to **Settings** → **Branches** in this repository on GitHub.
-2. Under **Branch protection rules**, click **Add rule** (or edit the existing `main` rule).
-3. In the **Branch name pattern** field, enter: `main`
-4. Check **Require status checks to pass before merging**.
-5. Check **Require branches to be up to date before merging**.
-6. In the status check search box, add the following checks (they appear after at least one
-   CI run has completed):
+| Rule | Setting |
+|---|---|
+| `pull_request` | `require_code_owner_review: true`, `required_approving_review_count: 1`, `dismiss_stale_reviews_on_push: true`, `require_last_push_approval: true` |
+| `deletion` | restrict deletion of `main` |
+| `non_fast_forward` | block force pushes |
+| Bypass actors | `RepositoryRole admin (id 5), bypass_mode: always` |
+
+When an outside contributor opens a PR touching [`docker/digests.txt`](../docker/digests.txt)
+or [`.github/actions/read-base-digests/`](../.github/actions/read-base-digests/),
+the [`.github/CODEOWNERS`](../.github/CODEOWNERS) rule requires the maintainer to
+approve before merge. There is no way for the contributor to self-approve.
+
+The admin bypass (`bypass_mode: always`) means the solo maintainer can push
+directly to `main` and self-merge PRs without waiting for code-owner approval.
+This is a deliberate trade-off documented in
+[SECURITY.md §Supply-chain status](../SECURITY.md#supply-chain-status):
+the gate exists to defend against unreviewed outside contributions, not to
+slow the solo maintainer down. If blindjoin gains a second active maintainer,
+the bypass actor should be removed and the gate re-enforced for everyone.
+
+### `main-default` (id `15456374`) — baseline protection
+
+Applies to all branches (`~ALL`). Two rules: `deletion` and `non_fast_forward`.
+Empty bypass list. Just guards against accidental branch deletion and force
+pushes anywhere in the repo.
+
+## CI status checks
+
+`ci.yml` runs `cargo test`, `cargo clippy`, and `cargo audit` on every PR.
+These are **not** currently configured as required status checks in the
+ruleset above — they're advisory. To make them required:
+
+1. Open **Settings → Rules → Rulesets → main (id `17136873`)**
+2. Add a `required_status_checks` rule with these contexts:
    - `cargo test`
    - `cargo clippy`
    - `cargo audit`
-7. Optionally check **Require a pull request before merging** if you want reviews enforced too.
-8. Click **Save changes**.
+3. Status check names come from the `name:` field of each job in
+   `.github/workflows/ci.yml` and only appear in the picker after at least one
+   CI run has completed.
 
-## Status Check Names
+The `check` jobs in `release.yml` and `docker.yml` are separate from these
+PR checks and do not need to be added.
 
-These names come from the `name:` field of each job in `.github/workflows/ci.yml`:
+## Verifying the configuration
 
-| Status Check | CI Job | What It Enforces |
-|---|---|---|
-| `cargo test` | `test` | `cargo test --workspace --lib` must pass |
-| `cargo clippy` | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` must pass (includes integration-test code, so test-scaffolding drift surfaces as CI failure) |
-| `cargo audit` | `audit` | `cargo audit` must exit zero. Accepted residual-risk advisories are declared in [`.cargo/audit.toml`](../.cargo/audit.toml) with a written rationale per ignore. |
+```bash
+gh api repos/johnzilla/blindjoin/rulesets \
+  --jq '.[] | {id, name, enforcement, target}'
 
-## Notes
-
-- Status checks only appear in the GitHub search box after the workflow has run at least once.
-  Open a draft PR to trigger the first run before configuring protection.
-- The `check` jobs in `release.yml` and `docker.yml` are separate from these PR checks
-  and do not need to be added to branch protection rules.
+gh api repos/johnzilla/blindjoin/rulesets/17136873 \
+  --jq '{name, enforcement, bypass_actors, rules: [.rules[] | {type, parameters}]}'
+```

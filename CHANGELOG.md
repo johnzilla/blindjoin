@@ -14,8 +14,38 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
-- v1.6 scoping not yet started. Carry-forward items are listed in
-  [`.planning/PROJECT.md`](.planning/PROJECT.md) § Carry-Forward Items.
+### v1.6 — supply-chain attestation (in progress)
+
+- **Phase 22 — base-image digest drift detection (DRIFT-01/02/03).**
+  - [`docker/digests.txt`](docker/digests.txt) ships as the canonical pin manifest
+    for `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`
+    (one `image:tag@sha256:HEX` per line, regex-validated).
+  - New composite action [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/)
+    parses the manifest with a fail-fast contract (4+ auditor-grepable
+    `Refusing to build without a valid manifest.` error trailers); emits
+    named `debian_ref` / `cargo_chef_ref` outputs.
+  - [`release.yml`](.github/workflows/release.yml) and
+    [`docker.yml`](.github/workflows/docker.yml) now read the manifest
+    automatically — tagged builds no longer need manual `--build-arg DEBIAN_REF=…`.
+  - New scheduled workflow
+    [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) runs daily
+    (`0 9 * * *` UTC) plus `workflow_dispatch`; resolves upstream digests via
+    `docker buildx imagetools inspect` and opens a `[digest-drift]` GitHub
+    issue when the canonical and upstream digests diverge. Idempotent by
+    upstream digest hex — a second run with the same drift does not open a
+    duplicate.
+  - Governance: new [`.github/CODEOWNERS`](.github/CODEOWNERS) maps both the
+    manifest and the parser action to the maintainer. GitHub Ruleset on `main`
+    (`require_code_owner_review: true`) blocks unreviewed digest bumps for
+    outside contributors. See [docs/branch-protection.md](docs/branch-protection.md)
+    for the full ruleset config and the documented admin-bypass trade-off.
+  - Documented in [SECURITY.md §Supply-chain status](SECURITY.md#supply-chain-status)
+    and [CONTRIBUTING.md §Bumping base-image digests](CONTRIBUTING.md#bumping-base-image-digests).
+
+- Remaining v1.6 phases (cosign image attestations + SLSA + SBOM,
+  release-tarball signing, reproducible-build recipe) are not yet started.
+  See [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md) for the
+  full milestone scope.
 
 ## [1.5.0] — 2026-06-01
 

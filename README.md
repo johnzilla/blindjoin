@@ -217,7 +217,9 @@ The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare 
 
 Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
 
-To enable branch protection, see [docs/branch-protection.md](docs/branch-protection.md).
+**Base-image digest pinning (v1.6 Phase 22):** Both `release.yml` and `docker.yml` read the canonical digest manifest at [`docker/digests.txt`](docker/digests.txt) automatically via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action — no manual `--build-arg` invocation. A daily scheduled workflow [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) resolves the upstream registry digest for each pinned tag and opens a `[digest-drift]` issue (idempotent by upstream digest hex, never auto-merged) when the canonical digest no longer matches upstream. Bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
+
+For branch protection setup, see [docs/branch-protection.md](docs/branch-protection.md).
 
 ## Project Structure
 
@@ -263,19 +265,26 @@ blindjoin/
   docker/            # Docker Compose stack
     docker-compose.yml
     Dockerfile        # Multi-target Dockerfile (coordinator, client, liquidity-bot)
+    digests.txt       # Canonical base-image digest manifest (v1.6 Phase 22) — bumped only via CODEOWNERS-gated PR
     bitcoind/bitcoin.conf
   docs/
     PROTOCOL.md           # BIP-style wire-protocol spec (draft; Milestone 1)
-    branch-protection.md  # GitHub branch protection setup guide
+    branch-protection.md  # GitHub Rulesets setup + CODEOWNERS gate
   tests/
     integration/     # End-to-end CoinJoin round tests
       mod.rs         # Shared: require_bitcoind!() macro, BitcoindGuard RAII, bootstrap_regtest_bitcoind()
   .cargo/
     audit.toml       # Declared residual risks (each ignore documented inline)
-  .github/workflows/
-    ci.yml           # PR-triggered test, clippy --all-targets, audit gates + pinned-bitcoind install
-    release.yml      # Cross-compiled binary releases (gated on test+clippy)
-    docker.yml       # Multi-arch Docker image publishing (gated on test+clippy)
+  .github/
+    CODEOWNERS       # Maps docker/digests.txt + .github/actions/read-base-digests/** to maintainer (Phase 22)
+    actions/
+      read-base-digests/  # Composite action: parses docker/digests.txt with fail-fast regex contract (Phase 22)
+      install-bitcoind/   # Composite action: pinned bitcoind install with PGP verification
+    workflows/
+      ci.yml                 # PR-triggered test, clippy --all-targets, audit gates + pinned-bitcoind install
+      release.yml            # Cross-compiled binary releases (gated on test+clippy; reads docker/digests.txt)
+      docker.yml             # Multi-arch Docker image publishing (gated on test+clippy; reads docker/digests.txt)
+      digest-drift-check.yml # Daily upstream digest drift check (v1.6 Phase 22), opens issue on drift
   .bitcoind-version  # Pinned Bitcoin Core version used by CI's integration test job
   CONTRIBUTING.md    # Local prerequisites + how to run integration tests
   TODO.md            # Open and recently-resolved tech-debt items
@@ -307,7 +316,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 60/min, writes 30/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. All four knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP), so the coordinator deliberately uses `GlobalKeyExtractor`; sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
 
-**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. The `cargo audit` CI step blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. The `cargo clippy --all-targets` CI step blocks merge on any lint, including in integration-test code. As of v1.3 Phase 9, CI's `bitcoind` install verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, pulled from a SHA-pinned `guix.sigs` commit) before extracting it — the install will fail closed on a substituted binary or a stale key.
+**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. The `cargo audit` CI step blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. The `cargo clippy --all-targets` CI step blocks merge on any lint, including in integration-test code. As of v1.3 Phase 9, CI's `bitcoind` install verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, pulled from a SHA-pinned `guix.sigs` commit) before extracting it — the install will fail closed on a substituted binary or a stale key. **As of v1.6 Phase 22**, base-image digests for `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1` are pinned in [`docker/digests.txt`](docker/digests.txt) — release and Docker builds read them automatically through a composite action with a fail-fast regex contract, and a daily `digest-drift-check.yml` workflow opens an idempotent `[digest-drift]` issue on upstream movement so bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
 **External audit charter (v1.5):** [docs/AUDIT-CHARTER.md](docs/AUDIT-CHARTER.md) enumerates in-scope modules with file:symbol refs, threat models per module, the 9 cross-shape rejection properties locked at v1.4, the v=2 OwnershipProof PSBT handling boundary, the RSA SecretKey zeroization window (RoundSecretKey + bounded lifetime per AUDIT-03), out-of-scope dependencies, residual risks accepted with rationale, and a glossary mapping project terms to plain audit language.
 
