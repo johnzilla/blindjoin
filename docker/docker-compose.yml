@@ -12,7 +12,22 @@
 
 services:
   bitcoind:
-    image: bitcoin/bitcoin:27
+    # Bitcoin Core 30.x — matches the .bitcoind-version pin used in CI
+    # (currently 30.2). Bumped from 27 → 30 as part of v1.5 release-readiness
+    # (P0-2/3); keeps the dev-compose stack and the CI-integration-tested
+    # version on the same major line.
+    #
+    # NOTE on signing (v1.5 supply-chain status — see SECURITY.md):
+    #   The bitcoin/bitcoin image on Docker Hub is not maintainer-signed;
+    #   independent verifiers should re-build bitcoind from source against
+    #   bitcoin-core/guix.sigs (the same trust root the ci.yml install
+    #   step uses to PGP-verify the release tarball).
+    #
+    # To pin by digest for a release build:
+    #   docker pull bitcoin/bitcoin:30
+    #   docker inspect --format='{{index .RepoDigests 0}}' bitcoin/bitcoin:30
+    # then replace the line below with: image: bitcoin/bitcoin@sha256:<HEX>
+    image: bitcoin/bitcoin:30
     # bitcoin.conf is mounted to the datadir inside the container.
     # The image entrypoint reads /home/bitcoin/.bitcoin/bitcoin.conf automatically.
     volumes:
