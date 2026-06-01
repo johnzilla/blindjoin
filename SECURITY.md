@@ -144,6 +144,43 @@ provenance as the only assurance the archive came from this project**.
 For higher assurance, build from source on a known-good toolchain and
 verify against the committed `Cargo.lock`.
 
+## Release versioning policy
+
+**The canonical release identifier is the git tag** (e.g. `v1.5.0`)
+plus the corresponding GitHub Release. That tag drives the
+[`release.yml`](.github/workflows/release.yml) workflow — which
+produces `blindjoin-linux-amd64.tar.gz` + `.sha256` companion — and
+the [`docker.yml`](.github/workflows/docker.yml) workflow, which
+produces `ghcr.io/<owner>/blindjoin-coordinator:X.Y.Z` images. When
+talking about "what version is running", that's what to look at.
+
+**Workspace crate `version` fields are intentionally pinned at `0.1.0`**
+and do not track milestone releases. There are four workspace crates —
+`coordinator`, `client`, `liquidity-bot`, `shared` — and none of them
+are published to crates.io. The `version` field in their `Cargo.toml`
+is effectively private and serves only as the
+[Cargo dependency graph identifier](https://doc.rust-lang.org/cargo/reference/manifest.html#the-version-field).
+There is no consumer who reads `0.1.0` and acts on it; bumping it at
+every milestone close would be churn with zero downstream benefit.
+
+The binaries currently expose no `--version` flag (see the
+`coordinator-smoke` job comment in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)),
+so `CARGO_PKG_VERSION` is never user-visible. If a future milestone
+adds `--version` flags, the policy is revisited: the binaries should
+report the **git tag**, derived at build time via `GIT_DESCRIBE` or an
+equivalent build script — not the static `Cargo.toml` value. This
+keeps the displayed version honest under all build paths (including
+ad-hoc local builds where there's no tag at all).
+
+**TL;DR for contributors:**
+
+- Tag releases as `v1.X.0` per [`CONTRIBUTING.md` § Tagging releases](CONTRIBUTING.md#tagging-releases).
+- Add release notes to [`CHANGELOG.md`](CHANGELOG.md) before tagging.
+- **Do not** bump the four workspace `version =` lines as part of a milestone close.
+- If you do need to bump a crate `version` (e.g., preparing one for
+  crates.io publication), that's a separate decision that gets its own
+  discussion.
+
 ## Where to find more
 
 - **Threat model and residual risks**: [`docs/AUDIT-CHARTER.md`](docs/AUDIT-CHARTER.md)

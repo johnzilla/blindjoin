@@ -1,3 +1,11 @@
+# blindjoin workspace
+#
+# Release versioning policy: the canonical release identifier is the git
+# tag (vX.Y.Z), NOT the per-crate `version =` field. The four workspace
+# crates are unpublished, so their `version =` fields stay at 0.1.0 by
+# policy. See SECURITY.md § Release versioning policy for the rationale
+# and the revisit condition (if `--version` CLI flags are added later).
+
 [workspace]
 members = ["coordinator", "client", "shared", "liquidity-bot"]
 resolver = "2"
