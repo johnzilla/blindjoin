@@ -206,9 +206,23 @@ destruction, ban-list updates).
 
 The coordinator MUST destroy the round's ephemeral RSA private key after
 broadcast (or after a `FullAbort` blame outcome). The reference
-implementation uses `zeroize::Zeroize` on the serialized DER form of the
-key held in round state, and `Drop` implementations on round-state types
-that contain non-`Zeroize`-derivable collections (e.g. `HashMap`).
+implementation expresses this requirement as a Rust type signature:
+the parsed RSA blind signer is held on the round state as
+`RoundStateInner.rsa_signer: Option<RsaBlindSigner>` (`Some(_)` during an
+active round, `None` when Idle). On any FSM transition into
+`Phase::Idle`, `RoundState::transition_to` sets `self.inner = None` at
+the SOLE site (a single grep-verifiable chokepoint), which drops
+`Option<RsaBlindSigner>` → drops `RsaBlindSigner` → drops the
+`RoundSecretKey(BjSecretKey)` newtype → drops `BjSecretKey` → drops
+`rsa::RsaPrivateKey`, whose unconditional `impl Drop` zeroizes the
+secret exponent, prime factors, and CRT-precomputed values via
+the `zeroize` crate (`rsa` declares `impl ZeroizeOnDrop for
+RsaPrivateKey`). The serialized DER form held alongside the parsed
+signer is zeroized by an explicit `zeroize::Zeroize` call inside
+`Drop for RoundStateInner`, which also clears the registered-input
+map, partial-signature collection, and blinded-token cache. The full
+threat-model treatment, drop-chain diagram, and verification tests are
+documented in [docs/AUDIT-CHARTER.md §5](AUDIT-CHARTER.md#rsa-secret-key-zeroization-window).
 
 ### Forward compatibility
 

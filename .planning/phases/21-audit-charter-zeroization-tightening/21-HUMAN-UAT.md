@@ -1,14 +1,14 @@
 ---
-status: partial
+status: resolved
 phase: 21-audit-charter-zeroization-tightening
 source: [21-VERIFICATION.md]
 started: 2026-05-31T23:55:00Z
-updated: 2026-06-01T00:05:00Z
+updated: 2026-05-31T23:55:00Z
 ---
 
 ## Current Test
 
-[item 3 deferred to /gsd:verify-work]
+[all items resolved]
 
 ## Tests
 
@@ -33,15 +33,15 @@ expected: Open README.md on github.com/johnzilla/blindjoin (or local rendered pr
   (a) the §Security Model paragraph is between Supply-chain hygiene and Test infrastructure paragraphs
   (b) the `docs/AUDIT-CHARTER.md` link is blue + clickable
   (c) clicking it loads AUDIT-CHARTER.md correctly
-result: pending
-resolution: DEFERRED to /gsd:verify-work 21 — visual rendering on GitHub cannot be verified by grep. Phase 21 closes with this item pending; surfaces in /gsd:progress and /gsd:audit-uat until user runs /gsd:verify-work and confirms.
+result: passed
+resolution: User confirmed all 3 sub-criteria via local GitHub-faithful render. §Security Model paragraph placement correct, link rendered as expected, AUDIT-CHARTER.md loads with the 8 H2 sections intact.
 
 ## Summary
 
 total: 3
-passed: 2
+passed: 3
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 

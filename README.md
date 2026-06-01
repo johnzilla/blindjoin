@@ -14,7 +14,7 @@ MIT licensed. No fees. No company. No terms of service.
 6. Coordinator broadcasts the final CoinJoin transaction
 7. Non-signers are detected, banned, and the round restarts with remaining participants
 
-The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses ephemeral RSA keys that are destroyed after broadcast. All round state is zeroed from memory.
+The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses an ephemeral RSA key whose lifetime is bounded by a Rust type signature: `RoundStateInner.rsa_signer: Option<RsaBlindSigner>` is set to `None` at the SOLE FSM chokepoint `RoundState::transition_to(Phase::Idle)` (see [docs/AUDIT-CHARTER.md §5](docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window)), which triggers the transitive `rsa::RsaPrivateKey` `ZeroizeOnDrop` chain. The remainder of the round state — registered inputs, partial signatures, blinded tokens — is zeroized from memory by the same Drop sequence.
 
 As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of P2WPKH + P2TR + P2SH-P2WPKH inputs) under an operator-configurable allowlist. The script type of every input is derived from on-chain `script_pubkey` and cross-checked against the client's declaration — a malicious client cannot bypass the per-script-type sighash verification by lying about which type its input is.
 
@@ -23,6 +23,7 @@ As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of
 - **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.
 - **[Protocol specification (draft)](docs/PROTOCOL.md)** — BIP-style normative spec of the coordinator–client wire protocol. Work-in-progress; review and issue feedback welcome.
 - **[Technical design](blindjoin-technical-spec.md)** — architectural background and design rationale.
+- **[External audit charter](docs/AUDIT-CHARTER.md)** — in-scope modules with file:symbol refs, threat models per module, 9 cross-shape rejection properties, v=2 PSBT handling boundary, RSA SecretKey zeroization window, out-of-scope dependencies, residual risks accepted with rationale, and glossary mapping project terms to plain audit language. Read this first if you're auditing the codebase.
 - **[Contributing](CONTRIBUTING.md)** — local prerequisites + how to run the integration test suite (where output lands, how to interpret pass/fail/skip/ignored).
 
 ## Quick Start (Docker)
@@ -283,7 +284,7 @@ blindjoin/
 The coordinator **cannot**:
 - Link inputs to outputs (RSA blind signatures, RFC 9474)
 - Steal funds (participants sign their own inputs)
-- Reconstruct round data after completion (all state zeroed from memory via zeroize)
+- Reconstruct round data after completion (round-end zeroization is structurally bounded — see [docs/AUDIT-CHARTER.md §5](docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window))
 - Correlate input and output registration by Tor circuit (client uses isolated circuits)
 
 The coordinator **can**:

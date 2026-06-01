@@ -2,6 +2,52 @@
 
 ## Resolved 2026-05-31
 
+- [x] **v1.5 Audit-Readiness & Multi-Script Finish — SHIPPED.** 3 phases
+  (19, 20, 21), 5 plans. Phase 19 (BIP322-05/06/07) shipped production
+  `sign` bodies for P2TR (BIP-341 Schnorr keypath via
+  `sign_schnorr_no_aux_rand`) and P2SH-P2WPKH (BIP-143 over unwrapped
+  P2WPKH redeem) in `shared::bip322`, deleted `sign_simple_test_only`
+  and per-script `sign_for_tests` helpers, migrated all callsites to
+  the production `sign_simple` dispatcher; `shared::bip322` public
+  surface is now exactly 9 symbols with V1.4-CRIT-01 dispatcher-only
+  load-bearing at the type level. Byte-equality with
+  `BdkClientWallet::sign_bip322` proven empirically in
+  `client/tests/wallet_sign_roundtrip.rs`. Phase 20 (FEE-01/02/03)
+  shipped a per-script BIP-141 witness-weight table in
+  `coordinator/src/bitcoin/tx.rs` (P2WPKH 68/31, P2TR 58/43
+  round-UP, P2SH-P2WPKH 91/32) replacing the legacy P2WPKH-only
+  `INPUT_WEIGHT_VBYTES`/`OUTPUT_WEIGHT_VBYTES`; `ParticipantInput.script_type`
+  plumbed coordinator-side from `dispatch_ownership_proof` through
+  `UtxoDetails → RegisteredInput` (CRIT-01 invariant preserved into
+  the fee path); regression test pins v1.4 P2WPKH-only
+  `fee_share == 266` byte-equal. Phase 21 (AUDIT-01/02/03) readied
+  the codebase for external audit: `docs/AUDIT-CHARTER.md` (574 LOC,
+  8 H2 sections including in-scope modules with file:symbol refs,
+  threat models, 9 cross-shape rejection properties, v=2 PSBT handling,
+  RSA SecretKey zeroization window in bounded form, out-of-scope,
+  residual risks in 3 sub-buckets, glossary); `.cargo/audit.toml`
+  refreshed with charter-anchor refs and a RUSTSEC-2023-0071 rewrite
+  citing the AUDIT-03 bounded-window mitigation (no more "best-effort");
+  `RoundStateInner.rsa_signer: Option<RsaBlindSigner>` tightens the RSA
+  SecretKey lifetime into a Rust type signature with one FSM chokepoint
+  at `state.rs:202` inside `transition_to(Phase::Idle)`. Code review
+  surfaced 1 critical (`let _ =` on FSM transitions); accepted as a
+  defense-in-depth gap with explicit closure-trigger language in
+  charter §7. All cross-phase invariants green at v1.5 close: v1.3
+  `full_round::*` 8/8, v1.4 `mixed_script_e2e_three_clients_broadcast`
+  1/1, Phase 20 `fee_share` 2/2, clippy clean,
+  `cargo audit` 0 vulns/0 warnings. v1.6+ carries:
+  CARRY-TOR-UAT (Phase 8 HUMAN-UAT item 3), CARRY-REPAIR-01-PR (v1.4
+  cut PR moment), B-03 (dynamic fee estimation, pre-mainnet),
+  TEST-EXT-01/02/03 (cross-impl differential fixtures + on-chain
+  anchor test + v1.3↔v1.4 backwards-compat CI matrix), P2WSH
+  multisig BIP-322, Wasabi 2.0.3-style mixed output scripts, and
+  AUDIT-03 `let _ =` closure (per charter §7 Residual Risks:
+  Protocol-level). Full per-phase summary in
+  `.planning/phases/19-multi-script-signing-finish/`,
+  `.planning/phases/20-mixed-round-fee-accuracy/`, and
+  `.planning/phases/21-audit-charter-zeroization-tightening/`.
+
 - [x] **B-02: BIP-322 multi-script support — SHIPPED as v1.4 milestone.**
   Coordinator accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs under an
   operator-configurable `[bip]` allowlist; advertises `supported_script_types`

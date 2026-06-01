@@ -16,7 +16,7 @@ Coordinators are discoverable via PKARR DHT, and all production traffic runs ove
 2. Participants unblind the token and register their output on a fresh Tor circuit.
 3. The coordinator sees inputs and outputs but cannot link them because of the blind signature scheme.
 
-Each round uses ephemeral RSA keys that are destroyed after the round completes, and all round state is zeroized from memory.
+Each round uses an ephemeral RSA key whose lifetime is bounded by a Rust type signature (`Option<RsaBlindSigner>` on the round state, set to `None` at one FSM chokepoint — see [docs/AUDIT-CHARTER.md §5](docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window)) that triggers the `rsa` crate's `ZeroizeOnDrop` chain. The remainder of the round state is zeroized from memory by the same Drop sequence.
 
 </details>
 
