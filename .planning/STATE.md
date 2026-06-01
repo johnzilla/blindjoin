@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-01T21:25:40.567Z"
+last_updated: "2026-06-01T21:32:00.000Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -18,9 +18,9 @@ progress:
 ## Current Position
 
 Phase: 22 (base-image-digest-drift-detection) — EXECUTING
-Plan: 3 of 6
-Status: Ready to execute (Plan 22-02 shipped commit `d184845`)
-Last activity: 2026-06-01 — completed 22-02-PLAN.md (read-base-digests composite action)
+Plan: 4 of 6
+Status: Ready to execute (Plan 22-03 shipped commits `4a0b59f` + `7556c1b`)
+Last activity: 2026-06-01 — completed 22-03-PLAN.md (release.yml + docker.yml composite-action wiring; DRIFT-03 satisfied)
 
 ## Project Reference
 
@@ -106,6 +106,8 @@ v1.6 roadmap-level decisions (2026-06-01):
 v1.6 Phase 22 plan decisions:
 
 - **Plan 22-02: Inline the auditor-grepable trailer per error path** (not via a `POLICY_REF` shell variable) — the acceptance criterion `grep -c 'Refusing to build without a valid manifest' >= 4` counts FILE LINES, not runtime expansions. Inlining the literal trailer in each of the 4 error echos puts the auditor-grep property at the file level as well as the runtime-log level. Final count: 7 matching lines in `.github/actions/read-base-digests/action.yml`.
+- **Plan 22-03: Followed RESEARCH.md §5.1 verbatim — no additional echo step in release.yml** — the orchestrator's `<plan_specifics>` mentioned an optional "Echo canonical digests for audit log" step, but PLAN.md locks the shape to RESEARCH.md §5.1 lines 562-571 which does NOT include such a step, and the composite action already echoes the parsed digests to stdout (action.yml lines 107-109). ROADMAP SC#3 audit-observability is satisfied by the composite action's own audit trail without a redundant echo in the consumer workflow.
+- **Plan 22-03: `build-args:` placed between `labels:` and `cache-from:` in docker/build-push-action with: block** — PATTERNS §3 line 317 locks this insertion point; keeps deterministic-build inputs (tags, labels, build-args) grouped before cache-handling fields, mirroring the existing `tags: |` pipe-multiline shape on the same step.
 
 ## Performance Metrics
 
@@ -117,6 +119,7 @@ v1.6 Phase 22:
 |------|------|----------|-------|-------|
 | 22-01 | docker/digests.txt canonical manifest | (see Plan 22-01 SUMMARY) | — | 1 |
 | 22-02 | read-base-digests composite action | ~5 min | 1 | 1 |
+| 22-03 | release.yml + docker.yml composite-action wiring (DRIFT-03) | ~6 min | 2 | 2 |
 
 ## Operator Next Steps
 

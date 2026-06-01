@@ -34,7 +34,7 @@
 
 - [ ] **DRIFT-01:** `docker/digests.txt` (new file) committed as the canonical digest manifest for `debian:bookworm-slim` + `lukemathwalker/cargo-chef:latest-rust-1`. Format: one `image:tag@sha256:HEX` per line. Bumped only via human-reviewed PR (NOT auto-merged).
 - [ ] **DRIFT-02:** `.github/workflows/digest-drift-check.yml` (new) scheduled workflow runs daily (and on workflow_dispatch). Reads `docker/digests.txt`, resolves the same tags fresh via `docker buildx imagetools inspect`, opens an issue (titled `[digest-drift] <image>:<tag> moved to sha256:<HEX>`) on drift. Idempotent: skips issue creation if an open issue with the same title already exists.
-- [ ] **DRIFT-03:** `release.yml` + `docker.yml` updated to read `docker/digests.txt` and pass `--build-arg DEBIAN_REF=...` + `--build-arg CARGO_CHEF_REF=...` automatically from the manifest values. Means every tagged release build is built from the canonical digest list with no manual `--build-arg` invocation required.
+- [x] **DRIFT-03:** `release.yml` + `docker.yml` updated to read `docker/digests.txt` and pass `--build-arg DEBIAN_REF=...` + `--build-arg CARGO_CHEF_REF=...` automatically from the manifest values. Means every tagged release build is built from the canonical digest list with no manual `--build-arg` invocation required.
 
 ---
 
@@ -64,7 +64,7 @@ Filled by gsd-roadmapper on 2026-06-01 (ROADMAP.md approval). Coverage: **14/14 
 |---|---|---|
 | DRIFT-01 | Phase 22 — Base-Image Digest Drift Detection | 22-01 (canonical manifest + CODEOWNERS), 22-02 (composite parser action) — in progress |
 | DRIFT-02 | Phase 22 — Base-Image Digest Drift Detection | TBD |
-| DRIFT-03 | Phase 22 — Base-Image Digest Drift Detection | TBD |
+| DRIFT-03 | Phase 22 — Base-Image Digest Drift Detection | 22-03 (release.yml + docker.yml composite-action wiring + build-args threading) — shipped 2026-06-01 (commits 4a0b59f + 7556c1b) |
 | ATTEST-01 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
 | ATTEST-02 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
 | ATTEST-03 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
