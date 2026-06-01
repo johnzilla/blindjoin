@@ -1,6 +1,6 @@
 # Milestone v1.6 — Supply-Chain Attestation
 
-**Goal:** Close the v1.5 unsigned-build supply-chain gap explicitly committed to in [SECURITY.md § Supply-chain status > v1.6 supply-chain plan](../SECURITY.md). When this milestone ships, anyone pulling a blindjoin release artifact can cryptographically attribute it to the maintainer + the source tree it was built from, AND an independent rebuilder can confirm bit-for-bit reproducibility of the binary tarball.
+**Goal:** Close the v1.5 unsigned-build supply-chain gap explicitly committed to in [SECURITY.md § Supply-chain status](../SECURITY.md). When this milestone ships, anyone pulling a blindjoin release artifact can cryptographically attribute it to the maintainer + the source tree it was built from, AND an independent rebuilder can confirm bit-for-bit reproducibility of the binary tarball.
 
 **Source-of-truth design contract:** `SECURITY.md § Supply-chain status` (already public).
 **Research:** [.planning/research/SUMMARY.md](research/SUMMARY.md) (with STACK / FEATURES / ARCHITECTURE / PITFALLS).
@@ -58,21 +58,21 @@
 
 ## Traceability
 
-(Empty — filled by gsd-roadmapper when ROADMAP.md is approved.)
+Filled by gsd-roadmapper on 2026-06-01 (ROADMAP.md approval). Coverage: **14/14 v1 requirements mapped** (no orphans, no overlap). Phase numbering continues from v1.5 Phase 21 → v1.6 starts at Phase 22.
 
 | REQ-ID | Phase | Plan(s) |
 |---|---|---|
-| ATTEST-01 | — | — |
-| ATTEST-02 | — | — |
-| ATTEST-03 | — | — |
-| ATTEST-04 | — | — |
-| SIGN-01 | — | — |
-| SIGN-02 | — | — |
-| SIGN-03 | — | — |
-| REPRO-01 | — | — |
-| REPRO-02 | — | — |
-| REPRO-03 | — | — |
-| REPRO-04 | — | — |
-| DRIFT-01 | — | — |
-| DRIFT-02 | — | — |
-| DRIFT-03 | — | — |
+| DRIFT-01 | Phase 22 — Base-Image Digest Drift Detection | TBD |
+| DRIFT-02 | Phase 22 — Base-Image Digest Drift Detection | TBD |
+| DRIFT-03 | Phase 22 — Base-Image Digest Drift Detection | TBD |
+| ATTEST-01 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
+| ATTEST-02 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
+| ATTEST-03 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
+| ATTEST-04 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
+| SIGN-01 | Phase 24 — Release Tarball Signing (cosign + SLSA + PGP) | TBD |
+| SIGN-02 | Phase 24 — Release Tarball Signing (cosign + SLSA + PGP) | TBD |
+| SIGN-03 | Phase 24 — Release Tarball Signing (cosign + SLSA + PGP) | TBD |
+| REPRO-01 | Phase 25 — Reproducible-Build Recipe + Verifier + Registry | TBD |
+| REPRO-02 | Phase 25 — Reproducible-Build Recipe + Verifier + Registry | TBD |
+| REPRO-03 | Phase 25 — Reproducible-Build Recipe + Verifier + Registry | TBD |
+| REPRO-04 | Phase 25 — Reproducible-Build Recipe + Verifier + Registry | TBD |

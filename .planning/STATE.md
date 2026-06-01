@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: planning
-last_updated: "2026-06-01T03:30:01.811Z"
+last_updated: "2026-06-01T12:00:00.000Z"
 last_activity: 2026-06-01
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,23 +17,30 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Roadmap approved (Phases 22-25 defined); ready to discuss Phase 22
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-01 — Milestone v1.6 started
+Status: Roadmap approved — awaiting `/gsd:discuss-phase 22`
+Last activity: 2026-06-01 — v1.6 ROADMAP.md written, REQUIREMENTS.md Traceability filled (14/14 mapped)
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-06-01 — v1.6 Current Milestone)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** v1.6 Supply-Chain Attestation — closing the unsigned-build gap (cosign on ghcr images, detached signatures on release tarballs, reproducible-build recipe, automated digest drift check). Defining requirements.
+**Current focus:** v1.6 Supply-Chain Attestation — closing the unsigned-build gap (cosign on ghcr images, detached signatures on release tarballs, reproducible-build recipe, automated digest drift check). Roadmap approved with 4 phases (22-25) covering 14 requirements.
 
 ## Milestone Map
 
 v1.5 shipped 2026-06-01. Phase artifacts archived to `.planning/milestones/v1.5-phases/`. Full per-phase details in `.planning/milestones/v1.5-ROADMAP.md` and `.planning/milestones/v1.5-REQUIREMENTS.md`. Per-milestone summary in `.planning/MILESTONES.md`.
 
-v1.6 in scoping. Requirements + roadmap being defined; phase artifacts will land under `.planning/phases/` as they're planned.
+v1.6 in progress. Roadmap approved 2026-06-01:
+
+- **Phase 22 — Base-Image Digest Drift Detection** (DRIFT-01, DRIFT-02, DRIFT-03) — canonical `docker/digests.txt` + scheduled drift-check workflow that opens issues (not PRs) per Pitfall 11; release/docker workflows read the manifest automatically.
+- **Phase 23 — cosign Image Attestations + SLSA Provenance + SBOM** (ATTEST-01, ATTEST-02, ATTEST-03, ATTEST-04) — every ghcr.io image signed via OIDC keyless flow with SLSA v1.0 provenance via `actions/attest-build-provenance` (Pitfall 5 choice), SPDX SBOM, and `.bundle` for offline verification.
+- **Phase 24 — Release Tarball Signing (cosign + SLSA + PGP)** (SIGN-01, SIGN-02, SIGN-03) — release tarballs ship cosign blob signature + SLSA provenance + detached PGP signature as a non-OIDC alternative path.
+- **Phase 25 — Reproducible-Build Recipe + Verifier + Registry** (REPRO-01, REPRO-02, REPRO-03, REPRO-04) — `docs/REPRODUCIBLE-BUILD.md` + release.yml determinism env + scheduled `reproducible-verify.yml` pinned to `ubuntu-24.04` (NOT `ubuntu-latest` per Pitfall 7) + reproducible-builds.org registration.
+
+Phase artifacts will land under `.planning/phases/` as they're planned (start with `/gsd:discuss-phase 22`).
 
 ## Blockers
 
@@ -67,6 +74,12 @@ Full list with rationale lives in `.planning/PROJECT.md` §Carry-Forward Items. 
 
 The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain green at every phase boundary. v1.4 `mixed_script_e2e_three_clients_broadcast` (1 test) MUST also remain green. These are the rollback safety nets that have held since v1.3 REPAIR-01 forensics and v1.4 INTEG-01 acceptance.
 
+v1.6 adds a new category of cross-phase invariants — supply-chain release-pipeline gates — that get enforced in CI as each phase ships:
+- Phase 22 onward: `digest-drift-check.yml` runs daily; a `[digest-drift]` issue is acknowledged within the maintainer review SLA before the next release tag.
+- Phase 23 onward: every ghcr.io image push produces a cosign signature + SLSA provenance + SBOM; absence is a release blocker.
+- Phase 24 onward: every release tarball has a cosign `.bundle` + PGP `.asc` companion; absence is a release blocker.
+- Phase 25 onward: monthly `reproducible-verify.yml` runs are green; a `[reproducibility-regression]` issue is investigated within the same monthly cycle.
+
 ### Load-bearing invariants (shipped, must not regress)
 
 - **V1.4-CRIT-01** — `shared::bip322` dispatcher-only public surface (9 symbols exactly). After v1.5 Phase 19 closed the test-only `sign_simple_test_only` escape hatch, this is load-bearing at the type level with no holes.
@@ -79,13 +92,21 @@ Full per-milestone invariant detail in `.planning/milestones/v1.5-ROADMAP.md` an
 
 ## Recent Plan Decisions
 
-v1.5 plan decisions archived to `.planning/milestones/v1.5-phases/{19,20,21}-*/`. Cumulative trends live in `.planning/RETROSPECTIVE.md`. Will repopulate when v1.6 work starts.
+v1.5 plan decisions archived to `.planning/milestones/v1.5-phases/{19,20,21}-*/`. Cumulative trends live in `.planning/RETROSPECTIVE.md`.
+
+v1.6 roadmap-level decisions (2026-06-01):
+- **`actions/attest-build-provenance` over `slsa-framework/slsa-github-generator`** (Pitfall 5) — simpler matrix-style integration with existing `docker.yml`, no workflow restructure. Locked at roadmap level; Phase 23 PLAN.md must cite this choice.
+- **Digest-drift opens issues, not PRs** (Pitfall 11) — auto-merging digest bumps is the supply-chain risk v1.6 is closing. Human review is the whole point.
+- **Verifier pins `ubuntu-24.04`, NOT `ubuntu-latest`** (Pitfall 7) — `ubuntu-latest` rotation would produce false-positive reproducibility regressions every ~month. Explicit version pin makes the breaking event observable.
+- **`--certificate-identity-regexp` over `--certificate-identity`** (Pitfall 1) — exact identity binding breaks on every new tag. Regex bound to the workflow file + tag namespace survives across releases.
+- **PGP path alongside cosign (SIGN-03), not replacing it** — cosign is the primary path (consistent with image signing); PGP is the redundant non-OIDC alternative for operators who can't reach Sigstore Fulcio/Rekor at verification time.
 
 ## Performance Metrics
 
-v1.5 per-phase metrics live in `.planning/milestones/v1.5-ROADMAP.md`. Cumulative cross-milestone trends live in `.planning/RETROSPECTIVE.md`. Will repopulate when v1.6 work starts.
+v1.5 per-phase metrics live in `.planning/milestones/v1.5-ROADMAP.md`. Cumulative cross-milestone trends live in `.planning/RETROSPECTIVE.md`. Will repopulate as v1.6 phases ship.
 
 ## Operator Next Steps
 
-- v1.6 requirements + roadmap being defined via this `/gsd:new-milestone` cycle.
-- After roadmap approval: `/gsd:discuss-phase 22` (first v1.6 phase, continued numbering from v1.5 Phase 21).
+- v1.6 roadmap approved with 4 phases (22-25) covering 14 requirements (14/14 coverage, no orphans).
+- **Next:** `/gsd:discuss-phase 22` (Base-Image Digest Drift Detection — lowest risk, builds digest discipline before signing layers on top).
+- After Phase 22 ships: Phase 23 (cosign image attestations + SLSA + SBOM — the load-bearing piece).
