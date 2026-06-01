@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
 status: Awaiting next milestone
-last_updated: "2026-06-01T01:30:00.000Z"
-last_activity: 2026-06-01 — Completed quick task 260531-thw: v1.5 release-readiness P0s (SECURITY.md, CHANGELOG.md, BACKLOG prune, CI release-smoke, Dockerfile pins)
+last_updated: "2026-06-01T02:00:00.000Z"
+last_activity: 2026-06-01 — Completed quick task 260531-ubf: post-release polish (amp cleanup, README/CONTRIBUTING cross-links, crate-version policy, release-smoke rehearsal trigger)
 progress:
   total_phases: 3
   completed_phases: 3
@@ -20,7 +20,7 @@ progress:
 Phase: Milestone v1.5 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-06-01 — Completed quick task 260531-thw: v1.5 release-readiness P0s (SECURITY.md, CHANGELOG.md, BACKLOG prune, CI release-smoke, Dockerfile pins)
+Last activity: 2026-06-01 — Completed quick task 260531-ubf: post-release polish (amp cleanup, README/CONTRIBUTING cross-links, crate-version policy, release-smoke rehearsal trigger)
 
 ## Project Reference
 
@@ -44,6 +44,7 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260531-thw | v1.5 release-readiness P0s: SECURITY.md + CHANGELOG.md, BACKLOG prune, CI release-smoke, Dockerfile digest pins | 2026-06-01 | 578a903 | [260531-thw-v1-5-release-readiness-p0s-security-md-c](./quick/260531-thw-v1-5-release-readiness-p0s-security-md-c/) |
+| 260531-ubf | Post-release polish: amp cleanup, README/CONTRIBUTING cross-links to SECURITY+CHANGELOG, crate-version policy, release-smoke rehearsal trigger | 2026-06-01 | ceca7b4 | [260531-ubf-post-release-readiness-polish-remove-amp](./quick/260531-ubf-post-release-readiness-polish-remove-amp/) |
 
 ## Deferred Items
 
