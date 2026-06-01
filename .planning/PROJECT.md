@@ -23,25 +23,13 @@ PKARR DHT discovery live with `v0.2.0` schema advertising `sst`/`ost`. Docker Co
 CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned, bitcoind cached + PGP-verified, corepc-node feature pin enforced, `bip322-pin-check` enforces the `=0.0.10` pin, `crit-01-grep-check` (coordinator) + `crit-01-client-grep-check` (client) enforce CRIT-01 invariant tokens.
 Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance, real on-chain witness_utxo values in PSBT assembly, multi-script ownership-proof dispatcher with on-chain cross-check.
 
-## Current Milestone: v1.5 Audit-Readiness & Multi-Script Finish
+## Last Milestone: v1.5 Audit-Readiness & Multi-Script Finish — Shipped 2026-06-01
 
-**Goal:** Close the v1.4 follow-throughs (production sign bodies for P2TR + P2SH-P2WPKH, accurate fees for mixed-script rounds) and ready the codebase for external security audit by publishing a scoped audit charter, refreshing `.cargo/audit.toml` rationales, and tightening the RSA SecretKey zeroization window so the charter can describe an explicitly-bounded mitigation rather than "best-effort".
+3 phases (19, 20, 21), 5 plans, 12 tasks. Closed all v1.4 follow-throughs (production sign bodies + accurate mixed-script fees) and readied the codebase for external security audit. Full summary in `.planning/MILESTONES.md` and `.planning/milestones/v1.5-ROADMAP.md`.
 
-**Target features:**
-- Production BIP-322 `sign` bodies for P2TR (Schnorr keypath) and P2SH-P2WPKH (BIP-143 over unwrapped P2WPKH redeem) — replaces the `todo!("Phase 17 WALLET-02 wires bdk_wallet sign per ADR #4")` in `shared/src/bip322/{p2tr,p2sh_p2wpkh}.rs`
-- Remove `sign_simple_test_only` + per-script `sign_for_tests` helpers — close the Phase 17-02 visibility-escalation hole now that production sign bodies exist
-- Per-script witness weight table in `coordinator/src/bitcoin/tx.rs` so mixed rounds produce accurate `fee_share` (current `INPUT_WEIGHT_VBYTES = 68` is P2WPKH-only and over/under-charges P2TR + P2SH-P2WPKH inputs)
-- `docs/AUDIT-CHARTER.md` enumerating in-scope modules + threat models for external auditors (BIP-322 dispatcher + per-script modules, 9 cross-shape rejection properties, v=2 `OwnershipProof` PSBT handling, RSA SecretKey zeroization window)
-- Tighten RSA SecretKey zeroization: wrap `BjSecretKey` in a newtype with explicit `Drop` so the round-end window is bounded (currently best-effort per the D-07 comment at `coordinator/src/blind/rsa.rs:18-22`)
-- Refresh `.cargo/audit.toml` ignore-rationale strings to reference the new AUDIT-CHARTER.md sections and the bounded-window mitigation
+## Next Milestone: v1.6 (TBD)
 
-**Out of v1.5 scope (deferred to v1.6+):**
-- CARRY-TOR-UAT — Tor-mode verification harness (Phase 8 HUMAN-UAT item 3)
-- CARRY-REPAIR-01-PR — v1.3 REPAIR-01 PR observation closure (v1.4 cut PR is the natural moment)
-- B-03 — Dynamic fee estimation (mempool-aware polling + RBF strategy)
-- TEST-EXT-01/02/03 — Cross-implementation differential fixtures (via `ACken2/bip322-js`); on-chain anchor test; automated v1.3↔v1.4 backwards-compat integration matrix
-- P2WSH multisig BIP-322 support
-- Mixed output script types (Wasabi 2.0.3-style per-participant output choice)
+No v1.6 phases defined yet. Start v1.6 with `/gsd:new-milestone` — questioning → research → requirements → roadmap. The v1.6+ carry-forward backlog lives under `## Carry-Forward Items` below.
 
 ## Requirements
 
@@ -100,7 +88,7 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 
 ### Active
 
-(none — v1.5 milestone complete pending external audit launch + the deferred `21-HUMAN-UAT.md` item 3 GitHub-render check via `/gsd:verify-work 21`)
+(none — v1.5 milestone shipped 2026-06-01; project is between milestones, ready for v1.6 scoping or external audit launch)
 
 ### Out of Scope
 
@@ -112,6 +100,19 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 - OAuth, accounts, user management — no identity layer, no accounts
 - Metrics dashboard (Prometheus/Grafana) — optional post-v1
 - Offline mode — real-time coordination is fundamental to the protocol
+
+## Carry-Forward Items (v1.6+ candidates)
+
+Surfaced during v1.4/v1.5 development but intentionally not in scope:
+
+- **CARRY-TOR-UAT** — Tor-mode verification harness (Phase 8 HUMAN-UAT item 3, deferred since v1.2)
+- **CARRY-REPAIR-01-PR** — v1.3 REPAIR-01 PR observation closure (natural moment is the next external PR cut)
+- **B-03** — Dynamic fee estimation (mempool-aware polling + RBF strategy; pre-mainnet requirement)
+- **TEST-EXT-01/02/03** — Cross-implementation differential fixtures (via `ACken2/bip322-js`); on-chain anchor test; automated v1.3↔v1.4 backwards-compat integration matrix
+- **P2WSH multisig BIP-322 support** — currently P2WPKH + P2TR + P2SH-P2WPKH
+- **Mixed output script types** (Wasabi 2.0.3-style per-participant output choice)
+- **Per-input variable `fee_share`** — uniform `total_fee / N` preserved in v1.5; per-input variance would change the wire protocol
+- **AUDIT-03 chokepoint `let _ =` closure** — REVIEW.md CR-01 from v1.5 Phase 21, accepted as defense-in-depth gap and documented in AUDIT-CHARTER.md §7 Residual Risks: Protocol-level; closure trigger = any future FSM concurrency-model or `can_transition_to`-edge change
 
 ## Context
 
@@ -194,4 +195,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-31 — v1.5 milestone complete (Phase 21 Audit Charter & Zeroization Tightening: AUDIT-01, AUDIT-02, AUDIT-03 closed; v1.5 = 3/3 phases, 5/5 plans, 100%; ready for external audit launch pending the deferred 21-HUMAN-UAT.md item 3 GitHub-render check via `/gsd:verify-work 21`)*
+*Last updated: 2026-06-01 — v1.5 milestone archived. v1.5 = 3/3 phases, 5/5 plans, 9/9 requirements, 100%. Project is between milestones; ready for v1.6 scoping or external audit launch.*

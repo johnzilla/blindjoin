@@ -128,6 +128,51 @@
 
 ---
 
+## Milestone: v1.5 — Audit-Readiness & Multi-Script Finish
+
+**Shipped:** 2026-06-01
+**Phases:** 3 (19, 20, 21) | **Plans:** 5 | **Tasks:** 12 | **Wallclock:** ~22 hours | **Commits:** 31 phase-tagged | **Diff:** 61 files, +12,824 / −293
+
+### What Was Built
+- **Phase 19:** Production BIP-322 `sign` bodies for P2TR (Schnorr keypath) + P2SH-P2WPKH (BIP-143) in `shared::bip322`; `sign_simple_test_only` + per-script `sign_for_tests` helpers deleted; `shared::bip322` public surface shrunk to exactly 9 symbols with V1.4-CRIT-01 dispatcher-only invariant load-bearing at the type level. Byte-equality with `BdkClientWallet::sign_bip322` proven empirically.
+- **Phase 20:** Per-script BIP-141 vbyte table in `coordinator/src/bitcoin/tx.rs` (P2WPKH 68/31, P2TR 58/43 round-UP, P2SH-P2WPKH 91/32) replacing the legacy P2WPKH-only consts. `ParticipantInput.script_type` plumbed from `dispatch_ownership_proof` through `UtxoDetails → RegisteredInput`. v1.4 P2WPKH-only `fee_share == 266` byte-equality preserved by regression test.
+- **Phase 21:** RSA SecretKey lifetime tightened from prose to Rust type signature (`Option<RsaBlindSigner>` on `RoundStateInner`, SOLE FSM chokepoint at `state.rs:202`). Shipped `docs/AUDIT-CHARTER.md` (574 LOC, 8 H2 sections), refreshed `.cargo/audit.toml` to cite the charter, added README §Security Model callout — all 3 files landed atomically per D-133a.
+
+### What Worked
+- **Wave-based parallel execution accelerated throughput.** 22-hour wallclock for a 3-phase milestone (5 plans, 12 tasks) is exceptional. Pure executor time was ~53 minutes (Phase 19: 11+7 min, Phase 20: 17 min, Phase 21: 7+11 min); the rest was discuss → research → plan overhead.
+- **`must_haves.truths` + `must_haves.artifacts` + `key_links` plan frontmatter pattern made verification trivial.** The verifier could grep for each truth/artifact instead of re-deriving semantics. Phase 21's verifier accomplished 5/5 must-haves in 6 minutes because the plan front-loaded what "done" looks like.
+- **The D-133a atomic-commit pattern prevented anchor-drift.** Phase 21-02 landed AUDIT-CHARTER.md + .cargo/audit.toml + README.md in ONE commit (92ae533), so the cross-artifact reference graph (audit.toml → charter §X, README → charter, charter → rsa.rs file:symbol) was consistent at every git revision.
+- **Cross-phase invariant gate held at every phase boundary.** v1.3 `full_round::*` 8/8 + v1.4 `mixed_script_e2e_three_clients_broadcast` 1/1 never broke across the milestone. The pre-flight check was "would this PR break the v1.4 acceptance gate?" and the answer was always "no, because plumbing is additive."
+- **The code reviewer's adversarial pass found a real Critical that the human-verifier would have missed.** CR-01 (`let _ = state.transition_to(...)` discarding the Result at 3 success-path FSM trigger sites) directly weakens AUDIT-03's structural-bound claim. Without the reviewer pass, this would have shipped without acknowledgment in the charter — an external auditor would have eventually flagged it.
+
+### What Was Inefficient
+- **The CLI auto-extracted MILESTONES.md accomplishments were low-quality.** `gsd-sdk query milestone.complete` extracted entries like "New helper" and "Dependency graph" because the SUMMARY.md frontmatter uses `key-files`/`key-decisions`/`provides` instead of a single `one_liner:` field that the extractor expects. Required ~5 min of manual rewriting at close.
+- **The `audit-open` scanner over-reports.** A `21-HUMAN-UAT.md` with `status: resolved` and 0 pending scenarios got flagged as a `uat_gap`; a quick-task with a present SUMMARY.md but no `status:` frontmatter field got flagged as `missing`. Both are tooling false-positives that consumed user-facing decision time at close.
+- **Verifier ordering vs human-UAT.** The verifier ran on Phase 21 BEFORE the user dispositioned the 3 HUMAN-UAT items, so VERIFICATION.md was stuck at `status: human_needed` until I manually updated it post-disposition. The workflow would be cleaner if the verifier re-ran after HUMAN-UAT resolved, or if the verifier's frontmatter auto-tracked HUMAN-UAT.md changes.
+- **README link rendering check required a human round-trip.** No avoiding it (GitHub-rendered Markdown anchor behavior can't be grep-verified), but it interrupted the close flow. Recommending `grip` for local GitHub-faithful render at the point the link is added (not at close) would compress the loop.
+
+### Patterns Established
+- **Newtype as lifetime expression, not as scrub site.** When an upstream type already has correct Drop semantics (`rsa-0.9.10` `ZeroizeOnDrop` on `RsaPrivateKey`), the wrapper's value is making the lifetime a Rust value the FSM can null at one chokepoint. The `RoundSecretKey(BjSecretKey)` newtype's `Drop` body is empty-crypto-body (PII-safe `tracing::debug!` only) — the cryptographic work is delegated. Captured as D-129 / OQ1 lock.
+- **Single-chokepoint Drop trigger, grep-verified.** All Phase → Idle FSM edges route through `transition_to(Phase::Idle)` at `state.rs:202`, the SOLE site setting `self.inner = None`. This is verifiable by grep over the entire `coordinator/src/` tree — the auditor's question "when does this secret die?" gets a one-line answer. Pattern is broadly applicable to any FSM-managed resource lifetime.
+- **D-133a atomic-commit for cross-artifact reference loops.** When N files cite each other via anchors that would drift if landed separately (e.g., audit.toml cites charter §X, charter cites rsa.rs file:symbol, rsa.rs cites charter anchor), land all N in ONE commit. Prevents the "git checkout HEAD~1 → references broken" failure mode in audit-readiness contexts.
+- **Production sign body = `#[cfg(test)] sign_for_tests` almost verbatim.** When the test helpers are already correct (they produce the witnesses the existing tests verify against), the production change is "make them production, remove the test-only escape hatch." Lower risk than greenfield implementation. Phase 19-01 was 11 min of executor time because of this.
+- **Best-effort → structurally-bounded is a type-signature change, not a wording change.** AUDIT-03's value came from making `Option<RsaBlindSigner>` an expressible-in-Rust lifetime bound, not from rewriting the D-07 comment. The comment rewrite is downstream of the type change.
+- **Pre-flight discuss-phase decisions amortize verification cost.** Phase 21's discuss-phase decisions (D-128 through D-143) covered 5 of the 6 anomalies that came up during execution; only CD-49 (slug-refinement) was a true execution-time deviation. Front-loading judgment calls before execution is cheaper than re-litigating them mid-plan.
+
+### Key Lessons
+1. **Schedule audit-readiness milestones AFTER the production code is solid, not before.** The charter was much easier to write when Phase 19 had already removed every `todo!()` — there was nothing to apologize for. Phase 19 unblocks Phase 21 was the right dependency direction.
+2. **Document deferred items in PROJECT.md §Carry-Forward Items at close, not just in the milestone-specific archive.** Future-me will look at PROJECT.md first when scoping v1.6. Milestone archives are a forensic resource, not a discovery surface.
+3. **The code-review pass before phase verification is worth its tokens.** CR-01 surfaced a defense-in-depth gap the verifier didn't catch (because the structural test passes — the let_ pattern is a runtime risk, not a build-time one). Adding a fast adversarial review to every audit-readiness phase paid off.
+4. **`grip` is the right tool for local GitHub-faithful render verification.** Compresses the README-link-rendering loop from "push and check live" to "local preview, no push." Surface this earlier in workflows that touch user-facing Markdown.
+5. **When `must_haves.truths` references shipped code (file:symbol form), the verifier becomes a grep + sanity-check exercise.** This is the structural inverse of "verify by running tests" — both are useful, but truth-driven verification is faster for type-signature-bearing requirements (AUDIT-03 in v1.5; V1.4-CRIT-01 in v1.4).
+
+### Cost Observations
+- Model mix: 100% sonnet for execution, code review, and verification. Opus not needed for v1.5 (no Opus-class architectural decisions — every phase was incremental refinement of existing patterns).
+- Sessions: 1 session for v1.5 close (this one); ~3 sessions for the 3 phase executions (1 per phase boundary)
+- Notable: The 5-plan milestone fit comfortably in a single session because each phase's discuss → plan → execute → verify loop was tight (Phase 21 from kickoff to verification was under 90 minutes wallclock). Compare to v1.3's 4-day debugging milestone (5 phases, 13 plans, multi-session) — phase scope matters more than phase count for session-level fit.
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -138,6 +183,7 @@
 | v1.1 | 1 day | 2 | Hardening milestone — established gap closure cycle and code review fix pipeline |
 | v1.2 | 1 day | 1 | Single-phase milestone — promoted BACKLOG B-01 directly to plan; established design-contract-in-CONTEXT.md (no parallel REQ-IDs) |
 | v1.3 | 4 days | 5 | Test infrastructure milestone — established pinned-binary + RAII fixture patterns; surfaced multi-orthogonal-blocker debugging mode where Plan.md execution stops paying for itself and direct commits are the right escape valve |
+| v1.5 | 22 hours | 3 | Audit-readiness milestone — established newtype-as-lifetime-expression pattern, D-133a atomic-commit for cross-artifact loops, code-review-before-verification gate; pure executor time was ~53 min, the rest was discuss → research → plan overhead |
 
 ### Cumulative Quality
 
@@ -147,6 +193,7 @@
 | v1.1 | 5,918 | 4 | 6 (6 checked) |
 | v1.2 | 5,918 | 4 | 6 design decisions (no REQ-IDs) — all closed |
 | v1.3 | 6,490 | 13 | 7 (7 closed; REPAIR-01 closed-local pending PR observation) |
+| v1.5 | 11,041 | 5 | 9 (9 closed) |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -157,3 +204,7 @@
 5. **For multi-orthogonal-blocker debugging, abandon Plan.md execution sooner.** After 2-3 carry-forward phases with the same shape, the structured path has stopped paying — pivot to direct bisectable commits and preserve the planning trail as a forensic log.
 6. **Pin every dependency referenced by version in a test fixture, and CI-enforce the pin.** `.bitcoind-version` + corepc-node feature pin via grep gate is the pattern; apply to any future test infra.
 7. **RAII over `Box::leak` for spawned external processes in tests.** 10 lines of code eliminates a whole class of "passes locally, hangs in CI" bugs.
+8. **Newtype as lifetime expression, not as scrub site.** When upstream Drop semantics are correct, the newtype's value is making the lifetime a Rust value the FSM can null at one chokepoint. (v1.5 AUDIT-03)
+9. **Run code review BEFORE phase verification, not after.** The reviewer catches defense-in-depth gaps the verifier doesn't (structural tests pass on the happy path; reviewers find runtime risks the structure permits). (v1.5 Phase 21 CR-01)
+10. **D-133a atomic-commit for cross-artifact reference loops.** When N files cite each other via anchors that drift if landed separately, land all N in ONE commit. (v1.5 Phase 21)
+11. **Schedule audit-readiness AFTER the production code is solid.** Charters are much easier to write when there's nothing to apologize for. (v1.5 Phase 19 unblocks Phase 21)
