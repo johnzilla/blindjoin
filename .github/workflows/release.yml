@@ -74,6 +74,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
+      # Phase 22 DRIFT-03: read the canonical base-image digest manifest.
+      # This step is a supply-chain gate — a tag push cannot publish a
+      # release tarball unless docker/digests.txt is present and well-formed
+      # (the composite action exits 1 otherwise; see
+      # .github/actions/read-base-digests/action.yml). Outputs are unused by
+      # the cargo build directly but exported for downstream phases
+      # (Phase 25 reproducibility recipe) and for log-audit observability.
+      - name: Read canonical base-image digests
+        id: digests
+        uses: ./.github/actions/read-base-digests
+
       - name: Build coordinator and client
         run: cargo build --release --bin coordinator --bin client --bin liquidity-bot
 
