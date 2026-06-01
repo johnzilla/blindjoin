@@ -6,6 +6,12 @@ env:
   # See: actions/checkout v6.0.2 still declares `using: node20` — upgrading
   # the action SHA is tracked separately (see TODO at top of ci.yml).
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Release-smoke gate (P0-5, v1.5 release-readiness): integration tests
+  # under tests/integration/* must FAIL on bitcoind-missing rather than
+  # graceful-skip during a release. The composite install-bitcoind action
+  # provisions the pinned bitcoind in <90s on cache miss and ~0s on cache
+  # hit; the trade-off is small relative to release confidence.
+  BLINDJOIN_REQUIRE_BITCOIND: "1"
 
 on:
   push:
@@ -25,10 +31,19 @@ jobs:
           toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Run tests
-        run: cargo test --workspace --lib
+      # Composite source-of-truth — see .github/actions/install-bitcoind/action.yml.
+      # Same PGP+SHA256 integrity gate as ci.yml. The release pipeline runs
+      # the full --all-targets suite (not --lib) so a tag push cannot ship
+      # binaries unless every integration test under tests/integration/*
+      # has executed against the pinned bitcoind. Trade-off: ~30s on cache
+      # hit, ~90s on cache miss (the first job after a .bitcoind-version
+      # bump). Acceptable cost for release-grade confidence.
+      - name: Install pinned bitcoind
+        uses: ./.github/actions/install-bitcoind
+      - name: Run tests (workspace, all targets — integration suite included)
+        run: cargo test --workspace --all-targets
       - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run audit

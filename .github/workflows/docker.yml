@@ -6,6 +6,12 @@ env:
   # See: actions/checkout v6.0.2 still declares `using: node20` — upgrading
   # the action SHA is tracked separately (see TODO at top of ci.yml).
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Release-smoke gate (P0-5, v1.5 release-readiness): a tag push cannot
+  # publish Docker images to ghcr.io unless the integration suite has
+  # executed against the pinned bitcoind. Same trade-off as release.yml:
+  # ~30s cache hit, ~90s cache miss; acceptable for release-grade
+  # confidence on Docker images that operators will pull and run.
+  BLINDJOIN_REQUIRE_BITCOIND: "1"
 
 on:
   push:
@@ -25,10 +31,13 @@ jobs:
           toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - name: Run tests
-        run: cargo test --workspace --lib
+      # Composite source-of-truth — see .github/actions/install-bitcoind/action.yml.
+      - name: Install pinned bitcoind
+        uses: ./.github/actions/install-bitcoind
+      - name: Run tests (workspace, all targets — integration suite included)
+        run: cargo test --workspace --all-targets
       - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run audit

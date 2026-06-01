@@ -1,0 +1,110 @@
+name: Install pinned bitcoind
+description: >
+  Installs the bitcoind binary version pinned in `.bitcoind-version`,
+  PGP-fingerprint-verified against achow101's release-signer key fetched
+  from a SHA-pinned bitcoin-core/guix.sigs commit, and SHA-256-verified
+  against `SHA256SUMS`. Caches the binary at runner level keyed on
+  runner.os + version. Exports `BITCOIND_EXE` for `corepc-node` to pick
+  up via its env-var first-precedence path (verified at
+  corepc-node-0.12.0 node/src/lib.rs:635).
+
+  Composite source-of-truth for v1.6+: ci.yml, release.yml, and docker.yml
+  all `uses: ./.github/actions/install-bitcoind` so the verification gate
+  does not drift between workflows. See `.planning/quick/260531-thw-*/`
+  for the extraction context (P0-5).
+
+runs:
+  using: composite
+  steps:
+    - name: Read pinned bitcoind version
+      id: bitcoind_version
+      shell: bash
+      run: echo "version=$(cat .bitcoind-version)" >> $GITHUB_OUTPUT
+
+    - name: Cache bitcoind binary
+      id: cache-bitcoind
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.local/bin/bitcoind
+        # runner.os prefix avoids cache-key collisions across runner OS variants
+        # (RESEARCH.md Pitfall 6). The version segment guarantees a cache miss
+        # on every .bitcoind-version bump, which re-runs the PGP+SHA256 verify.
+        key: ${{ runner.os }}-bitcoind-${{ steps.bitcoind_version.outputs.version }}
+
+    - name: Install bitcoind (cache miss only)
+      if: steps.cache-bitcoind.outputs.cache-hit != 'true'
+      shell: bash
+      # Integrity gate (per D-04):
+      #   1. Fetch achow101's PGP key from a SHA-pinned guix.sigs commit
+      #      (avoids public keyserver flake — RESEARCH.md Pitfall 5).
+      #   2. Verify imported key fingerprint matches the KEY_FP value set
+      #      below (catches a hostile guix.sigs commit substituting a
+      #      different key).
+      #   3. gpg-verify SHA256SUMS.asc against SHA256SUMS (signed by achow101).
+      #   4. hash-check the tarball against the signed SHA256SUMS entry.
+      # KEY_FP is Andrew Chow's (achow101) Bitcoin Core release-signer
+      # fingerprint; verified present in the v30.2 attestation directory at
+      # bitcoin-core/guix.sigs/30.2/achow101/.
+      # guix.sigs commit pinned 2026-05-26 to bitcoin-core/guix.sigs main HEAD.
+      run: |
+        set -euo pipefail
+        VERSION="${{ steps.bitcoind_version.outputs.version }}"
+        TARBALL="bitcoin-${VERSION}-x86_64-linux-gnu.tar.gz"
+        BASE="https://bitcoincore.org/bin/bitcoin-core-${VERSION}"
+        KEY_FP=152812300785C96444D3334D17565732E08E5E41
+        GUIX_SIGS_SHA=893b44f5fb1ed2abcdd79feb1c54723e3ccf5b59  # pinned 2026-05-26
+
+        # 1. Fetch achow101's key blob from the pinned guix.sigs commit.
+        curl -sL "https://raw.githubusercontent.com/bitcoin-core/guix.sigs/${GUIX_SIGS_SHA}/builder-keys/achow101.gpg" -o /tmp/achow101.gpg
+        gpg --import /tmp/achow101.gpg
+
+        # 2. Verify the imported key fingerprint matches expectation.
+        gpg --list-keys --with-colons | grep -q "${KEY_FP}" \
+          || { echo "ERROR: expected fingerprint ${KEY_FP} not found"; exit 1; }
+
+        # 3. Fetch SHA256SUMS + signature, verify achow101's signature.
+        # SHA256SUMS.asc is a multi-signature file — Bitcoin Core releases
+        # are signed by ~10 different guix builders. We only import achow101's
+        # key and only require achow101's signature to be GOOD. A plain
+        # `gpg --verify` would exit non-zero because gpg can't check the
+        # other ~9 signatures' keys (which we deliberately don't import —
+        # see Trust Model below); under `set -euo pipefail` that would
+        # incorrectly fail the script even though achow101's sig is valid.
+        #
+        # We match on the machine-readable `VALIDSIG` line from gpg's
+        # --status-fd output. VALIDSIG carries the FULL 40-char primary-key
+        # fingerprint as its second field, which we compare against KEY_FP
+        # directly — unambiguous and not dependent on long-key-id formatting.
+        # We always print gpg's status-fd output to the CI log so a future
+        # verify break is debuggable from the run history alone.
+        #
+        # Trust model: PR review of bumps to GUIX_SIGS_SHA / KEY_FP is the
+        # remaining trust root. An attacker who controls a future guix.sigs
+        # HEAD could in principle swap BOTH the key blob AND the KEY_FP
+        # value in the same PR; reviewers must check that the new
+        # fingerprint matches an externally-verified achow101 public key.
+        curl -sL "${BASE}/SHA256SUMS" -o SHA256SUMS
+        curl -sL "${BASE}/SHA256SUMS.asc" -o SHA256SUMS.asc
+        gpg --status-fd=1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null > /tmp/gpg-status.txt || true
+        echo "=== gpg --status-fd=1 output ==="
+        cat /tmp/gpg-status.txt
+        echo "================================"
+        grep -q "^\[GNUPG:\] VALIDSIG ${KEY_FP} " /tmp/gpg-status.txt \
+          || { echo "ERROR: SHA256SUMS.asc does not have a VALIDSIG from achow101 fingerprint ${KEY_FP}"; exit 1; }
+
+        # 4. Fetch tarball, verify hash against signed sums.
+        curl -sL "${BASE}/${TARBALL}" -o "${TARBALL}"
+        grep "  ${TARBALL}$" SHA256SUMS | sha256sum -c
+
+        # 5. Extract and install into ~/.local/bin (cached path).
+        tar -xzf "${TARBALL}"
+        mkdir -p $HOME/.local/bin
+        cp "bitcoin-${VERSION}/bin/bitcoind" $HOME/.local/bin/bitcoind
+        chmod +x $HOME/.local/bin/bitcoind
+
+    - name: Export BITCOIND_EXE
+      shell: bash
+      # Runs on both cache hit and cache miss — corepc_node::exe_path() reads
+      # BITCOIND_EXE as first precedence (verified at corepc-node-0.12.0
+      # node/src/lib.rs:635; RESEARCH.md Assumption A7).
+      run: echo "BITCOIND_EXE=$HOME/.local/bin/bitcoind" >> $GITHUB_ENV
