@@ -40,6 +40,15 @@ See: `.planning/PROJECT.md` (updated 2026-05-31 — v1.5 scoped)
 
 None at the roadmap level. Phase 19 unblocks Phase 21 (audit charter wants to describe production code, not `todo!()`).
 
+## Deferred Items
+
+Items acknowledged and deferred at v1.5 milestone close on 2026-05-31:
+
+| Category | Item | Status | Note |
+|----------|------|--------|------|
+| uat_gap_scanner_false_positive | 21-HUMAN-UAT.md | resolved | All 3 items dispositioned (3 passed / 0 pending). Scanner over-reports resolved UAT files; no action needed. |
+| quick_task_scanner_false_positive | 260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos | shipped 2026-05-26 | SUMMARY.md exists at .planning/quick/. Scanner flagged `missing` because frontmatter lacks a `status:` field; this is a quick-task template issue, not a real gap. |
+
 ## Carry-Forward Items (deferred from v1.4 → v1.6+ candidates)
 
 - **CARRY-TOR-UAT** — Tor-mode verification harness (Phase 8 HUMAN-UAT item 3)

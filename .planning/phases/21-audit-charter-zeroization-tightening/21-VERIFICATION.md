@@ -1,9 +1,11 @@
 ---
 phase: 21-audit-charter-zeroization-tightening
 verified: 2026-05-31T23:55:00Z
-status: human_needed
-score: 5/5 must-haves verified (with one acknowledged structural caveat — see WARNING below)
+resolved: 2026-06-01T00:30:00Z
+status: passed
+score: 5/5 must-haves verified; all 3 human verification items resolved in 21-HUMAN-UAT.md (CR-01 = WARNING accepted + documented in AUDIT-CHARTER.md §7; line-number drift = FIX-NOW applied at 5 citation sites; README link rendering = visually confirmed by user via grip preview)
 overrides_applied: 0
+human_verification_resolution: All 3 human_verification items below were dispositioned in 21-HUMAN-UAT.md (status: resolved, summary: 3 passed / 0 pending). See 21-HUMAN-UAT.md for the per-item resolution notes and the fix commits 7018fc8 (CR-01 + WR-01) and 86b2edd (README/FAQ/PROTOCOL.md propagation).
 human_verification:
   - test: "Decide whether the REVIEW.md CR-01 finding (let _ = on FSM transitions at signing.rs:279-280, blame.rs:219-220, output_reg.rs:30-31) constitutes a real gap against SC#3's structurally-enforced mitigation claim, OR an acceptable defense-in-depth concern surfaced by the reviewer that the chain still holds today."
     expected: "User decides one of: (a) treat as BLOCKER — Phase 21 must add explicit transition-result handling + `state.inner = None` fallback at each of the 3 success-path FSM trigger sites before close; (b) accept as WARNING with rationale — the current write-lock semantics make `Signing → Broadcast` and `Blame/OutputReg → Blame` reachable-failures unreachable today, and the charter's load-bearing claim still holds; if (b), document this in a Residual Risk row in AUDIT-CHARTER.md §7 sub-bucket (b) Protocol-level so future auditors see the framing; (c) defer to a Phase 22 follow-up."
