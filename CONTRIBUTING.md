@@ -92,3 +92,50 @@ git push origin v1.X.0
 ```
 
 The milestone *name* in planning docs (e.g. `v1.3 Test Infrastructure & Operational Hardening`) is independent of the git tag — docs may stay `v1.X` for readability while the tag is `v1.X.0`.
+
+## Bumping base-image digests
+
+`docker/Dockerfile` derives from two upstream base images:
+`debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. Both
+are pinned by digest in [`docker/digests.txt`](docker/digests.txt) — the
+canonical manifest — and consumed by the release pipeline via the composite
+action at [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/).
+
+**When you'd bump:** a `[digest-drift]` issue has been opened by the
+scheduled drift-check workflow, OR you've decided to proactively refresh a
+base image (e.g. picking up a Debian security backport before the daily
+check runs).
+
+**How to bump (per PR):**
+
+1. On a clean machine (fresh Docker daemon cache or no project-local
+   config), resolve the new upstream digest for ONE image:
+   ```bash
+   docker buildx imagetools inspect debian:bookworm-slim \
+     --format '{{.Manifest.Digest}}'
+   # → sha256:<HEX>
+   ```
+2. Update the matching line in `docker/digests.txt` to
+   `<image>:<tag>@sha256:<HEX>`. **Only that one line.** A bump-both-at-once
+   PR is harder to review; one image per PR.
+3. Open a PR. The PR body MUST link the originating `[digest-drift]`
+   issue (if any), AND classify the change as docs/metadata-only or
+   substantive per the triage guidance in the issue body (see
+   [`.planning/research/PITFALLS.md`](.planning/research/PITFALLS.md) §8).
+4. Wait for CODEOWNERS approval. **Do not auto-merge** — see
+   [SECURITY.md §Supply-chain status](SECURITY.md#supply-chain-status).
+   The CODEOWNERS gate exists specifically to prevent unreviewed digest
+   bumps from leaking into releases.
+5. Once merged, close the originating `[digest-drift]` issue via the
+   `Closes #<N>` clause in the PR.
+
+**Why not auto-merge?** A compromised upstream base image (xz utils, 2024;
+event-stream, 2018) gets pulled in if the project accepts upstream digest
+changes without human review. The drift check exists to surface bumps;
+the CODEOWNERS gate exists to make sure a human looks at each one.
+
+**What if the regex check fails?** The composite action validates each
+line of `docker/digests.txt` against
+`^[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+@sha256:[a-f0-9]{64}$` before any build
+step runs. A malformed line fails the gate with an explicit message
+referencing this section. Fix the line shape and push again.
