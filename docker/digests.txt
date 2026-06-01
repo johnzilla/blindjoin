@@ -1,0 +1,14 @@
+# Canonical base-image digest manifest for docker/Dockerfile.
+# Bump only via a PR that has been reviewed by a human (CODEOWNERS-gated).
+# See SECURITY.md §Supply-chain status > Base-image digests.
+# Parsed by .github/actions/read-base-digests/action.yml — exact line shape
+# is contract: <image>:<tag>@sha256:<HEX>, one per line, comments + blanks
+# allowed.
+#
+# NOTE: digest values below are sentinel placeholders captured at planning
+# time. They will be re-resolved on a clean ubuntu-24.04 runner during the
+# Phase 22 Plan 06 HUMAN-UAT rehearsal via
+#   docker buildx imagetools inspect <image>:<tag> --format '{{.Manifest.Digest}}'
+# and the rehearsal PR will overwrite them with the canonical values.
+debian:bookworm-slim@sha256:0000000000000000000000000000000000000000000000000000000000000000
+lukemathwalker/cargo-chef:latest-rust-1@sha256:0000000000000000000000000000000000000000000000000000000000000000
