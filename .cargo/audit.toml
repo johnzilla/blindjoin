@@ -4,7 +4,8 @@
 # Each entry below must include a written rationale. Adding an ignore without
 # a documented reason is a code-review-blocking change.
 #
-# Reviewed: 2026-05-31.
+# Reviewed: 2026-06-01 (v1.5 release-readiness re-review; bumped from
+# 2026-05-31 Phase 21 AUDIT-02 set as part of the v1.5 ship gate).
 
 [advisories]
 ignore = [

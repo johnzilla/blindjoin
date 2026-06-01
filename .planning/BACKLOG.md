@@ -6,11 +6,25 @@ Items that are scoped but not scheduled. Each entry is detailed enough that a fu
 
 **Source attribution:** When promoting an entry from this backlog into a milestone, link back to the entry's source workstream so the rationale survives.
 
+**Where the active list lives:** This file is forensic. The active v1.6+
+carry-forward list lives in [`.planning/PROJECT.md`](PROJECT.md)
+§ Carry-Forward Items; in-flight workstream context lives under
+[`.planning/workstreams/`](workstreams/). When looking for "what should
+v1.6 work on" start there, not here — entries below are kept in place as
+the historical rationale for the items that promoted into PROJECT.md.
+
 ---
 
 ## B-01 — Public-endpoint hardening
 
-**Status:** Deferred from v1.1. Acknowledged by the codebase itself ([coordinator/src/api/middleware.rs:1-2](coordinator/src/api/middleware.rs:1)): `// Rate limiting and additional middleware will be added in Phase 2.`
+**Status:** ✓ **Shipped in v1.2 Phase 8** (rate limiting, request timeouts,
+Tor accept-loop semaphore cap). See
+[`.planning/MILESTONES.md`](MILESTONES.md) § v1.2 Production Readiness and
+[`.planning/PROJECT.md`](PROJECT.md) § Requirements > Validated for the
+shipped form. Body retained below as forensic record of the original
+deferral rationale.
+
+**Original status (pre-v1.2):** Deferred from v1.1. Acknowledged by the codebase itself ([coordinator/src/api/middleware.rs:1-2](coordinator/src/api/middleware.rs:1)): `// Rate limiting and additional middleware will be added in Phase 2.`
 
 **Why deferred:** v1.1 shipped clearnet-first; the only middleware applied is `RequestBodyLimitLayer(64KB)` ([coordinator/src/api/mod.rs:51](coordinator/src/api/mod.rs:51)). Adequate for the demo story, not for an exposed Tor service.
 
@@ -35,7 +49,17 @@ Items that are scoped but not scheduled. Each entry is detailed enough that a fu
 
 ## B-02 — BIP-322 multi-script support
 
-**Status:** Deferred. Code currently enforces P2WPKH-only at [coordinator/src/bitcoin/utxo.rs:119](coordinator/src/bitcoin/utxo.rs:119) via an explicit `is_p2wpkh()` hard gate.
+**Status:** ✓ **Shipped across v1.4 Phases 15-18 and finalized in v1.5
+Phase 19.** The coordinator + client now accept P2WPKH + P2TR + P2SH-P2WPKH
+ownership proofs via a dispatcher with on-chain CRIT-01 cross-check; the
+upstream `bip322 = "=0.0.10"` crate is adopted via a 26-LOC adapter
+(`shared/src/bip322/mod.rs`); production `sign` bodies for P2TR and
+P2SH-P2WPKH landed in v1.5 Phase 19. See
+[`.planning/MILESTONES.md`](MILESTONES.md) §§ v1.4 / v1.5 and
+[`.planning/PROJECT.md`](PROJECT.md) § Requirements > Validated. Body
+retained below as forensic record of the original deferral rationale.
+
+**Original status (pre-v1.4):** Deferred. Code enforced P2WPKH-only at [coordinator/src/bitcoin/utxo.rs:119](coordinator/src/bitcoin/utxo.rs:119) via an explicit `is_p2wpkh()` hard gate.
 
 **Why deferred:** v1.0 / v1.1 prioritized a working CoinJoin loop over input-type breadth. P2WPKH coverage was sufficient for the demo story.
 
@@ -60,7 +84,12 @@ Items that are scoped but not scheduled. Each entry is detailed enough that a fu
 
 ## B-03 — Dynamic fee estimation
 
-**Status:** Deferred. Coordinator uses a static fee rate from config at [coordinator/src/bitcoin/tx.rs:66-70](coordinator/src/bitcoin/tx.rs:66) and [coordinator/src/bitcoin/fee.rs](coordinator/src/bitcoin/fee.rs).
+**Status:** Deferred (still open at v1.5 ship). Listed in
+[`.planning/PROJECT.md`](PROJECT.md) § Carry-Forward Items as a
+v1.6+ candidate; called out in
+[`docs/AUDIT-CHARTER.md`](../docs/AUDIT-CHARTER.md) § Residual Risks:
+Operational as **REQUIRED before mainnet flip**. Coordinator uses a
+static fee rate from config at [coordinator/src/bitcoin/tx.rs:66-70](coordinator/src/bitcoin/tx.rs:66) and [coordinator/src/bitcoin/fee.rs](coordinator/src/bitcoin/fee.rs).
 
 **Why deferred:** Wasabi v1 also used static fee estimation; it was acceptable for v1.x scope. Signet has predictable fees, so the impact on the demo story was nil.
 
@@ -84,6 +113,12 @@ Items that are scoped but not scheduled. Each entry is detailed enough that a fu
 ---
 
 ## When to schedule
+
+**Historical note (pre-v1.5):** the three entries above were originally
+suggested as a "v1.2 Production Readiness" trio. In practice B-01 shipped
+as v1.2 Phase 8, B-02 shipped across v1.4 Phases 15-18 + v1.5 Phase 19,
+and B-03 remains open. The ordering rationale below is preserved for
+reference; the live "what's next" list is in PROJECT.md.
 
 These three items together would naturally form a **v1.2 Production Readiness** milestone. Suggested ordering:
 
