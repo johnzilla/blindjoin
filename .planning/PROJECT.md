@@ -27,9 +27,17 @@ Coordinator hardened: RPC outside write lock, RSA signer cached per-round, addre
 
 3 phases (19, 20, 21), 5 plans, 12 tasks. Closed all v1.4 follow-throughs (production sign bodies + accurate mixed-script fees) and readied the codebase for external security audit. Full summary in `.planning/MILESTONES.md` and `.planning/milestones/v1.5-ROADMAP.md`.
 
-## Next Milestone: v1.6 (TBD)
+## Current Milestone: v1.6 Supply-Chain Attestation
 
-No v1.6 phases defined yet. Start v1.6 with `/gsd:new-milestone` — questioning → research → requirements → roadmap. The v1.6+ carry-forward backlog lives under `## Carry-Forward Items` below.
+**Goal:** Close the v1.5 unsigned-build supply-chain gap explicitly named in [SECURITY.md § Supply-chain status](../SECURITY.md). When this milestone ships, anyone pulling a blindjoin release artifact can cryptographically attribute it to the maintainer + the source tree it was built from.
+
+**Target features:**
+- **cosign image attestations** on every `ghcr.io/<owner>/blindjoin-*` image, OIDC-bound to the GitHub Actions identity (no maintainer key custody).
+- **Detached signatures** (cosign blob signatures or detached PGP) on every GitHub Release tarball, verifiable with a single command from a clean machine.
+- **Reproducible-build recipe** for the `blindjoin-linux-amd64.tar.gz` release artifact, with an independent-rebuilder verification command + documented toolchain pinning.
+- **Automated base-image digest drift check** so a stale digest in `docker/Dockerfile`'s ARG defaults fails CI rather than silently sticking.
+
+**Why this milestone:** v1.5 SECURITY.md commits to this closure plan publicly. Operators evaluating whether to run blindjoin in any environment where supply-chain assurance matters need the binaries / images they pull to be cryptographically tied to the project. Currently only `sha256` checksums exist on release archives; ghcr.io images are unsigned; there's no reproducible-build recipe. v1.6 closes all four gaps.
 
 ## Requirements
 
@@ -88,7 +96,11 @@ No v1.6 phases defined yet. Start v1.6 with `/gsd:new-milestone` — questioning
 
 ### Active
 
-(none — v1.5 milestone shipped 2026-06-01; project is between milestones, ready for v1.6 scoping or external audit launch)
+v1.6 supply-chain attestation requirements pending REQUIREMENTS.md definition during this `/gsd:new-milestone` cycle. Headline items already named in the milestone goal:
+- cosign image attestations on ghcr.io images (OIDC-based)
+- Detached signatures on GitHub Release tarballs
+- Reproducible-build recipe + independent verification command
+- Automated base-image digest drift check
 
 ### Out of Scope
 

@@ -1,39 +1,39 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Audit-Readiness & Multi-Script Finish
-status: Awaiting next milestone
-last_updated: "2026-06-01T02:00:00.000Z"
-last_activity: 2026-06-01 — Completed quick task 260531-ubf: post-release polish (amp cleanup, README/CONTRIBUTING cross-links, crate-version policy, release-smoke rehearsal trigger)
+milestone: v1.6
+milestone_name: Supply-Chain Attestation
+status: planning
+last_updated: "2026-06-01T03:30:01.811Z"
+last_activity: 2026-06-01
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: Milestone v1.5 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-01 — Completed quick task 260531-ubf: post-release polish (amp cleanup, README/CONTRIBUTING cross-links, crate-version policy, release-smoke rehearsal trigger)
+Status: Defining requirements
+Last activity: 2026-06-01 — Milestone v1.6 started
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-06-01 — between milestones)
+See: `.planning/PROJECT.md` (updated 2026-06-01 — v1.6 Current Milestone)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Between milestones — v1.5 shipped 2026-06-01, v1.6 not yet scoped.
+**Current focus:** v1.6 Supply-Chain Attestation — closing the unsigned-build gap (cosign on ghcr images, detached signatures on release tarballs, reproducible-build recipe, automated digest drift check). Defining requirements.
 
 ## Milestone Map
 
 v1.5 shipped 2026-06-01. Phase artifacts archived to `.planning/milestones/v1.5-phases/`. Full per-phase details in `.planning/milestones/v1.5-ROADMAP.md` and `.planning/milestones/v1.5-REQUIREMENTS.md`. Per-milestone summary in `.planning/MILESTONES.md`.
 
-Start the next milestone with `/gsd:new-milestone` (questioning → research → requirements → roadmap).
+v1.6 in scoping. Requirements + roadmap being defined; phase artifacts will land under `.planning/phases/` as they're planned.
 
 ## Blockers
 
@@ -87,4 +87,5 @@ v1.5 per-phase metrics live in `.planning/milestones/v1.5-ROADMAP.md`. Cumulativ
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- v1.6 requirements + roadmap being defined via this `/gsd:new-milestone` cycle.
+- After roadmap approval: `/gsd:discuss-phase 22` (first v1.6 phase, continued numbering from v1.5 Phase 21).
