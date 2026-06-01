@@ -96,6 +96,17 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
+      # Phase 22 DRIFT-03: read the canonical base-image digest manifest
+      # and pass its values to docker buildx via --build-arg. This
+      # eliminates manual --build-arg invocation per the v1.5 P0-2/3
+      # Dockerfile-side ARG scaffold. A tag push cannot publish ghcr.io
+      # images unless docker/digests.txt is present and well-formed
+      # (the composite action exits 1 otherwise; see
+      # .github/actions/read-base-digests/action.yml).
+      - name: Read canonical base-image digests
+        id: digests
+        uses: ./.github/actions/read-base-digests
+
       - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
@@ -104,5 +115,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Phase 22 DRIFT-03: pinned base-image digests from
+          # docker/digests.txt threaded as build args. The Dockerfile's
+          # `ARG CARGO_CHEF_REF` / `ARG DEBIAN_REF` scaffold (v1.5 P0-2/3)
+          # consumes these in the `FROM ${...}` lines.
+          build-args: |
+            DEBIAN_REF=${{ steps.digests.outputs.debian_ref }}
+            CARGO_CHEF_REF=${{ steps.digests.outputs.cargo_chef_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
