@@ -1,5 +1,37 @@
 # Milestones
 
+## v1.5 Audit-Readiness & Multi-Script Finish (Shipped: 2026-06-01)
+
+**Phases completed:** 3 phases (19, 20, 21), 5 plans, 12 tasks. ~22-hour wallclock from Phase 19 context capture (2026-05-30 22:40 EDT) to Phase 21 verification close (2026-05-31 20:40 EDT). 31 phase-tagged commits, 61 files changed (+12,824 / −293), workspace at 11,041 production Rust LOC.
+
+**Goal:** Close the v1.4 follow-throughs (production sign bodies for P2TR + P2SH-P2WPKH, accurate fees for mixed-script rounds) and ready the codebase for external security audit.
+
+**Key accomplishments:**
+
+- **Phase 19 (BIP322-05/06/07):** Shipped production `sign` bodies for P2TR (BIP-341 Schnorr keypath via `sign_schnorr_no_aux_rand`) and P2SH-P2WPKH (BIP-143 ECDSA over unwrapped P2WPKH redeem) in `shared::bip322`; added the `p2sh_p2wpkh_final_script_sig` helper (23-byte BIP-141 nested-SegWit scriptSig); D-111 spk↔key cross-check at the top of each new sign body (defense-in-depth for charter T-19-A); byte-equality with `BdkClientWallet::sign_bip322` proven empirically in `client/tests/wallet_sign_roundtrip.rs`. Deleted `#[doc(hidden)] sign_simple_test_only` and per-script `sign_for_tests` helpers, migrating all 6 callsites to the production `sign_simple` dispatcher; `shared::bip322` public surface is now exactly 9 symbols, with V1.4-CRIT-01 dispatcher-only invariant load-bearing at the type level with zero test-only escape hatches.
+
+- **Phase 20 (FEE-01/02/03):** Replaced the hardcoded P2WPKH-only `INPUT_WEIGHT_VBYTES = 68` / `OUTPUT_WEIGHT_VBYTES = 31` in `coordinator/src/bitcoin/tx.rs` with `script_input_vbytes(ScriptType)` / `script_output_vbytes(ScriptType)` `pub const fn` lookups (P2WPKH 68/31, P2TR 58/43 round-UP per STATE.md, P2SH-P2WPKH 91/32). Plumbed `ParticipantInput.script_type` coordinator-side from the existing `dispatch_ownership_proof` derivation through `UtxoDetails → RegisteredInput` (CRIT-01 invariant preserved into the fee path — zero new `detect_script_type` call sites). Two regression tests pin v1.4 P2WPKH-only `fee_share == 266` byte-equal (`fee_share_p2wpkh_only_matches_v14_baseline`) and prove the mixed-script branch fires with a 9-sats/participant delta at `fee_rate=2` (`fee_share_mixed_script_differs_from_uniform_baseline`).
+
+- **Phase 21 (AUDIT-03):** Tightened the RSA SecretKey zeroization window from prose into a Rust type signature. Introduced `pub struct RoundSecretKey(BjSecretKey)` newtype in `coordinator/src/blind/rsa.rs` with empty-crypto-body `Drop` impl (PII-safe `tracing::debug!` only; transitive `rsa-0.9.10` `ZeroizeOnDrop` on `RsaPrivateKey` does the cryptographic work). Refactored `RoundStateInner.rsa_signer: RsaBlindSigner` → `Option<RsaBlindSigner>`; the bounded lifetime is expressible as a Rust type signature, and `transition_to(Phase::Idle)` at `state.rs:202` (inside the validated-transition block 201-207) is the SOLE FSM chokepoint that nulls the Option — verified by grep of the entire `coordinator/src/` tree. Structural FSM test `round_secret_key_dropped_on_round_end` (unconditional CI gate) + best-effort buffer-scrub test `round_secret_key_buffer_overwritten_on_drop` (CD-50 Linux-gated sanity check).
+
+- **Phase 21 (AUDIT-01 + AUDIT-02):** Shipped `docs/AUDIT-CHARTER.md` (574 LOC, 8 H2 sections in the AUDIT-01 mandated order: in-scope modules with file:symbol refs, threat models per module, 9 cross-shape rejection properties, v=2 PSBT handling boundary, RSA SecretKey zeroization window in bounded form, out-of-scope dependencies, residual risks in 3 sub-buckets, glossary mapping ~25 active v1.4/v1.5 identifiers to plain audit language). Refreshed `.cargo/audit.toml` with charter-anchor refs and a RUSTSEC-2023-0071 rationale rewrite that explicitly names the AUDIT-03 bounded-window mitigation (the "best-effort" framing is gone). Added a one-paragraph README §Security Model callout linking to the charter. All 3 files landed in commit `92ae533` as ONE atomic commit per D-133a (prevents anchor-drift window between artifacts).
+
+- **Code review CR-01 closure:** The v1.5 internal code review flagged that 3 production FSM trigger sites use `let _ = state.transition_to(...)` (discarding the FSM transition Result). Accepted as defense-in-depth gap per user disposition and documented in AUDIT-CHARTER.md §7 Residual Risks: Protocol-level with explicit closure-trigger language (any future FSM concurrency-model or `can_transition_to`-edge change MUST audit these 3 sites first). Closure deferred to v1.6+.
+
+**Cross-phase invariants — all green at v1.5 close:**
+- v1.3 `full_round::*` 8/8 (P2WPKH end-to-end suite, untouched since v1.3 REPAIR-01)
+- v1.4 `mixed_script_e2e_three_clients_broadcast` 1/1 (1×P2WPKH + 1×P2TR + 1×P2SH-P2WPKH end-to-end)
+- Phase 20 `fee_share` 2/2 (v1.4-baseline byte-equality + mixed-script delta sanity)
+- `cargo clippy --workspace --all-targets -- -D warnings` clean
+- `cargo audit` 0 vulnerabilities + 0 warnings (3 intentional RUSTSEC ignores: rsa Marvin, bincode unmaintained, paste unmaintained)
+- `shared/` and `client/` untouched in Phase 20/21 (V1.4-CRIT-01 dispatcher-only invariant structurally preserved)
+
+**Known deferred items at close:** 3 (see STATE.md §Deferred Items): 2 audit-open scanner false-positives (21-HUMAN-UAT.md flagged despite `status: resolved` with 0 pending scenarios; quick-task 260526-d7m-ci-hygiene-bump-rand-0-8-5-to-0-8-6-clos flagged as `missing` despite SUMMARY.md present — quick-task template lacks a `status:` frontmatter field) + the AUDIT-03 chokepoint `let _ =` closure (REVIEW.md CR-01, accepted as defense-in-depth gap per charter §7).
+
+**Carry-forward to v1.6+:** CARRY-TOR-UAT (Tor-mode verification harness), CARRY-REPAIR-01-PR (v1.3 REPAIR-01 PR observation closure), B-03 (dynamic fee estimation, pre-mainnet), TEST-EXT-01/02/03 (cross-impl differential fixtures + on-chain anchor test + v1.3↔v1.4 backwards-compat CI matrix), P2WSH multisig BIP-322, Wasabi 2.0.3-style mixed output scripts, per-input variable `fee_share`, and AUDIT-03 `let _ =` closure.
+
+---
+
 ## v1.4 BIP-322 Multi-Script Support (Shipped: 2026-05-31)
 
 **Phases completed:** 5 phases (14-18), 15 plans, ~3-day milestone
@@ -16,6 +48,7 @@
 - **Mixed-script E2E acceptance gate + liquidity bot multi-script** — `mixed_script_e2e_three_clients_broadcast` runs 1× P2WPKH + 1× P2TR + 1× P2SH-P2WPKH input through INPUT_REG → BROADCAST in a single `cargo test` run (reuses `BitcoindGuard` + `require_bitcoind!()` unchanged from v1.3, zero `Box::leak` in new test files); liquidity bot rotates `script_types` per round via `BLINDJOIN_BOT_SCRIPT_TYPES` CSV + persistent rotation counter file (defeats V1.4-MIN-02 uniform-script fingerprint); README §Privacy Considerations documents the chain-analysis tradeoff of mixed-script rounds (Phase 14 CD-3 carry-forward)
 
 **Known gaps recorded at close:**
+
 - TEST-EXT-03 (automated v1.3↔v1.4 backwards-compat integration matrix) deferred — WALLET-04 covers v1.4→v1.3 informally + Phase 18-03 verifies v1.3→v1.4 against a pinned binary, but no automated grid in v1.4.
 - CARRY-REPAIR-01-PR (v1.3 REPAIR-01 PR observation closure) still pending — the v1.4 cut PR is the natural moment to discharge this but is NOT a v1.4 code deliverable per REPAIR-01 lesson #5.
 - **Resolved at close:** 14 pre-existing clippy lints in `shared/src/bip322/*` (12× `result_large_err` + 2× `unnecessary_to_owned`) AND `coordinator::validate_utxo` `too_many_arguments` were fixed at the milestone-cut boundary so the `v1.4.0` tag push could clear the pre-push hook (`cargo clippy --workspace -- -D warnings`). Fixes: `Box<bip322::Error>` source, dropped redundant `.to_vec()` calls (`Witness::push` accepts `AsRef<[u8]>`), and `#[allow(clippy::too_many_arguments)]` on the CRIT-01 validator.
@@ -38,6 +71,7 @@
 - Test-infra & CLI hygiene — 2 MEDIUM test backdoors removed and replaced with the production state-machine path; dead `--utxo-value-sats` CLI flag dropped; `--generate-wallet` placeholder documented; planning state reconciled with shipped reality (Phase 11-13 directories preserved as forensic audit log under `.planning/milestones/v1.3-phases/`)
 
 **Known gaps recorded at close:**
+
 - REPAIR-01 PR observation closure still pending — closed-local only. Full closure expected at v1.4 cut PR.
 - Phase 11-13 Plan.md executions halted under D-08/D-11/D-12 escape-valves; the actual fixes shipped as direct code commits rather than Plan execution. Original execution trace preserved as forensic audit log.
 

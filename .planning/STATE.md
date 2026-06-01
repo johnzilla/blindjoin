@@ -2,26 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Audit-Readiness & Multi-Script Finish
-status: milestone_complete
-last_updated: 2026-05-31T23:51:33.134Z
-last_activity: 2026-05-31
+status: Awaiting next milestone
+last_updated: "2026-06-01T00:41:15.816Z"
+last_activity: 2026-06-01 — Milestone v1.5 completed and archived
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 5
   completed_plans: 5
   percent: 100
-stopped_at: Milestone complete (Phase 21 was final phase)
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 21
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-31
+Phase: Milestone v1.5 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-01 — Milestone v1.5 completed and archived
 
 ## Project Reference
 
@@ -109,3 +108,7 @@ The v1.3 P2WPKH-only `full_round::*` integration tests (8 tests) MUST remain gre
 | 21    | 02   | 11 min   | 3     | 3     | 2026-05-31 |
 
 (v1.5 metrics will accumulate per-phase. Cumulative trends live in `RETROSPECTIVE.md`. v1.4 milestone-scoped metrics live in `milestones/v1.4-*` archives.)
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
