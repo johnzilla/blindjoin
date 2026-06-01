@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-01T21:39:00.000Z"
+last_updated: "2026-06-01T21:46:47.364Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -18,9 +18,9 @@ progress:
 ## Current Position
 
 Phase: 22 (base-image-digest-drift-detection) — EXECUTING
-Plan: 5 of 6
-Status: Ready to execute (Plan 22-04 shipped commit `fae501f`)
-Last activity: 2026-06-01 — completed 22-04-PLAN.md (digest-drift-check.yml scheduled workflow with Pitfall 9 idempotency; DRIFT-02 satisfied)
+Plan: 6 of 6
+Status: Ready to execute (Plan 22-05 shipped commits `2de5de4` + `4e42d4c`)
+Last activity: 2026-06-01 — completed 22-05-PLAN.md (SECURITY.md + CONTRIBUTING.md prose for D-05; DRIFT-01 prose half satisfied)
 
 ## Project Reference
 
@@ -110,6 +110,7 @@ v1.6 Phase 22 plan decisions:
 - **Plan 22-03: `build-args:` placed between `labels:` and `cache-from:` in docker/build-push-action with: block** — PATTERNS §3 line 317 locks this insertion point; keeps deterministic-build inputs (tags, labels, build-args) grouped before cache-handling fields, mirroring the existing `tags: |` pipe-multiline shape on the same step.
 - **Plan 22-04: Paraphrased deliberately-omitted-scope names in the `permissions:` comment** rather than quoting their YAML keys verbatim. The PLAN's acceptance criteria run `! grep -q 'pull-requests:'` and `! grep -q 'id-token:'` as LINE-LEVEL auditor-grepable invariants — those assertions fail when the comment block literally contains the omitted-scope key strings, even though the runtime permission gate is correct. The rewritten comment uses `PR-write`, `packages`, and `id-token` (without the literal `:` suffix on `pull-requests` and `id-token`) so the audit gate is satisfied at the file level too. Establishes a reusable "auditor-grepable deliberately-omitted-scopes" pattern for Phase 23 (cosign) and Phase 25 (reproducible-verify) workflows.
 - **Plan 22-04: Followed RESEARCH.md §4 verbatim for the workflow YAML shape** — the locked structure (top-of-file comment block → `env:` → `on:` → `permissions:` → `jobs.drift-check:`) is the single source of truth for both DRIFT-02 implementation and the prose-comment-as-contract pattern future supply-chain workflows will mirror. Self-bootstrapping label via `gh label create digest-drift ... 2>/dev/null || true` eliminates the manual repo-setup step.
+- **Plan 22-05: Re-wrap `**Do not auto-merge digest bumps**` in SECURITY.md to a single line** so PLAN-locked `grep -q '\*\*Do not auto-merge digest bumps\*\*' SECURITY.md` matches. RESEARCH.md §7.1 wrapped the bold marker across two lines for source-file readability; PLAN.md acceptance line 122 is a single-line grep that does NOT match across newlines. Phrasing preserved verbatim; only the line break inside the bold marker shifted. PATTERNS §"SECURITY.md MODIFY" lines 383-385 authorize additive-voice latitude. Treated as Rule 3 (auto-fix blocking issue). Establishes the pattern for v1.6+ docs phases: when RESEARCH-locked prose wrapping collides with PLAN-locked literal-byte greps, the literal-byte form wins — that is what the supply-chain audit trail queries.
 
 ## Performance Metrics
 
@@ -123,10 +124,11 @@ v1.6 Phase 22:
 | 22-02 | read-base-digests composite action | ~5 min | 1 | 1 |
 | 22-03 | release.yml + docker.yml composite-action wiring (DRIFT-03) | ~6 min | 2 | 2 |
 | 22-04 | digest-drift-check.yml scheduled workflow (DRIFT-02) | ~7 min | 1 | 1 |
+| 22-05 | SECURITY.md + CONTRIBUTING.md prose for D-05 (DRIFT-01 prose half) | ~11 min | 2 | 2 |
 
 ## Operator Next Steps
 
 - v1.6 roadmap approved with 4 phases (22-25) covering 14 requirements (14/14 coverage, no orphans).
-- Phase 22 in progress: 4/6 plans complete (22-01, 22-02, 22-03, 22-04). DRIFT-01 + DRIFT-02 + DRIFT-03 all shipped.
-- **Next:** `/gsd:execute-phase 22` to continue with Plan 22-05 (SECURITY.md + CONTRIBUTING.md prose — D-05 prose half of the gate).
+- Phase 22 in progress: 5/6 plans complete (22-01, 22-02, 22-03, 22-04, 22-05). DRIFT-01 + DRIFT-02 + DRIFT-03 all shipped; D-05 prose-half of the supply-chain gate landed in SECURITY.md + CONTRIBUTING.md.
+- **Next:** `/gsd:execute-phase 22` to continue with Plan 22-06 (HUMAN-UAT: branch-protection toggle on `main` requiring CODEOWNERS approval, fresh-machine rehearsal of ROADMAP SC#1-4, github.com anchor-render verification of the new SECURITY.md subsection at `#base-image-digests-v16-onward`).
 - After Phase 22 closes via Plan 22-06 (HUMAN-UAT): Phase 23 (cosign image attestations + SLSA + SBOM — the load-bearing piece).
