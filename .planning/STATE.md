@@ -17,10 +17,11 @@ progress:
 
 ## Current Position
 
-Phase: 23 (cosign-image-attestations-slsa-provenance-sbom) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-06-02
+Phase: 23 (cosign-image-attestations-slsa-provenance-sbom) — PAUSED at Plan 23-05 HUMAN-UAT
+Plans complete: 23-01, 23-02, 23-03, 23-04 (4/5)
+Plan pending: 23-05 — maintainer-driven two-stage rehearsal (workflow_dispatch + fresh-machine UAT cutting v1.6.0-rc.0)
+Status: Awaiting maintainer to run Stage 1 + Stage 2, then re-invoke `/gsd:execute-phase 23` to close out
+Last activity: 2026-06-02 — Plans 23-01..04 shipped (cosign sign + SLSA provenance + SPDX SBOM + sigstore-pin-check + SECURITY.md recipes)
 
 ## Project Reference
 
