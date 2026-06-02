@@ -64,6 +64,25 @@ jobs:
     # Publish gate: only run on a real tag push. workflow_dispatch runs
     # check-only (the rehearsal path) and never uploads release artifacts.
     if: startsWith(github.ref, 'refs/tags/')
+    # Phase 24 SIGN-01/SIGN-02: cosign keyless signing + actions/attest-build-provenance need:
+    #   - contents:     write — softprops/action-gh-release uploads Release assets. Without
+    #                   this, softprops fails with 403 Forbidden on the Releases API call.
+    #                   See Phase 24 D-02.
+    #   - id-token:     write — OIDC token for Fulcio cert exchange. Without this,
+    #                   cosign sign-blob fails with the opaque "fulcio: 400 Bad
+    #                   Request" error. See PITFALLS Pitfall 2 + Phase 23 D-02.
+    #   - attestations: write — persist the SLSA provenance attestation to GitHub's
+    #                   attestations API. Without this, actions/attest-build-provenance
+    #                   fails with 403 Forbidden on the API call. See Phase 23
+    #                   RESEARCH §2.1 + the matching docker.yml block at lines 67-70.
+    # Deliberately omitted (auditor-grepable per Plan 22-04): packages, PR-write,
+    # pages, issues, deployments. These tokens MUST NOT appear anywhere in this file.
+    # release.yml does NOT push to ghcr.io — the absence of a literal `packages:` token
+    # at any indentation is the file-level audit gate confirming the no-ghcr-push contract.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
