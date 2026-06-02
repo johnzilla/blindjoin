@@ -42,10 +42,35 @@ threat-model treatment of v1.4 / v1.5 invariants see
   - Documented in [SECURITY.md §Supply-chain status](SECURITY.md#supply-chain-status)
     and [CONTRIBUTING.md §Bumping base-image digests](CONTRIBUTING.md#bumping-base-image-digests).
 
-- Remaining v1.6 phases (cosign image attestations + SLSA + SBOM,
-  release-tarball signing, reproducible-build recipe) are not yet started.
-  See [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md) for the
-  full milestone scope.
+- **Phase 23 — cosign image attestations + SLSA provenance + SPDX SBOM (ATTEST-01/02/03/04).**
+  - [`.github/workflows/docker.yml`](.github/workflows/docker.yml) grew its `docker`
+    job permissions to four scopes (`contents: read`, `packages: write`,
+    `id-token: write`, `attestations: write`) and now signs every tagged image
+    push with cosign via `sigstore/cosign-installer@v3.10.1` + cosign 2.6.3
+    (keyless OIDC, `cosign sign --yes`).
+  - Three additional steps land after the cosign sign step: `anchore/sbom-action`
+    generates an SPDX SBOM via Syft, `actions/attest-sbom` signs it as a SLSA
+    in-toto SBOM attestation pushed to the OCI registry, and
+    `actions/attest-build-provenance` emits a SLSA v1.0 provenance attestation —
+    all three reachable in the registry via OCI referrers.
+  - New `sigstore-pin-check` job in [`ci.yml`](.github/workflows/ci.yml) mirrors
+    the existing `bip322-pin-check` pattern: greps `.github/workflows/` for
+    `sigstore/cosign-installer`, `actions/attest-build-provenance`,
+    `actions/attest-sbom`, and `anchore/sbom-action` and fails CI if any
+    appears without a 40-hex commit-SHA pin.
+  - [`SECURITY.md`](SECURITY.md) gains an `### Image signatures + attestations (v1.6 onward)`
+    subsection documenting the four operator recipes — `cosign verify` with a
+    narrow `--certificate-identity-regexp` (Pitfall 1), `gh attestation verify`
+    for both SLSA provenance and SPDX SBOM predicates, and `cosign save --dir`
+    + `cosign verify --local-image` for offline verification (ATTEST-04). Pitfall
+    callouts for the GHCR UI badge timing (Pitfall 10) and the cosign 3.0 CLI
+    drift (`>= 2.6.3, < 3.0.0` pin per Pitfall 13) are inline.
+  - The v1.5 "Docker images on ghcr.io are unsigned" known-gap bullet is now
+    struck through with a cross-link to the new subsection.
+
+- Remaining v1.6 phases (release-tarball signing, reproducible-build recipe)
+  are not yet started. See [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md)
+  for the full milestone scope.
 
 ## [1.5.0] — 2026-06-01
 
