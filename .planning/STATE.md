@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
-status: ready_to_plan
-last_updated: 2026-06-01T22:21:05.360Z
+status: planning
+last_updated: "2026-06-02T01:24:01.456Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
   completed_plans: 6
-  percent: 0
-stopped_at: Phase 22 complete (6/6) — ready to discuss Phase 23
+  percent: 25
 ---
 
 # Project State
