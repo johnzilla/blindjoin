@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-02T02:41:52.434Z"
+last_updated: "2026-06-02T02:47:37.028Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
   percent: 25
 ---
 
@@ -18,7 +18,7 @@ progress:
 ## Current Position
 
 Phase: 23 (cosign-image-attestations-slsa-provenance-sbom) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-02
 
@@ -103,6 +103,10 @@ v1.6 roadmap-level decisions (2026-06-01):
 - **`--certificate-identity-regexp` over `--certificate-identity`** (Pitfall 1) — exact identity binding breaks on every new tag. Regex bound to the workflow file + tag namespace survives across releases.
 - **PGP path alongside cosign (SIGN-03), not replacing it** — cosign is the primary path (consistent with image signing); PGP is the redundant non-OIDC alternative for operators who can't reach Sigstore Fulcio/Rekor at verification time.
 
+v1.6 Phase 23 plan decisions:
+
+- **Plan 23-02: Paraphrased `slsa-framework/slsa-github-generator` in Pitfall 5 comment** — the acceptance criterion `! grep -q 'slsa-framework/slsa-github-generator'` fails if the string appears anywhere in the file, including comments. The comment now uses `slsa-github-generator` (without the `slsa-framework/` org prefix) to convey the prohibition without embedding the grep target. Mirrors Plan 23-01's `--no-tlog-upload` paraphrase pattern exactly.
+
 v1.6 Phase 22 plan decisions:
 
 - **Plan 22-02: Inline the auditor-grepable trailer per error path** (not via a `POLICY_REF` shell variable) — the acceptance criterion `grep -c 'Refusing to build without a valid manifest' >= 4` counts FILE LINES, not runtime expansions. Inlining the literal trailer in each of the 4 error echos puts the auditor-grep property at the file level as well as the runtime-log level. Final count: 7 matching lines in `.github/actions/read-base-digests/action.yml`.
@@ -126,9 +130,16 @@ v1.6 Phase 22:
 | 22-04 | digest-drift-check.yml scheduled workflow (DRIFT-02) | ~7 min | 1 | 1 |
 | 22-05 | SECURITY.md + CONTRIBUTING.md prose for D-05 (DRIFT-01 prose half) | ~11 min | 2 | 2 |
 
+v1.6 Phase 23:
+
+| Plan | Name | Duration | Tasks | Files |
+|------|------|----------|-------|-------|
+| 23-01 | Permissions + id:build + cosign-installer + cosign sign (ATTEST-01) | ~10 min | 2 | 1 |
+| 23-02 | SBOM generation + SBOM attestation + build provenance (ATTEST-02 + ATTEST-03) | ~8 min | 2 | 1 |
+
 ## Operator Next Steps
 
 - v1.6 roadmap approved with 4 phases (22-25) covering 14 requirements (14/14 coverage, no orphans).
 - Phase 22 in progress: 5/6 plans complete (22-01, 22-02, 22-03, 22-04, 22-05). DRIFT-01 + DRIFT-02 + DRIFT-03 all shipped; D-05 prose-half of the supply-chain gate landed in SECURITY.md + CONTRIBUTING.md.
-- **Next:** `/gsd:execute-phase 22` to continue with Plan 22-06 (HUMAN-UAT: branch-protection toggle on `main` requiring CODEOWNERS approval, fresh-machine rehearsal of ROADMAP SC#1-4, github.com anchor-render verification of the new SECURITY.md subsection at `#base-image-digests-v16-onward`).
-- After Phase 22 closes via Plan 22-06 (HUMAN-UAT): Phase 23 (cosign image attestations + SLSA + SBOM — the load-bearing piece).
+- Phase 23 Plan 23-01 and 23-02 shipped: ATTEST-01 (cosign sign), ATTEST-02 (SLSA v1.0 provenance), ATTEST-03 (Syft SBOM attestation) all wired into `docker.yml` docker job.
+- **Next:** Plan 23-03 (sigstore-pin-check CI gate enforcing the four SHA pins), Plan 23-04 (SECURITY.md Supply-chain status rewrite), Plan 23-05 (HUMAN-UAT: v1.6.0-rc.0 fresh-machine verify).

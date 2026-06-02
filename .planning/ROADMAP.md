@@ -107,7 +107,7 @@
   5. SECURITY.md `## Supply-chain status` is updated to remove the "Docker images on ghcr.io are unsigned" gap and replace it with the canonical `cosign verify` command (including the explicit callout that the GHCR UI "Unverified" badge is unrelated to cosign verification per Pitfall 10).
 **Plans**: 5 plans
 - [x] 23-01-PLAN.md — docker.yml foundation: job-level permissions (id-token + attestations: write) + `id: build` + cosign-installer + cosign sign (ATTEST-01)
-- [ ] 23-02-PLAN.md — docker.yml attestations: anchore/sbom-action + actions/attest-sbom (ATTEST-03) + actions/attest-build-provenance (ATTEST-02)
+- [x] 23-02-PLAN.md — docker.yml attestations: anchore/sbom-action + actions/attest-sbom (ATTEST-03) + actions/attest-build-provenance (ATTEST-02)
 - [x] 23-03-PLAN.md — ci.yml sigstore-pin-check job: 4-action grep gate (sigstore/cosign-installer + actions/attest-build-provenance + actions/attest-sbom + anchore/sbom-action)
 - [x] 23-04-PLAN.md — SECURITY.md § Supply-chain status rewrite: new `### Image signatures + attestations (v1.6 onward)` subsection with cosign verify + gh attestation verify + cosign save recipes (ATTEST-04) + Pitfall 10 + Pitfall 13 callouts
 - [ ] 23-05-PLAN.md — HUMAN-UAT Stage 1 (workflow_dispatch rehearsal) + Stage 2 (fresh ubuntu:24.04 container against v1.6.0-rc.0 + 13-row PASS/FAIL table + Pitfall 1 negative test)
@@ -158,7 +158,7 @@
 | 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete | 2026-05-31 |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 2/2 | Complete | 2026-05-31 |
 | 22. Base-Image Digest Drift Detection | v1.6 | 6/6 | Complete    | 2026-06-01 |
-| 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 3/5 | In Progress|  |
+| 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 4/5 | In Progress|  |
 | 24. Release Tarball Signing (cosign + SLSA + PGP) | v1.6 | 0/? | Not started | — |
 | 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/? | Not started | — |
 
