@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
-status: ready_to_plan
-last_updated: 2026-06-02T03:03:45.469Z
-last_activity: 2026-06-02
+status: planning
+last_updated: "2026-06-02T04:22:10.148Z"
+last_activity: 2026-06-02 — Phase 23 closed (cosign sign + SLSA + SBOM landed via Plans 23-01..04; HUMAN-UAT plan dropped as theater, verification deferred to first `v1.6.0-rc.0` tag push)
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 11
   completed_plans: 11
-  percent: 25
-stopped_at: Phase 23 complete (5/5) — ready to discuss Phase 24
+  percent: 50
 ---
 
 # Project State
