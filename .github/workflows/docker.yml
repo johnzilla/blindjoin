@@ -233,3 +233,44 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           sbom-path: 'sbom.spdx.json'
           push-to-registry: true
+
+      # Phase 23 ATTEST-02: SLSA v1.0 in-toto build provenance attestation.
+      # Predicate type emitted: https://slsa.dev/provenance/v1 (auto-derived
+      # from the workflow context — no explicit predicate-type input needed).
+      # The action names the builder workflow (docker.yml), the tag ref, the
+      # source commit, and the runner image from the GHA context automatically.
+      #
+      # RESEARCH §2.4 + §7.3 — cosign sign (Plan 23-01) and attest-build-
+      # provenance are NOT interchangeable. They produce DIFFERENT OCI artifacts
+      # under different tag conventions: cosign sign produces <digest>.sig
+      # (ATTEST-01 requirement), while attest-build-provenance produces a
+      # sha256-<HEX> referrer manifest (ATTEST-02 requirement). BOTH steps are
+      # required; they satisfy distinct REQ-IDs.
+      #
+      # Retrieval: `gh attestation verify oci://ghcr.io/.../blindjoin-<image>@<digest>
+      # --repo <owner>/blindjoin` is the PRIMARY operator path (see Plan 23-04
+      # SECURITY.md recipes block). cosign download attestation returns 404
+      # against these artifacts (GitHub attestation API uses referrer semantics,
+      # not the legacy .att tag convention) — RESEARCH §2.4 + issue #162.
+      #
+      # Pitfall 5: actions/attest-build-provenance is the locked path (roadmap-
+      # level decision; CONTEXT D-03 names this action verbatim). The alternative
+      # slsa-github-generator workflow MUST NOT be added — two competing
+      # attestations would result.
+      #
+      # Pinned to v3.2.0 (NOT v4.X wrapper). v4.0 of attest-build-provenance
+      # is a deprecation wrapper around actions/attest. v3.2.0 is the last
+      # release with self-contained docs matching CONTEXT.md D-03. v1.7
+      # carry-forward: migrate to actions/attest@v4 as a single consolidated
+      # step. See RESEARCH §2.3 + §7.4.
+      #
+      # push-to-registry: true (D-01 inline registry-attached path). No extra
+      # with: inputs beyond the three locked ones — predicate-type, workflow-
+      # file, tag-ref, and source-commit are all auto-derived from workflow
+      # context (RESEARCH §3.4).
+      - name: Attest build provenance (ATTEST-02)
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f  # v3.2.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
