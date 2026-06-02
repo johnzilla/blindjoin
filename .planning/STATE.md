@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-02T12:25:18.615Z"
+last_updated: "2026-06-02T12:35:01.490Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 16
-  completed_plans: 12
-  percent: 75
+  completed_plans: 13
+  percent: 50
 ---
 
 # Project State
@@ -18,7 +18,7 @@ progress:
 ## Current Position
 
 Phase: 24 (release-tarball-signing-cosign-slsa-pgp) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-02
 
@@ -112,6 +112,8 @@ v1.6 Phase 24 plan decisions:
 - **Plan 24-01: RESEARCH §3.2 correction load-bearing — `actions/attest-build-provenance@v3.2.0` has NO `output-name` input.** CONTEXT D-14 had assumed an `output-name` input to control the .sigstore filename; planner-verified action.yml at SHA `96278af6` declared exactly 8 inputs (`subject-path`, `subject-digest`, `subject-name`, `subject-checksums`, OCI-registry-push, `create-storage-record`, `show-summary`, `github-token`) and 3 outputs (`bundle-path`, `attestation-id`, `attestation-url`). Plan split SIGN-02 into TWO steps: (a) attest step with `id: provenance`; (b) `mv "${{ steps.provenance.outputs.bundle-path }}" blindjoin-linux-amd64.tar.gz.sigstore`. Without (b), softprops upload fails "file not found" on `.sigstore`. Anti-pattern entry added to PATTERNS — first phase-level instance where RESEARCH overrode CONTEXT-assumed input.
 - **Plan 24-01: Paraphrased forbidden-token names in attest-step comments** — the same Plan 22-04 paraphrasing discipline now extends to attest-* action inputs that the planner forbids by file-level grep. Specifically: the comment documenting the action's input list was rewritten from "exactly 8 inputs: subject-path, subject-digest, subject-name, subject-checksums, push-to-registry, ..." to "exactly 8 inputs and 3 outputs including bundle-path" so the literal tokens `subject-name:`, `subject-digest:`, `push-to-registry:` never appear at the file level. Pattern: file-level audit grep at `! grep -q '<input>:'` is honored at the file level even inside comments. Treated as Rule 1 (auto-fix bug) during Task 3 verification.
 - **Plan 24-01: Phase 23 sigstore-pin-check inherited at file level — no new CI gate added.** RESEARCH §2.3 confirms the existing `sigstore-pin-check` job at ci.yml:292-326 greps every workflow under `.github/workflows/` (including `release.yml`); both new sigstore SHA pins in `release.yml` are caught automatically. Phase 24 establishes the "Phase 23 sets discipline; Phase 24 inherits" pattern for future Phase 25 reproducible-verify workflow.
+- **Plan 24-02: Plain-text version pins in docs Prerequisites bullets** — initial draft of `docs/RELEASING.md`'s Prerequisites section used backtick-wrapped tool names (`` **`gpg` 2.4+** `` etc.), but the plan's automated acceptance criteria run literal-byte greps without backticks (`grep -q 'gpg 2\.4'`, `grep -q 'gh 2\.50'`, `grep -q 'cosign 2\.6\.3'`). Backticks split the contiguous-byte match — same root cause as Plan 22-05's `**Do not auto-merge digest bumps**` wrapping issue. Switched the Prerequisites bullets to bare-token form (`**gpg 2.4+** on the maintainer's machine.`) preserving Markdown bold styling while removing backticks from the version-pin tokens. Treated as Rule 3 (auto-fix blocking issue) before commit. Extends the "literal-byte form wins over source-file readability when the plan grep is the acceptance contract" pattern from workflow-modify plans (22-04, 22-05) to docs-modify plans.
+- **Plan 24-02: `<FINGERPRINT-TBD>` vs `<new-FINGERPRINT-TBD>` placeholder disambiguation** — 8 `<FINGERPRINT-TBD>` placeholders (Plan 24-05 replaces atomically) vs 3 `<new-FINGERPRINT-TBD>` placeholders (future-rotation prose; STAY as-is). The two distinct placeholder strings prevent Plan 24-05's atomic substitution from corrupting the rotation-procedure prose — a single `<FINGERPRINT-TBD>` replacement contract would have substituted the rotation flow's example new fingerprint, breaking the prose semantics.
 
 v1.6 Phase 22 plan decisions:
 
@@ -148,6 +150,7 @@ v1.6 Phase 24:
 | Plan | Name | Duration | Tasks | Files |
 |------|------|----------|-------|-------|
 | 24-01 | release.yml cosign sign-blob + SLSA provenance + softprops draft (SIGN-01 + SIGN-02) | ~5 min | 4 | 1 |
+| 24-02 | docs/RELEASING.md maintainer-side release procedure (SIGN-03 procedural surface) | ~7 min | 2 | 1 |
 
 ## Operator Next Steps
 
