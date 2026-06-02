@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-02T12:35:01.490Z"
+last_updated: "2026-06-02T12:45:38.822Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
   percent: 50
 ---
 
@@ -18,7 +18,7 @@ progress:
 ## Current Position
 
 Phase: 24 (release-tarball-signing-cosign-slsa-pgp) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-02
 
@@ -114,6 +114,9 @@ v1.6 Phase 24 plan decisions:
 - **Plan 24-01: Phase 23 sigstore-pin-check inherited at file level — no new CI gate added.** RESEARCH §2.3 confirms the existing `sigstore-pin-check` job at ci.yml:292-326 greps every workflow under `.github/workflows/` (including `release.yml`); both new sigstore SHA pins in `release.yml` are caught automatically. Phase 24 establishes the "Phase 23 sets discipline; Phase 24 inherits" pattern for future Phase 25 reproducible-verify workflow.
 - **Plan 24-02: Plain-text version pins in docs Prerequisites bullets** — initial draft of `docs/RELEASING.md`'s Prerequisites section used backtick-wrapped tool names (`` **`gpg` 2.4+** `` etc.), but the plan's automated acceptance criteria run literal-byte greps without backticks (`grep -q 'gpg 2\.4'`, `grep -q 'gh 2\.50'`, `grep -q 'cosign 2\.6\.3'`). Backticks split the contiguous-byte match — same root cause as Plan 22-05's `**Do not auto-merge digest bumps**` wrapping issue. Switched the Prerequisites bullets to bare-token form (`**gpg 2.4+** on the maintainer's machine.`) preserving Markdown bold styling while removing backticks from the version-pin tokens. Treated as Rule 3 (auto-fix blocking issue) before commit. Extends the "literal-byte form wins over source-file readability when the plan grep is the acceptance contract" pattern from workflow-modify plans (22-04, 22-05) to docs-modify plans.
 - **Plan 24-02: `<FINGERPRINT-TBD>` vs `<new-FINGERPRINT-TBD>` placeholder disambiguation** — 8 `<FINGERPRINT-TBD>` placeholders (Plan 24-05 replaces atomically) vs 3 `<new-FINGERPRINT-TBD>` placeholders (future-rotation prose; STAY as-is). The two distinct placeholder strings prevent Plan 24-05's atomic substitution from corrupting the rotation-procedure prose — a single `<FINGERPRINT-TBD>` replacement contract would have substituted the rotation flow's example new fingerprint, breaking the prose semantics.
+- **Plan 24-03: Recipe 1 single-line literal-byte form** — collapsed Phase-23-style `cosign verify-blob \` + `  --bundle blindjoin-linux-amd64.tar.gz.bundle \` line-wrap onto one physical line (`cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle \`) so the plan-author's acceptance grep `grep -q 'cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle' SECURITY.md` matches. Same root cause as Plan 22-05 `**Do not auto-merge digest bumps**` re-wrap and Plan 24-02 plain-text-version-pins: when literal-byte grep is the acceptance contract, the byte form wins over Phase-23 source-readability line-wrap. Pattern now spans workflow-modify (22-04, 22-05), docs-modify (24-02), and SECURITY.md (24-03) plans. Rule 3 (auto-fix blocking issue).
+- **Plan 24-03: BRE-escape acceptance-grep artifacts documented but no content change** — plan-author's `grep -q 'release\.yml@refs/tags/v\.\*' SECURITY.md` and `grep -A 25 ... \| grep -q 'docker\.yml'` patterns return false-negatives because BRE `\.` is escape-of-dot meaning "match one literal `.`", while the file contains the 2-byte literal `\.` regex source (backslash + dot inside the cosign --certificate-identity-regexp argument). Verified content correctness via `grep -F` (fixed-string literal): release.yml regex present in 2 places (Recipe 1 + Recipe 3); Phase 23's `docker\.yml` regex present in 2 places (image Recipe 1 + Recipe 4). Phase 23's own verify block has the same false-negative pattern; this is a future-plan-author note, not a content change.
+- **Plan 24-03: 3 `<FINGERPRINT-TBD>` occurrences in SECURITY.md** — Plan 24-05 atomic-substitution scope is 3 (SECURITY.md) + 8 (docs/RELEASING.md per Plan 24-02 SUMMARY) = **11 occurrences total**. The 3 `<new-FINGERPRINT-TBD>` rotation-procedure placeholders in docs/RELEASING.md stay as-is (Plan 24-02 disambiguation).
 
 v1.6 Phase 22 plan decisions:
 
@@ -151,10 +154,11 @@ v1.6 Phase 24:
 |------|------|----------|-------|-------|
 | 24-01 | release.yml cosign sign-blob + SLSA provenance + softprops draft (SIGN-01 + SIGN-02) | ~5 min | 4 | 1 |
 | 24-02 | docs/RELEASING.md maintainer-side release procedure (SIGN-03 procedural surface) | ~7 min | 2 | 1 |
+| 24-03 | SECURITY.md ### Release tarball signatures + provenance subsection (SIGN-01 + SIGN-02 + SIGN-03 operator-facing recipes) | ~5 min | 1 | 1 |
 
 ## Operator Next Steps
 
 - v1.6 roadmap approved with 4 phases (22-25) covering 14 requirements (14/14 coverage, no orphans).
-- Phase 22 in progress: 5/6 plans complete (22-01, 22-02, 22-03, 22-04, 22-05). DRIFT-01 + DRIFT-02 + DRIFT-03 all shipped; D-05 prose-half of the supply-chain gate landed in SECURITY.md + CONTRIBUTING.md.
-- Phase 23 Plan 23-01 and 23-02 shipped: ATTEST-01 (cosign sign), ATTEST-02 (SLSA v1.0 provenance), ATTEST-03 (Syft SBOM attestation) all wired into `docker.yml` docker job.
-- **Next:** Plan 23-03 (sigstore-pin-check CI gate enforcing the four SHA pins), Plan 23-04 (SECURITY.md Supply-chain status rewrite), Plan 23-05 (HUMAN-UAT: v1.6.0-rc.0 fresh-machine verify).
+- Phase 22 complete. Phase 23 complete. Phase 24 in progress: 3/5 plans complete (24-01 release.yml SIGN-01/02, 24-02 docs/RELEASING.md SIGN-03 maintainer-side, 24-03 SECURITY.md operator-side recipes).
+- Plan 24-03 just shipped: SECURITY.md gains `### Release tarball signatures + provenance (v1.6 onward)` subsection with 4 verify recipes (cosign verify-blob, gh attestation verify, cosign verify-attestation, gpg --verify with WKD) + Pitfall 24-B fingerprint-trust gate + `<a id="pgp-current"></a>` anchor with `<FINGERPRINT-TBD>` placeholder (3 occurrences). v1.5 Release-archives-unsigned gap closed (strikethrough cross-link).
+- **Next:** Plan 24-04 (likely CHANGELOG.md announcement), Plan 24-05 (atomic `<FINGERPRINT-TBD>` substitution at v1.6.0-rc.0 cut — checkpoint:human-verify).
