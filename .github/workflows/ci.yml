@@ -288,3 +288,39 @@ jobs:
             echo "       Comment text: // CRIT-01: script_type populated from wallet (descriptor type), never from CLI-flag direct echo" >&2
             exit 1
           fi
+
+  sigstore-pin-check:
+    name: sigstore + sbom action SHA-pin check
+    runs-on: ubuntu-latest
+    # v1.6 Phase 23 ATTEST-01/02/03 invariant: the four GitHub Actions that
+    # produce the supply-chain attestations (sigstore/cosign-installer,
+    # actions/attest-build-provenance, actions/attest-sbom, anchore/sbom-action)
+    # MUST be pinned to a 40-hex commit SHA in every workflow under
+    # .github/workflows/. Floating tags like @v3 expose the project to silent
+    # action substitution — exactly the attack surface this milestone is closing.
+    # Pattern mirrors bip322-pin-check (v1.4) and the v1.5 crit-01-grep-check
+    # family — narrow, audit-grepable, named after what it enforces.
+    # RESEARCH.md §2.2 adds anchore/sbom-action to the target list because Syft
+    # is the ATTEST-03 SBOM generator (attest-sbom does NOT generate SBOMs
+    # internally as of v2.4.0).
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Enforce SHA pin on sigstore + sbom actions
+        run: |
+          set -eu
+          # Greps for any of the four target actions used WITHOUT a 40-hex SHA
+          # ref. Match form: `uses: <owner>/<repo>@<not-40-hex>` (e.g. @v3, @main).
+          # Exits 1 with an auditor-facing message naming the offending file:line.
+          PATTERN='uses:\s*(sigstore/cosign-installer|actions/attest-build-provenance|actions/attest-sbom|anchore/sbom-action)@(?![a-f0-9]{40})'
+          if grep -rnPE "${PATTERN}" .github/workflows/; then
+            echo "ERROR: One or more sigstore-ecosystem / sbom-action uses above lacks a 40-hex SHA pin." >&2
+            echo "       v1.6 Phase 23 supply-chain invariant: ALL of" >&2
+            echo "         - sigstore/cosign-installer" >&2
+            echo "         - actions/attest-build-provenance" >&2
+            echo "         - actions/attest-sbom" >&2
+            echo "         - anchore/sbom-action" >&2
+            echo "       MUST be pinned by 40-hex commit SHA in every workflow." >&2
+            echo "       See SECURITY.md § Supply-chain status > Image signatures and" >&2
+            echo "       .planning/research/PITFALLS.md §4 for rationale." >&2
+            exit 1
+          fi
