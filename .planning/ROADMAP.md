@@ -125,7 +125,7 @@
 - [x] 24-01-PLAN.md — release.yml job permissions + cosign-installer + cosign sign-blob + actions/attest-build-provenance + .sigstore mv + softprops draft+4-file files: list (SIGN-01, SIGN-02)
 - [x] 24-02-PLAN.md — docs/RELEASING.md new: maintainer-side per-release procedure + PGP key generation/rotation/revocation + keys.openpgp.org + WKD direct-method (SIGN-03 procedural)
 - [x] 24-03-PLAN.md — SECURITY.md § Supply-chain status: append `### Release tarball signatures + provenance (v1.6 onward)` subsection with 4-recipe block (cosign verify-blob + gh attestation verify + cosign verify-attestation + gpg --verify) + EITHER-OR prose + `<a id="pgp-current"></a>` fingerprint anchor (SIGN-01/02/03 operator-facing)
-- [ ] 24-04-PLAN.md — CONTRIBUTING.md one-line cross-ref to docs/RELEASING.md at end of `## Tagging releases` section (SIGN-03 discoverability)
+- [x] 24-04-PLAN.md — CONTRIBUTING.md one-line cross-ref to docs/RELEASING.md at end of `## Tagging releases` section (SIGN-03 discoverability)
 - [ ] 24-05-PLAN.md — `checkpoint:human-verify` — maintainer YubiKey ceremony + commit docs/pgp/<FINGERPRINT>.asc + atomically replace `<FINGERPRINT-TBD>` placeholders in SECURITY.md + docs/RELEASING.md (SIGN-03 artifact)
 
 ### Phase 25: Reproducible-Build Recipe + Scheduled Verifier + Registry
@@ -164,7 +164,7 @@
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 2/2 | Complete | 2026-05-31 |
 | 22. Base-Image Digest Drift Detection | v1.6 | 6/6 | Complete    | 2026-06-01 |
 | 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 5/5 | Complete    | 2026-06-02 |
-| 24. Release Tarball Signing (cosign + SLSA + PGP) | v1.6 | 3/5 | In Progress|  |
+| 24. Release Tarball Signing (cosign + SLSA + PGP) | v1.6 | 4/5 | In Progress|  |
 | 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/? | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
