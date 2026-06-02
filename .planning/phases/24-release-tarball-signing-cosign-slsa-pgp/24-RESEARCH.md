@@ -914,22 +914,22 @@ This is the COMPLETE Wave 1 plan target. ~35 net new lines (counting comment blo
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does Plan 24-05's checkpoint:human-verify task ALSO include the maintainer's first `keys.openpgp.org` publish + WKD publish, or is that pure docs/RELEASING.md prose?**
    - What we know: D-10 mandates publication to BOTH; §5.1 step 4 + §5.3 document the procedure. The actual publish action is maintainer-side.
    - What's unclear: whether 24-05 includes the publish ACTION as a checkpoint sub-item, or only the .asc commit.
-   - Recommendation: 24-05's checkpoint task does NOT execute the publish (those are maintainer-side operations requiring YubiKey touch + email confirmation flow); 24-05 ONLY commits .asc + replaces `<FINGERPRINT-TBD>` placeholders. The publish is the maintainer's first action AFTER 24-05 lands, captured as the v1.6.0-rc.0 release procedure rehearsal. Match Phase 23's HUMAN-UAT pattern.
+   - RESOLVED: 24-05's checkpoint task does NOT execute the publish (those are maintainer-side operations requiring YubiKey touch + email confirmation flow); 24-05 ONLY commits .asc + replaces `<FINGERPRINT-TBD>` placeholders. The publish is the maintainer's first action AFTER 24-05 lands, captured as the v1.6.0-rc.0 release procedure rehearsal. Match Phase 23's HUMAN-UAT pattern.
 
 2. **Does `cosign sign-blob` at cosign 2.6.3 require `--output-signature` + `--output-certificate` explicitly, or does `--bundle <file>` alone suffice?**
    - What we know: `--bundle <output>` is documented to write the cosign 2.x bundle format (sig + cert + Rekor proof) to one file. CONTEXT §"Specifics" recipe matches this.
    - What's unclear: whether `--output-signature` / `--output-certificate` are EXTRA paths (split-file output) or REPLACE `--bundle` (mutually exclusive).
-   - Recommendation: use `--bundle` ONLY (the documented single-file path); do NOT add `--output-signature` or `--output-certificate`. If a Plan-write-time rehearsal surfaces a flag-conflict, fall back to discrete output flags but log a NEW Pitfall.
+   - RESOLVED: use `--bundle` ONLY (the documented single-file path); do NOT add `--output-signature` or `--output-certificate`. If a Plan-write-time rehearsal surfaces a flag-conflict, fall back to discrete output flags but log a NEW Pitfall.
 
 3. **Does the maintainer want one cosign-version pin range update across BOTH the existing image subsection and the new tarball subsection in SECURITY.md, or are they separately maintainable?**
    - What we know: D-12 says "Pitfall 13 callout is a 1-liner cross-ref to Phase 23's section, not duplication" — implies Phase 23's prose is the canonical version pin source.
    - What's unclear: whether the tarball subsection cites the image-side range explicitly, or just says "see image subsection for cosign version pin".
-   - Recommendation: 1-line cross-reference: "See the image subsection above for the cosign version pin range; the same constraints apply to tarball verification." Avoids prose duplication; avoids drift if the pin changes.
+   - RESOLVED: 1-line cross-reference: "See the image subsection above for the cosign version pin range; the same constraints apply to tarball verification." Avoids prose duplication; avoids drift if the pin changes.
 
 ---
 
@@ -1064,11 +1064,11 @@ Phase 24 introduces three new tool dependencies on the CI runner (already audite
 | PGP procedure | MEDIUM-HIGH | YubiKey + ed25519 + WKD direct method is standard GnuPG; the only uncertainty is whether `<owner>.github.io` exists. |
 | Operator recipes | MEDIUM-HIGH | All 4 recipes (cosign verify-blob, gh attestation verify, cosign verify-attestation, gpg --verify) verified against the action / CLI versions in use; A1 caveat on predicate JSON output. |
 
-### Open Questions
+### Open Questions (RESOLVED)
 
-1. Does Plan 24-05 also execute the maintainer's first `keys.openpgp.org` publish + WKD publish? — recommendation: NO (matches Phase 23 HUMAN-UAT-at-tag pattern).
-2. Does `cosign sign-blob` at 2.6.3 require `--bundle` ONLY or ALSO `--output-signature` + `--output-certificate`? — recommendation: `--bundle` alone; rehearse and add a Pitfall if conflict.
-3. Does SECURITY.md tarball subsection cite the image-side cosign-version range explicitly or via 1-line cross-ref? — recommendation: 1-line cross-ref to avoid drift.
+1. RESOLVED: Plan 24-05 does NOT execute the maintainer's first `keys.openpgp.org` publish + WKD publish (matches Phase 23 HUMAN-UAT-at-tag pattern).
+2. RESOLVED: `cosign sign-blob` at 2.6.3 uses `--bundle` alone (no `--output-signature` + `--output-certificate`); rehearse and add a Pitfall if a future conflict surfaces.
+3. RESOLVED: SECURITY.md tarball subsection uses a 1-line cross-ref to the image-side cosign-version range to avoid drift.
 
 ### Ready for Planning
 
