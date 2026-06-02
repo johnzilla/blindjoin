@@ -198,11 +198,25 @@ jobs:
       - name: Rename provenance bundle to .sigstore Release asset filename
         run: mv "${{ steps.provenance.outputs.bundle-path }}" blindjoin-linux-amd64.tar.gz.sigstore
 
-      - name: Upload to GitHub Releases
+      # Phase 24 D-07: Release ships as draft until the maintainer uploads the
+      # .asc detached PGP signature (per docs/RELEASING.md procedure) and runs
+      # `gh release edit vX.Y.Z --draft=false`. Operators visiting the Releases
+      # page never see a release missing the PGP signature — consistent
+      # verification UX (every published release has all 5 assets, or it's a draft).
+      #
+      # Phase 24 D-15: files: list is in semantic order — artifact → integrity →
+      # signature → provenance. The .asc PGP detached signature is uploaded
+      # post-CI by the maintainer; it is NOT in this list. Per D-06 PGP signing
+      # is OUT of release.yml entirely (CI does not hold the PGP private key and
+      # MUST NOT — that defeats SIGN-03's non-OIDC alternative path rationale).
+      - name: Upload to GitHub Releases (draft — maintainer flips out of draft after PGP upload)
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
+          draft: true
           files: |
             blindjoin-linux-amd64.tar.gz
             blindjoin-linux-amd64.tar.gz.sha256
+            blindjoin-linux-amd64.tar.gz.bundle
+            blindjoin-linux-amd64.tar.gz.sigstore
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
