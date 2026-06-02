@@ -93,6 +93,8 @@ git push origin v1.X.0
 
 The milestone *name* in planning docs (e.g. `v1.3 Test Infrastructure & Operational Hardening`) is independent of the git tag — docs may stay `v1.X` for readability while the tag is `v1.X.0`.
 
+Once `release.yml` finishes, the maintainer-side procedure (download the CI-built tarball, sign it with PGP on a YubiKey, upload the `.asc`, flip the release out of draft) lives in [`docs/RELEASING.md`](docs/RELEASING.md). Most contributors don't need it; it's the release-engineering manual for the maintainer.
+
 ## Bumping base-image digests
 
 `docker/Dockerfile` derives from two upstream base images:
