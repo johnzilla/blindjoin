@@ -2,33 +2,32 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
-status: executing
-last_updated: "2026-06-02T02:47:37.028Z"
+status: ready_to_plan
+last_updated: 2026-06-02T03:03:45.469Z
 last_activity: 2026-06-02
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
   percent: 25
+stopped_at: Phase 23 complete (5/5) — ready to discuss Phase 24
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 23 (cosign-image-attestations-slsa-provenance-sbom) — PAUSED at Plan 23-05 HUMAN-UAT
-Plans complete: 23-01, 23-02, 23-03, 23-04 (4/5)
-Plan pending: 23-05 — maintainer-driven two-stage rehearsal (workflow_dispatch + fresh-machine UAT cutting v1.6.0-rc.0)
-Status: Awaiting maintainer to run Stage 1 + Stage 2, then re-invoke `/gsd:execute-phase 23` to close out
-Last activity: 2026-06-02 — Plans 23-01..04 shipped (cosign sign + SLSA provenance + SPDX SBOM + sigstore-pin-check + SECURITY.md recipes)
+Phase: 24 — release-tarball-signing-(cosign-+-slsa-+-pgp)
+Status: Ready to plan
+Last activity: 2026-06-02 — Phase 23 closed (cosign sign + SLSA + SBOM landed via Plans 23-01..04; HUMAN-UAT plan dropped as theater, verification deferred to first `v1.6.0-rc.0` tag push)
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-06-01 — v1.6 Current Milestone)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 23 — cosign-image-attestations-slsa-provenance-sbom
+**Current focus:** Phase 24 — release tarball signing (cosign + slsa + pgp)
 
 ## Milestone Map
 

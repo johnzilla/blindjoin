@@ -72,7 +72,7 @@
 ### 📋 v1.6 Supply-Chain Attestation (Phases 22-25) — IN PROGRESS
 
 - [x] **Phase 22: Base-Image Digest Drift Detection** — Commit a canonical digest manifest and a scheduled drift-check workflow that opens issues (not PRs) on drift, with release builds reading digests from the manifest. (completed 2026-06-01)
-- [ ] **Phase 23: cosign Image Attestations + SLSA Provenance + SBOM** — Every ghcr.io image is signed via OIDC keyless flow with SLSA v1.0 provenance, an SPDX SBOM attestation, and a downloadable cosign `.bundle`.
+- [x] **Phase 23: cosign Image Attestations + SLSA Provenance + SBOM** — Every ghcr.io image is signed via OIDC keyless flow with SLSA v1.0 provenance, an SPDX SBOM attestation, and a downloadable cosign `.bundle`. (completed 2026-06-02)
 - [ ] **Phase 24: Release Tarball Signing (cosign + SLSA + PGP)** — Every release tarball ships a cosign signature, SLSA provenance, and a detached PGP signature as a non-OIDC alternative verification path.
 - [ ] **Phase 25: Reproducible-Build Recipe + Scheduled Verifier + Registry** — Publish a reproducible-build recipe, run an `ubuntu-24.04`-pinned monthly verifier that asserts byte-equality and opens issues on drift, and register with reproducible-builds.org.
 
@@ -110,7 +110,7 @@
 - [x] 23-02-PLAN.md — docker.yml attestations: anchore/sbom-action + actions/attest-sbom (ATTEST-03) + actions/attest-build-provenance (ATTEST-02)
 - [x] 23-03-PLAN.md — ci.yml sigstore-pin-check job: 4-action grep gate (sigstore/cosign-installer + actions/attest-build-provenance + actions/attest-sbom + anchore/sbom-action)
 - [x] 23-04-PLAN.md — SECURITY.md § Supply-chain status rewrite: new `### Image signatures + attestations (v1.6 onward)` subsection with cosign verify + gh attestation verify + cosign save recipes (ATTEST-04) + Pitfall 10 + Pitfall 13 callouts
-- [ ] 23-05-PLAN.md — HUMAN-UAT Stage 1 (workflow_dispatch rehearsal) + Stage 2 (fresh ubuntu:24.04 container against v1.6.0-rc.0 + 13-row PASS/FAIL table + Pitfall 1 negative test)
+- [x] 23-05-PLAN.md — HUMAN-UAT Stage 1 (workflow_dispatch rehearsal) + Stage 2 (fresh ubuntu:24.04 container against v1.6.0-rc.0 + 13-row PASS/FAIL table + Pitfall 1 negative test)
 
 ### Phase 24: Release Tarball Signing (cosign + SLSA + PGP)
 **Goal**: Every `blindjoin-linux-amd64.tar.gz` published as a GitHub Release asset can be cryptographically attributed to the maintainer via TWO independent paths — the OIDC-keyless cosign path (consistent with image signing) AND a maintainer-held PGP key path for operators who cannot reach Sigstore Fulcio/Rekor at verification time.
@@ -158,7 +158,7 @@
 | 20. Mixed-Round Fee Accuracy | v1.5 | 1/1 | Complete | 2026-05-31 |
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 2/2 | Complete | 2026-05-31 |
 | 22. Base-Image Digest Drift Detection | v1.6 | 6/6 | Complete    | 2026-06-01 |
-| 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 4/5 | In Progress|  |
+| 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 5/5 | Complete    | 2026-06-02 |
 | 24. Release Tarball Signing (cosign + SLSA + PGP) | v1.6 | 0/? | Not started | — |
 | 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/? | Not started | — |
 
