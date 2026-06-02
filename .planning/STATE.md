@@ -4,7 +4,7 @@ milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
 last_updated: "2026-06-02T12:49:41Z"
-last_activity: 2026-06-02
+last_activity: 2026-06-02 — Phase 24 Wave 1 (24-01..04) shipped via /gsd-plan-phase 24 --auto; Wave 2 (24-05 checkpoint:human-verify) DEFERRED to v1.6.0-rc.0 cut — needs maintainer YubiKey ed25519 ceremony + 14-placeholder atomic substitution
 progress:
   total_phases: 4
   completed_phases: 2
@@ -17,9 +17,9 @@ progress:
 
 ## Current Position
 
-Phase: 24 (release-tarball-signing-cosign-slsa-pgp) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
+Phase: 24 (release-tarball-signing-cosign-slsa-pgp) — EXECUTED (Wave 1 only); Wave 2 deferred to maintainer YubiKey ceremony at v1.6.0-rc.0 cut
+Plan: 4 of 5 (24-05 awaits maintainer YubiKey ceremony — see docs/RELEASING.md `## PGP key generation`)
+Status: Wave 1 shipped — Wave 2 maintainer-owned (mirrors Phase 23 HUMAN-UAT-at-tag pattern)
 Last activity: 2026-06-02
 
 ## Project Reference
