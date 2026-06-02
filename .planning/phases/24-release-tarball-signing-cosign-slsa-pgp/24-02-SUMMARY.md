@@ -1,8 +1,20 @@
 ---
 phase: 24-release-tarball-signing-cosign-slsa-pgp
 plan: 02
+post_execution_scope_reduction:
+  date: 2026-06-02
+  reason: |
+    SIGN-03 (PGP path) deferred indefinitely at Phase 24 closeout. The PGP key
+    generation, rotation, revocation, keys.openpgp.org publish, and WKD publish
+    sections of docs/RELEASING.md were stripped — file went from ~245 lines to
+    ~60 lines. Per-release procedure tightened: PGP detach-sign step removed,
+    .asc upload removed, .asc upload + draft-flip merged into a single step.
+  remaining_scope: |
+    docs/RELEASING.md now documents the cosign+SLSA-only release procedure:
+    prerequisites (gh, cosign), per-release procedure (tag → watch CI →
+    pre-flight verify → flip draft), and pre-flight cosign verify recipes.
 subsystem: ci-supply-chain
-tags: [docs, releasing, pgp, yubikey, gpg, wkd, keys-openpgp-org, maintainer-procedure]
+tags: [docs, releasing, cosign, slsa, maintainer-procedure]
 requires:
   - CONTRIBUTING.md (existing — relative link target for audience-disambiguation lede)
   - .github/workflows/release.yml (existing — Phase 24 Plan 24-01 final state; per-release step 2 link target)

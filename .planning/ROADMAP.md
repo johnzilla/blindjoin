@@ -73,7 +73,7 @@
 
 - [x] **Phase 22: Base-Image Digest Drift Detection** — Commit a canonical digest manifest and a scheduled drift-check workflow that opens issues (not PRs) on drift, with release builds reading digests from the manifest. (completed 2026-06-01)
 - [x] **Phase 23: cosign Image Attestations + SLSA Provenance + SBOM** — Every ghcr.io image is signed via OIDC keyless flow with SLSA v1.0 provenance, an SPDX SBOM attestation, and a downloadable cosign `.bundle`. (completed 2026-06-02)
-- [ ] **Phase 24: Release Tarball Signing (cosign + SLSA + PGP)** — Every release tarball ships a cosign signature, SLSA provenance, and a detached PGP signature as a non-OIDC alternative verification path.
+- [x] **Phase 24: Release Tarball Signing (cosign + SLSA)** — Every release tarball ships a cosign signature + SLSA provenance via `actions/attest-build-provenance`, with a documented operator-side verify recipe. PGP alternative path (SIGN-03) deferred indefinitely at 2026-06-02 phase closeout — see REQUIREMENTS.md.
 - [ ] **Phase 25: Reproducible-Build Recipe + Scheduled Verifier + Registry** — Publish a reproducible-build recipe, run an `ubuntu-24.04`-pinned monthly verifier that asserts byte-equality and opens issues on drift, and register with reproducible-builds.org.
 
 ## Phase Details
@@ -112,21 +112,21 @@
 - [x] 23-04-PLAN.md — SECURITY.md § Supply-chain status rewrite: new `### Image signatures + attestations (v1.6 onward)` subsection with cosign verify + gh attestation verify + cosign save recipes (ATTEST-04) + Pitfall 10 + Pitfall 13 callouts
 - [x] 23-05-PLAN.md — HUMAN-UAT Stage 1 (workflow_dispatch rehearsal) + Stage 2 (fresh ubuntu:24.04 container against v1.6.0-rc.0 + 13-row PASS/FAIL table + Pitfall 1 negative test)
 
-### Phase 24: Release Tarball Signing (cosign + SLSA + PGP)
-**Goal**: Every `blindjoin-linux-amd64.tar.gz` published as a GitHub Release asset can be cryptographically attributed to the maintainer via TWO independent paths — the OIDC-keyless cosign path (consistent with image signing) AND a maintainer-held PGP key path for operators who cannot reach Sigstore Fulcio/Rekor at verification time.
+### Phase 24: Release Tarball Signing (cosign + SLSA)
+**Goal**: Every `blindjoin-linux-amd64.tar.gz` published as a GitHub Release asset can be cryptographically attributed to the maintainer via the OIDC-keyless cosign path + SLSA v1.0 provenance, consistent with Phase 23's image signing.
 **Depends on**: Phase 23 (reuses the SHA-pinned `sigstore/cosign-installer` action and the `--certificate-identity-regexp` shape; SECURITY.md verification-commands template).
-**Requirements**: SIGN-01, SIGN-02, SIGN-03
+**Requirements**: SIGN-01, SIGN-02
+**Original scope included SIGN-03 (maintainer-held PGP alternative path); deferred indefinitely at 2026-06-02 closeout — see REQUIREMENTS.md for the trigger condition.**
 **Success Criteria** (what must be TRUE):
-  1. Every GitHub Release at v1.6.0+ includes the tarball plus a companion cosign `.bundle` (or discrete `.sig` + `.crt`) asset; running `cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' blindjoin-linux-amd64.tar.gz` from a fresh machine returns exit code 0 (Pitfall 12 fresh-machine UAT).
+  1. Every GitHub Release at v1.6.0+ includes the tarball plus a companion cosign `.bundle` (or discrete `.sig` + `.crt`) asset; running `cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' blindjoin-linux-amd64.tar.gz` from a fresh machine returns exit code 0 (Pitfall 12 fresh-machine UAT, proof deferred to first `v1.6.0-rc.0` tag push).
   2. A SLSA v1.0 provenance attestation is downloadable for the tarball via the same `actions/attest-build-provenance` machinery as Phase 23, naming `release.yml` as the builder; the cosign verify recipe in SECURITY.md is structurally identical for image and tarball artifacts (consistent verifier UX).
-  3. A maintainer-held PGP public key is committed at `docs/pgp/<fingerprint>.asc` AND uploaded to `keys.openpgp.org`; the fingerprint is documented in SECURITY.md; every release tarball ships a `.asc` detached signature that an operator verifies via `gpg --verify blindjoin-linux-amd64.tar.gz.asc blindjoin-linux-amd64.tar.gz` without touching Sigstore.
-  4. SECURITY.md `## Supply-chain status` carries BOTH verification recipes (cosign + PGP) side by side, with an explicit note that EITHER path is sufficient — and pins a documented operator-side cosign version range (Pitfall 13 cosign 3.0 CLI drift mitigation).
-**Plans**: 5 plans
-- [x] 24-01-PLAN.md — release.yml job permissions + cosign-installer + cosign sign-blob + actions/attest-build-provenance + .sigstore mv + softprops draft+4-file files: list (SIGN-01, SIGN-02)
-- [x] 24-02-PLAN.md — docs/RELEASING.md new: maintainer-side per-release procedure + PGP key generation/rotation/revocation + keys.openpgp.org + WKD direct-method (SIGN-03 procedural)
-- [x] 24-03-PLAN.md — SECURITY.md § Supply-chain status: append `### Release tarball signatures + provenance (v1.6 onward)` subsection with 4-recipe block (cosign verify-blob + gh attestation verify + cosign verify-attestation + gpg --verify) + EITHER-OR prose + `<a id="pgp-current"></a>` fingerprint anchor (SIGN-01/02/03 operator-facing)
-- [x] 24-04-PLAN.md — CONTRIBUTING.md one-line cross-ref to docs/RELEASING.md at end of `## Tagging releases` section (SIGN-03 discoverability)
-- [ ] 24-05-PLAN.md — `checkpoint:human-verify` — maintainer YubiKey ceremony + commit docs/pgp/<FINGERPRINT>.asc + atomically replace `<FINGERPRINT-TBD>` placeholders in SECURITY.md + docs/RELEASING.md (SIGN-03 artifact)
+  3. SECURITY.md `## Supply-chain status` carries the cosign + SLSA verification recipes for tarballs (consistent with Phase 23's image-side subsection) and pins a documented operator-side cosign version range (Pitfall 13 cosign 3.0 CLI drift mitigation).
+**Plans**: 4 shipped + 1 superseded
+- [x] 24-01-PLAN.md — release.yml job permissions + cosign-installer + cosign sign-blob + actions/attest-build-provenance + .sigstore mv + softprops draft+4-file files: list (SIGN-01, SIGN-02) — shipped 2026-06-02
+- [x] 24-02-PLAN.md — docs/RELEASING.md new: maintainer-side per-release procedure + pre-flight cosign verify (PGP key generation/rotation/revocation + keys.openpgp.org + WKD sections stripped 2026-06-02 with SIGN-03 deferral)
+- [x] 24-03-PLAN.md — SECURITY.md § Supply-chain status: append `### Release tarball signatures + provenance (v1.6 onward)` subsection with cosign verify-blob + gh attestation verify + cosign verify-attestation recipes (gpg --verify recipe + `<a id="pgp-current"></a>` fingerprint anchor + EITHER-OR prose stripped 2026-06-02 with SIGN-03 deferral)
+- [x] 24-04-PLAN.md — CONTRIBUTING.md one-line cross-ref to docs/RELEASING.md at end of `## Tagging releases` section
+- [~] 24-05-PLAN.md — SUPERSEDED 2026-06-02 (was `checkpoint:human-verify` — maintainer YubiKey ceremony + commit docs/pgp/<FINGERPRINT>.asc; not needed under cosign+SLSA-only scope)
 
 ### Phase 25: Reproducible-Build Recipe + Scheduled Verifier + Registry
 **Goal**: An independent rebuilder can confirm the `blindjoin-linux-amd64.tar.gz` GitHub Release artifact is the byte-for-byte natural product of the source tree at the tagged commit — and a scheduled CI verifier proves blindjoin's reproducibility claim continuously rather than just at ship time.
@@ -164,7 +164,7 @@
 | 21. Audit Charter & Zeroization Tightening | v1.5 | 2/2 | Complete | 2026-05-31 |
 | 22. Base-Image Digest Drift Detection | v1.6 | 6/6 | Complete    | 2026-06-01 |
 | 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 5/5 | Complete    | 2026-06-02 |
-| 24. Release Tarball Signing (cosign + SLSA + PGP) | v1.6 | 4/5 | In Progress|  |
+| 24. Release Tarball Signing (cosign + SLSA) | v1.6 | 4/4 | Complete | 2026-06-02 |
 | 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/? | Not started | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`

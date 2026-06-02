@@ -19,9 +19,9 @@
 
 ### Category 2 — Detached signatures on GitHub Release tarballs
 
-- [ ] **SIGN-01:** Every `blindjoin-linux-amd64.tar.gz` release artifact is accompanied by a cosign blob signature uploaded to the same GitHub Release (`.bundle` format, or discrete `.sig` + `.crt`).
-- [ ] **SIGN-02:** Every release tarball carries a SLSA v1.0 provenance attestation via the same `actions/attest-build-provenance` machinery as ATTEST-02. Verifier UX is consistent across image + tarball artifacts.
-- [ ] **SIGN-03:** A detached PGP signature alternative path is shipped alongside the cosign signature: maintainer-held PGP key, exported public key committed to the repo + uploaded to keys.openpgp.org, signing key fingerprint documented in `SECURITY.md`. Provides a non-OIDC verification path for operators who cannot reach sigstore Fulcio/Rekor at verification time.
+- [x] **SIGN-01:** Every `blindjoin-linux-amd64.tar.gz` release artifact is accompanied by a cosign blob signature uploaded to the same GitHub Release (`.bundle` format, or discrete `.sig` + `.crt`). _Wired in `.github/workflows/release.yml` at Phase 24; UAT proof deferred to first `v1.6.0-rc.0` tag push._
+- [x] **SIGN-02:** Every release tarball carries a SLSA v1.0 provenance attestation via the same `actions/attest-build-provenance` machinery as ATTEST-02. Verifier UX is consistent across image + tarball artifacts. _Wired in `.github/workflows/release.yml` at Phase 24; UAT proof deferred to first `v1.6.0-rc.0` tag push._
+- [~] **SIGN-03 (DEFERRED 2026-06-02 at Phase 24 closeout):** A detached PGP signature alternative path is shipped alongside the cosign signature: maintainer-held PGP key, exported public key committed to the repo + uploaded to keys.openpgp.org, signing key fingerprint documented in `SECURITY.md`. Provides a non-OIDC verification path for operators who cannot reach sigstore Fulcio/Rekor at verification time. **Status:** Deferred indefinitely. **Trigger to revisit:** a real operator files an issue requesting air-gapped verification. **Why deferred:** for a pre-customer solo project, the unique threats this mitigates (Sigstore compromise + maintainer GitHub account compromise) are either negligible-probability or better addressed by YubiKey-for-GitHub-2FA than by an ongoing maintainer-held PGP key-rotation lifecycle.
 
 ### Category 3 — Reproducible-build recipe + verifier
 
@@ -69,9 +69,9 @@ Filled by gsd-roadmapper on 2026-06-01 (ROADMAP.md approval). Coverage: **14/14 
 | ATTEST-02 | Phase 23 — cosign Image Attestations + SLSA + SBOM | 23-02 (actions/attest-build-provenance step) — shipped 2026-06-02 (commit 4f3dd8e) |
 | ATTEST-03 | Phase 23 — cosign Image Attestations + SLSA + SBOM | 23-02 (anchore/sbom-action + actions/attest-sbom steps) — shipped 2026-06-02 (commit bb9cb5f) |
 | ATTEST-04 | Phase 23 — cosign Image Attestations + SLSA + SBOM | TBD |
-| SIGN-01 | Phase 24 — Release Tarball Signing (cosign + SLSA + PGP) | TBD |
-| SIGN-02 | Phase 24 — Release Tarball Signing (cosign + SLSA + PGP) | TBD |
-| SIGN-03 | Phase 24 — Release Tarball Signing (cosign + SLSA + PGP) | TBD |
+| SIGN-01 | Phase 24 — Release Tarball Signing (cosign + SLSA) | 24-01 (release.yml cosign sign-blob step) — shipped 2026-06-02 (commit 0215894) |
+| SIGN-02 | Phase 24 — Release Tarball Signing (cosign + SLSA) | 24-01 (release.yml attest-build-provenance step + mv rename) — shipped 2026-06-02 (commit 4eb5b3a) |
+| SIGN-03 | DEFERRED 2026-06-02 (Phase 24 closeout) | n/a — revisit only if an operator files a real air-gapped-verification issue |
 | REPRO-01 | Phase 25 — Reproducible-Build Recipe + Verifier + Registry | TBD |
 | REPRO-02 | Phase 25 — Reproducible-Build Recipe + Verifier + Registry | TBD |
 | REPRO-03 | Phase 25 — Reproducible-Build Recipe + Verifier + Registry | TBD |

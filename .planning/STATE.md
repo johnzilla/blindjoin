@@ -4,22 +4,22 @@ milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
 last_updated: "2026-06-02T12:49:41Z"
-last_activity: 2026-06-02 — Phase 24 Wave 1 (24-01..04) shipped via /gsd-plan-phase 24 --auto; Wave 2 (24-05 checkpoint:human-verify) DEFERRED to v1.6.0-rc.0 cut — needs maintainer YubiKey ed25519 ceremony + 14-placeholder atomic substitution
+last_activity: 2026-06-02 — Phase 24 CLOSED at cosign+SLSA scope. SIGN-03 (PGP/YubiKey path) deferred indefinitely after honest threat-model review: for a solo pre-customer project, the unique threats PGP mitigates are either negligible probability or better addressed by YubiKey-for-GitHub-2FA. Plan 24-05 superseded; PGP sections stripped from docs/RELEASING.md + SECURITY.md.
 progress:
   total_phases: 4
-  completed_phases: 2
-  total_plans: 16
+  completed_phases: 3
+  total_plans: 15
   completed_plans: 15
-  percent: 56
+  percent: 75
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 24 (release-tarball-signing-cosign-slsa-pgp) — EXECUTED (Wave 1 only); Wave 2 deferred to maintainer YubiKey ceremony at v1.6.0-rc.0 cut
-Plan: 4 of 5 (24-05 awaits maintainer YubiKey ceremony — see docs/RELEASING.md `## PGP key generation`)
-Status: Wave 1 shipped — Wave 2 maintainer-owned (mirrors Phase 23 HUMAN-UAT-at-tag pattern)
+Phase: 24 (release-tarball-signing-cosign-slsa) — COMPLETE (cosign + SLSA scope; SIGN-03 PGP path deferred indefinitely)
+Plan: 4 of 4 shipped (24-05 superseded — was YubiKey ceremony for the deferred PGP path)
+Status: Phase 24 closed; ready for Phase 25 (Reproducible-Build Recipe + Verifier + Registry)
 Last activity: 2026-06-02
 
 ## Project Reference

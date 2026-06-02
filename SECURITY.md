@@ -193,17 +193,11 @@ tag is:
    + tag ref + source commit + runner image. The attestation is pushed to the
    GitHub Attestations API AND distributed as
    `blindjoin-linux-amd64.tar.gz.sigstore`.
-3. **Detached PGP signature** (`blindjoin-linux-amd64.tar.gz.asc`) from the
-   maintainer's YubiKey-held ed25519 key, uploaded post-CI as an alternative
-   trust path for operators who cannot reach Sigstore Fulcio/Rekor.
-
-EITHER cosign OR PGP verification is sufficient — they are alternative paths,
-not both required.
 
 Verification requires **cosign 2.6.3 or compatible** (see the image subsection
-above for the cosign version pin rationale), the **GitHub CLI (`gh`) 2.50 or
-later**, and **gpg 2.4 or later**. The verify recipes below have been tested on
-a clean `ubuntu:24.04` container.
+above for the cosign version pin rationale) and the **GitHub CLI (`gh`) 2.50 or
+later**. The verify recipes below have been tested on a clean `ubuntu:24.04`
+container.
 
 ```bash
 # 1. Cosign blob signature verification (SIGN-01)
@@ -226,29 +220,14 @@ cosign verify-attestation \
   blindjoin-linux-amd64.tar.gz
 # Expected: "Verified OK" + the SLSA v1.0 in-toto predicate.
 # To inspect the SLSA predicate body itself, add --output-file slsa-predicate.json.
-
-# 4. Detached PGP signature (SIGN-03)
-gpg --auto-key-locate wkd --locate-keys johnturner@gmail.com  # one-time key fetch via WKD
-gpg --keyserver hkps://keys.openpgp.org --recv-keys <FINGERPRINT-TBD>  # fallback if WKD .well-known is blocked
-gpg --verify blindjoin-linux-amd64.tar.gz.asc blindjoin-linux-amd64.tar.gz
-# IMPORTANT: gpg --verify returns exit 0 on cryptographic validity even when the
-# operator's trust web has not certified the key. Compare the "Primary key
-# fingerprint:" line printed to stderr against the canonical fingerprint below.
 ```
 
 > **Note: cosign 3.0 CLI flag drift** — see the [image subsection above](#image-signatures--attestations-v16-onward) for the cosign version pin range; the same constraints apply to tarball verification.
 
-> **Note: gpg --verify trust gate.** `gpg --verify` exits 0 on cryptographic
-> validity but does NOT certify operator trust. Operators MUST compare the
-> `Primary key fingerprint:` line on stderr against the canonical fingerprint
-> at [#pgp-current](#pgp-current). For scripted verification:
-> `gpg --status-fd=1 --verify blindjoin-linux-amd64.tar.gz.asc blindjoin-linux-amd64.tar.gz | grep VALIDSIG | grep <FINGERPRINT-TBD>`
-> — this is the same pattern blindjoin uses internally at
-> [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for bitcoind's PGP
-> verification.
-
-<a id="pgp-current"></a>
-**Current maintainer PGP fingerprint:** `<FINGERPRINT-TBD>` (UID `blindjoin maintainer <johnturner@gmail.com>`, ed25519, generated YYYY-MM-DD, expires YYYY-MM-DD). The committed public key lives at [`docs/pgp/<FINGERPRINT-TBD>.asc`](docs/pgp/) and is published to keys.openpgp.org + WKD on `<owner>.github.io`.
+> **Note: no detached PGP signature path.** An air-gapped operator who cannot
+> reach Sigstore Fulcio/Rekor today must wait for that operator-side issue to
+> be filed before blindjoin adds a maintainer-held PGP path. The cosign +
+> SLSA paths above are sufficient for github.com-reachable verification.
 
 ### Base-image digests (v1.6 onward)
 

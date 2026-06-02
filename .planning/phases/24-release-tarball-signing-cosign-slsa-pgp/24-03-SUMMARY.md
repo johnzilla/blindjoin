@@ -1,8 +1,23 @@
 ---
 phase: 24-release-tarball-signing-cosign-slsa-pgp
 plan: 03
+post_execution_scope_reduction:
+  date: 2026-06-02
+  reason: |
+    SIGN-03 (PGP path) deferred indefinitely at Phase 24 closeout. The 4th
+    verify recipe (gpg --auto-key-locate + gpg --verify), the Pitfall 24-B
+    fingerprint-comparison `> Note:` callout, the `<a id="pgp-current"></a>`
+    anchor + fingerprint paragraph, the EITHER-OR cosign/PGP prose, and the
+    docs/pgp/ folder link were stripped from SECURITY.md. 3-claim list
+    collapsed to 2 claims (cosign sign + SLSA attest). gpg prerequisite dropped.
+  remaining_scope: |
+    SECURITY.md `### Release tarball signatures + provenance (v1.6 onward)`
+    subsection now carries 3 cosign+SLSA recipes (verify-blob, gh attestation
+    verify, verify-attestation) plus a single note explaining why the PGP
+    path is deferred. Structurally consistent with Phase 23's image-side
+    subsection.
 subsystem: docs/SECURITY.md
-tags: [docs, supply-chain, cosign, slsa, pgp, sign-01, sign-02, sign-03]
+tags: [docs, supply-chain, cosign, slsa, sign-01, sign-02]
 dependency_graph:
   requires:
     - "23-04 (Phase 23 image-subsection skeleton at SECURITY.md:113-181 — structural template)"
