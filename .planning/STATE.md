@@ -3,30 +3,31 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-02T12:14:11.514Z"
-last_activity: 2026-06-02 -- Phase 24 planning complete
+last_updated: "2026-06-02T12:25:18.615Z"
+last_activity: 2026-06-02
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 16
-  completed_plans: 11
-  percent: 50
+  completed_plans: 12
+  percent: 75
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 24 — release-tarball-signing-(cosign-+-slsa-+-pgp)
+Phase: 24 (release-tarball-signing-cosign-slsa-pgp) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-02 -- Phase 24 planning complete
+Last activity: 2026-06-02
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-06-01 — v1.6 Current Milestone)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 24 — release tarball signing (cosign + slsa + pgp)
+**Current focus:** Phase 24 — release-tarball-signing-cosign-slsa-pgp
 
 ## Milestone Map
 
@@ -106,6 +107,12 @@ v1.6 Phase 23 plan decisions:
 
 - **Plan 23-02: Paraphrased `slsa-framework/slsa-github-generator` in Pitfall 5 comment** — the acceptance criterion `! grep -q 'slsa-framework/slsa-github-generator'` fails if the string appears anywhere in the file, including comments. The comment now uses `slsa-github-generator` (without the `slsa-framework/` org prefix) to convey the prohibition without embedding the grep target. Mirrors Plan 23-01's `--no-tlog-upload` paraphrase pattern exactly.
 
+v1.6 Phase 24 plan decisions:
+
+- **Plan 24-01: RESEARCH §3.2 correction load-bearing — `actions/attest-build-provenance@v3.2.0` has NO `output-name` input.** CONTEXT D-14 had assumed an `output-name` input to control the .sigstore filename; planner-verified action.yml at SHA `96278af6` declared exactly 8 inputs (`subject-path`, `subject-digest`, `subject-name`, `subject-checksums`, OCI-registry-push, `create-storage-record`, `show-summary`, `github-token`) and 3 outputs (`bundle-path`, `attestation-id`, `attestation-url`). Plan split SIGN-02 into TWO steps: (a) attest step with `id: provenance`; (b) `mv "${{ steps.provenance.outputs.bundle-path }}" blindjoin-linux-amd64.tar.gz.sigstore`. Without (b), softprops upload fails "file not found" on `.sigstore`. Anti-pattern entry added to PATTERNS — first phase-level instance where RESEARCH overrode CONTEXT-assumed input.
+- **Plan 24-01: Paraphrased forbidden-token names in attest-step comments** — the same Plan 22-04 paraphrasing discipline now extends to attest-* action inputs that the planner forbids by file-level grep. Specifically: the comment documenting the action's input list was rewritten from "exactly 8 inputs: subject-path, subject-digest, subject-name, subject-checksums, push-to-registry, ..." to "exactly 8 inputs and 3 outputs including bundle-path" so the literal tokens `subject-name:`, `subject-digest:`, `push-to-registry:` never appear at the file level. Pattern: file-level audit grep at `! grep -q '<input>:'` is honored at the file level even inside comments. Treated as Rule 1 (auto-fix bug) during Task 3 verification.
+- **Plan 24-01: Phase 23 sigstore-pin-check inherited at file level — no new CI gate added.** RESEARCH §2.3 confirms the existing `sigstore-pin-check` job at ci.yml:292-326 greps every workflow under `.github/workflows/` (including `release.yml`); both new sigstore SHA pins in `release.yml` are caught automatically. Phase 24 establishes the "Phase 23 sets discipline; Phase 24 inherits" pattern for future Phase 25 reproducible-verify workflow.
+
 v1.6 Phase 22 plan decisions:
 
 - **Plan 22-02: Inline the auditor-grepable trailer per error path** (not via a `POLICY_REF` shell variable) — the acceptance criterion `grep -c 'Refusing to build without a valid manifest' >= 4` counts FILE LINES, not runtime expansions. Inlining the literal trailer in each of the 4 error echos puts the auditor-grep property at the file level as well as the runtime-log level. Final count: 7 matching lines in `.github/actions/read-base-digests/action.yml`.
@@ -135,6 +142,12 @@ v1.6 Phase 23:
 |------|------|----------|-------|-------|
 | 23-01 | Permissions + id:build + cosign-installer + cosign sign (ATTEST-01) | ~10 min | 2 | 1 |
 | 23-02 | SBOM generation + SBOM attestation + build provenance (ATTEST-02 + ATTEST-03) | ~8 min | 2 | 1 |
+
+v1.6 Phase 24:
+
+| Plan | Name | Duration | Tasks | Files |
+|------|------|----------|-------|-------|
+| 24-01 | release.yml cosign sign-blob + SLSA provenance + softprops draft (SIGN-01 + SIGN-02) | ~5 min | 4 | 1 |
 
 ## Operator Next Steps
 
