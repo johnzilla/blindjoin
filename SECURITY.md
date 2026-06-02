@@ -101,12 +101,7 @@ before pulling a binary or image.
 
 ### Known gaps at v1.5
 
-- **GitHub Release archives ship a SHA-256 checksum but NO PGP / minisign
-  signature.** A user pulling
-  `blindjoin-linux-amd64.tar.gz` from a GitHub Release verifies the
-  archive is intact (the `.sha256` companion file), but cannot
-  cryptographically attribute the archive to the maintainer. A compromised
-  GitHub account could publish a replaced binary with a matching checksum.
+- **~~GitHub Release archives ship a SHA-256 checksum but NO PGP / minisign signature.~~** **Closed in v1.6 Phase 24** — see [Release tarball signatures + provenance (v1.6 onward)](#release-tarball-signatures--provenance-v16-onward).
 - **~~Docker images on `ghcr.io` are unsigned.~~** **Closed in v1.6 Phase 23** — see [Image signatures + attestations (v1.6 onward)](#image-signatures--attestations-v16-onward).
 - **No reproducible-build pipeline.** The CI build is deterministic in
   the trivial sense (same inputs → same output on the same runner image),
@@ -183,6 +178,77 @@ cosign verify --local-image ./blindjoin-<image>-<tag> \
 > the project will publish an updated recipe and a migration note in the
 > release notes. **Until then, install cosign in the documented version
 > range** — see the cosign release page for binary downloads.
+
+### Release tarball signatures + provenance (v1.6 onward)
+
+Every `blindjoin-linux-amd64.tar.gz` Release archive published from a `vX.Y.Z`
+tag is:
+
+1. **Signed by cosign** via OIDC keyless flow (no maintainer key custody). The
+   signature is distributed as `blindjoin-linux-amd64.tar.gz.bundle` — a single
+   JSON file containing the signature, Fulcio-issued cert, and Rekor
+   transparency-log inclusion proof.
+2. **Attested with a SLSA v1.0 in-toto provenance bundle** (predicate type
+   `https://slsa.dev/provenance/v1`), naming the workflow file (`release.yml`)
+   + tag ref + source commit + runner image. The attestation is pushed to the
+   GitHub Attestations API AND distributed as
+   `blindjoin-linux-amd64.tar.gz.sigstore`.
+3. **Detached PGP signature** (`blindjoin-linux-amd64.tar.gz.asc`) from the
+   maintainer's YubiKey-held ed25519 key, uploaded post-CI as an alternative
+   trust path for operators who cannot reach Sigstore Fulcio/Rekor.
+
+EITHER cosign OR PGP verification is sufficient — they are alternative paths,
+not both required.
+
+Verification requires **cosign 2.6.3 or compatible** (see the image subsection
+above for the cosign version pin rationale), the **GitHub CLI (`gh`) 2.50 or
+later**, and **gpg 2.4 or later**. The verify recipes below have been tested on
+a clean `ubuntu:24.04` container.
+
+```bash
+# 1. Cosign blob signature verification (SIGN-01)
+cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle \
+  --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  blindjoin-linux-amd64.tar.gz
+# Expected: "Verified OK" + JSON cert claims.
+
+# 2. SLSA provenance — Path A (GitHub Attestations API; requires github.com reachable)
+gh attestation verify blindjoin-linux-amd64.tar.gz --repo <owner>/blindjoin
+# Expected: "Verification succeeded!" + attestation summary.
+
+# 3. SLSA provenance — Path B (offline cosign verify; works after one-time TUF cache seeding)
+cosign verify-attestation \
+  --bundle blindjoin-linux-amd64.tar.gz.sigstore \
+  --type slsaprovenance \
+  --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  blindjoin-linux-amd64.tar.gz
+# Expected: "Verified OK" + the SLSA v1.0 in-toto predicate.
+# To inspect the SLSA predicate body itself, add --output-file slsa-predicate.json.
+
+# 4. Detached PGP signature (SIGN-03)
+gpg --auto-key-locate wkd --locate-keys johnturner@gmail.com  # one-time key fetch via WKD
+gpg --keyserver hkps://keys.openpgp.org --recv-keys <FINGERPRINT-TBD>  # fallback if WKD .well-known is blocked
+gpg --verify blindjoin-linux-amd64.tar.gz.asc blindjoin-linux-amd64.tar.gz
+# IMPORTANT: gpg --verify returns exit 0 on cryptographic validity even when the
+# operator's trust web has not certified the key. Compare the "Primary key
+# fingerprint:" line printed to stderr against the canonical fingerprint below.
+```
+
+> **Note: cosign 3.0 CLI flag drift** — see the [image subsection above](#image-signatures--attestations-v16-onward) for the cosign version pin range; the same constraints apply to tarball verification.
+
+> **Note: gpg --verify trust gate.** `gpg --verify` exits 0 on cryptographic
+> validity but does NOT certify operator trust. Operators MUST compare the
+> `Primary key fingerprint:` line on stderr against the canonical fingerprint
+> at [#pgp-current](#pgp-current). For scripted verification:
+> `gpg --status-fd=1 --verify blindjoin-linux-amd64.tar.gz.asc blindjoin-linux-amd64.tar.gz | grep VALIDSIG | grep <FINGERPRINT-TBD>`
+> — this is the same pattern blindjoin uses internally at
+> [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for bitcoind's PGP
+> verification.
+
+<a id="pgp-current"></a>
+**Current maintainer PGP fingerprint:** `<FINGERPRINT-TBD>` (UID `blindjoin maintainer <johnturner@gmail.com>`, ed25519, generated YYYY-MM-DD, expires YYYY-MM-DD). The committed public key lives at [`docs/pgp/<FINGERPRINT-TBD>.asc`](docs/pgp/) and is published to keys.openpgp.org + WKD on `<owner>.github.io`.
 
 ### Base-image digests (v1.6 onward)
 
