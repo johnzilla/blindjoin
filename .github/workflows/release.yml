@@ -149,6 +149,55 @@ jobs:
       - name: Sign tarball with cosign (keyless OIDC) — SIGN-01
         run: cosign sign-blob --yes --bundle blindjoin-linux-amd64.tar.gz.bundle blindjoin-linux-amd64.tar.gz
 
+      # Phase 24 SIGN-02: SLSA v1.0 in-toto build provenance attestation.
+      # Predicate type emitted: https://slsa.dev/provenance/v1 (auto-derived from
+      # the workflow context — the action names the builder workflow (release.yml),
+      # the tag ref, the source commit, and the runner image from the GHA context
+      # automatically; no explicit predicate-type input needed).
+      #
+      # RESEARCH §3.2 CORRECTION on CONTEXT D-14: the action does NOT accept an
+      # output-name input at v3.2.0 (verified against action.yml at the pinned
+      # SHA, which declares exactly 8 inputs and 3 outputs including bundle-path).
+      # The bundle is written to a path under ${RUNNER_TEMP} and exposed via the
+      # bundle-path output; the next step mv's it to the deterministic .sigstore
+      # filename so softprops can pick it up.
+      #
+      # The OCI-registry-push input is NOT set (defaults false; Phase 24 is not
+      # pushing to an OCI registry — tarball provenance lives at the GH
+      # Attestations API + on-disk .sigstore bundle per D-04 two-path UX).
+      # Auditor-grepable per Plan 22-04 lesson: this comment paraphrases the
+      # input name so the file-level absence audit at no-OCI-push continues
+      # to hold.
+      #
+      # Pitfall 5: actions/attest-build-provenance is the locked path (roadmap-
+      # level decision inherited from Phase 23). The alternative slsa-github-
+      # generator workflow MUST NOT be added — two competing attestations would
+      # result.
+      #
+      # `id: provenance` is REQUIRED — the next step (rename) references
+      # ${{ steps.provenance.outputs.bundle-path }}. Without the id, the
+      # expression resolves to the empty string and the mv silently fails.
+      - name: Attest tarball build provenance — SIGN-02
+        id: provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f  # v3.2.0
+        with:
+          subject-path: blindjoin-linux-amd64.tar.gz
+
+      # Phase 24 SIGN-02 (rename): relocate the provenance bundle to the
+      # deterministic .sigstore filename that Plan 24-03's SECURITY.md recipe and
+      # the softprops upload files: list reference. The action writes the bundle
+      # to a path under ${RUNNER_TEMP}; we mv it to the workspace root so
+      # softprops can pick it up.
+      #
+      # RESEARCH §3.2 CORRECTION: the action has no `output-name` input at
+      # v3.2.0; without this rename step the softprops upload fails with
+      # "file not found" on the blindjoin-linux-amd64.tar.gz.sigstore entry
+      # in the files: list. This step is load-bearing infrastructure, not a
+      # nicety — it is the bridge from the action's runner-tempfile output
+      # to the operator-readable .sigstore convention.
+      - name: Rename provenance bundle to .sigstore Release asset filename
+        run: mv "${{ steps.provenance.outputs.bundle-path }}" blindjoin-linux-amd64.tar.gz.sigstore
+
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
