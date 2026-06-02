@@ -139,3 +139,41 @@ jobs:
             CARGO_CHEF_REF=${{ steps.digests.outputs.cargo_chef_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Phase 23 ATTEST-01: cosign keyless OIDC signing toolchain.
+      # Installer pinned to v3.10.1 (last v3.X — see RESEARCH §2.3). v4.X
+      # of cosign-installer mandates cosign 3.x which is operator-incompatible
+      # with the documented `>= 2.6.3, < 3.0.0` range in SECURITY.md (D-08).
+      # cosign-release pinned to v2.6.3 (latest 2.x stable; no CLI-breaking
+      # changes from 2.5.x through 2.6.x verified at sigstore/cosign release
+      # notes). Pin contract enforced by Plan 23-03 sigstore-pin-check gate.
+      - name: Install cosign (keyless signing toolchain)
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
+        with:
+          cosign-release: 'v2.6.3'
+
+      # Phase 23 ATTEST-01: produces ghcr.io/.../blindjoin-<image>:sha256-<HEX>.sig
+      # — a Fulcio-issued cert bound to the GHA OIDC subject claim, plus the
+      # Rekor transparency-log inclusion proof. Operator-side `cosign verify`
+      # recipe in SECURITY.md verifies against the locked
+      # --certificate-identity-regexp (see Plan 23-04 SECURITY.md rewrite).
+      #
+      # NOTE: cosign sign and actions/attest-build-provenance are NOT
+      # interchangeable — they produce different OCI artifacts under different
+      # tag conventions (<digest>.sig vs sha256-<HEX> referrer manifest).
+      # ATTEST-01 specifically requires the <digest>.sig form; Plan 23-02
+      # delivers ATTEST-02 (provenance) + ATTEST-03 (SBOM) via attest-* actions.
+      # See RESEARCH §2.4 (NEW Pitfall §7.3) for the distinction.
+      #
+      # --yes: non-interactive; required in CI (would otherwise prompt for
+      # transparency-log consent).
+      # Re-running this step on the same digest is idempotent at the registry
+      # (cosign 2.x stores at content-addressed `sha256-<HEX>.sig`; re-sign
+      # produces a new Rekor entry but the registry tag is overwritten safely).
+      # See PITFALLS Pitfall 3: the tlog-upload flag MUST NOT be disabled —
+      # Rekor is the operator-facing transparency guarantee for ATTEST-01.
+      - name: Sign image with cosign (keyless OIDC) — ATTEST-01
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
