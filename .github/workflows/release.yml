@@ -116,6 +116,39 @@ jobs:
           tar czf blindjoin-linux-amd64.tar.gz -C dist .
           sha256sum blindjoin-linux-amd64.tar.gz > blindjoin-linux-amd64.tar.gz.sha256
 
+      # Phase 24 SIGN-01: cosign keyless OIDC signing toolchain.
+      # Pin reuses Phase 23 docker.yml SHA verbatim; single source of truth — if
+      # either sigstore action rotates, both workflows update together via the
+      # sigstore-pin-check gate at ci.yml:292-326 which greps all of
+      # .github/workflows/. Installer pinned to v3.10.1 (last v3.X — see Phase 23
+      # RESEARCH §2.3). v4.X of cosign-installer mandates cosign 3.x which is
+      # operator-incompatible with the documented `>= 2.6.3, < 3.0.0` range in
+      # SECURITY.md (D-08). cosign-release pinned to v2.6.3 (latest 2.x stable).
+      - name: Install cosign (keyless signing toolchain)
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
+        with:
+          cosign-release: 'v2.6.3'
+
+      # Phase 24 SIGN-01: cosign keyless OIDC blob signing.
+      # Produces blindjoin-linux-amd64.tar.gz.bundle (sig + cert + Rekor inclusion
+      # proof in cosign 2.x bundle format — one JSON file).
+      #
+      # Operator-side verify recipe (full version in SECURITY.md per Plan 24-03):
+      #   cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle \
+      #     --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
+      #     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+      #     blindjoin-linux-amd64.tar.gz
+      #
+      # --yes: non-interactive; required in CI (would otherwise prompt for
+      # transparency-log consent).
+      # --bundle <file>: writes the cosign 2.x bundle format to a file (sig +
+      # cert + Rekor proof in one JSON file). Operator passes the same file via
+      # --bundle to verify-blob.
+      # See PITFALLS Pitfall 3: the transparency-log upload flag MUST NOT be
+      # disabled — Rekor is the operator-facing transparency guarantee for SIGN-01.
+      - name: Sign tarball with cosign (keyless OIDC) — SIGN-01
+        run: cosign sign-blob --yes --bundle blindjoin-linux-amd64.tar.gz.bundle blindjoin-linux-amd64.tar.gz
+
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
