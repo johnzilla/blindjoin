@@ -177,3 +177,59 @@ jobs:
           IMAGE: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      # Phase 23 ATTEST-03 (generator half): scan the just-pushed image with
+      # Syft (bundled inside anchore/sbom-action) and write the SBOM to
+      # sbom.spdx.json on the runner FS. RESEARCH §2.2 correction: CONTEXT.md
+      # D-03 asserted that actions/attest-sbom "invokes Syft internally"; that
+      # is incorrect — attest-sbom does NOT generate SBOMs. This generator
+      # step is REQUIRED before the attest-sbom step; see RESEARCH §2.2 + §7.1.
+      #
+      # image: uses the build-push-action outputs.digest (digest-pinned form)
+      # so Syft scans the EXACT bytes pushed — avoids the latent race where a
+      # tag-form reference could resolve to a different digest if a concurrent
+      # push raced the scan (RESEARCH Assumption A2).
+      #
+      # upload-artifact: false / upload-release-assets: false — the operator-
+      # facing artifact is the ATTESTATION (next step), not the SBOM file
+      # itself. Default upload-artifact is TRUE; explicit false prevents a
+      # 90-day workflow-artifact from being retained and creating the "which
+      # SBOM is canonical?" question the attestation answers (RESEARCH §8 Q4).
+      - name: Generate SPDX SBOM with Syft (ATTEST-03 generator)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      # Phase 23 ATTEST-03 (attest half): sign sbom.spdx.json as a SLSA
+      # in-toto SBOM attestation and push it to the OCI registry alongside the
+      # image as a referrer manifest at ghcr.io/.../blindjoin-<image>@sha256:<HEX>.
+      #
+      # RESEARCH §2.2 correction: this step CONSUMES the SBOM file; it does
+      # NOT generate one. The previous step (anchore/sbom-action) is the
+      # generator; sbom-path: 'sbom.spdx.json' is a hard dependency on it.
+      # DO NOT reorder these two steps.
+      #
+      # Predicate type emitted: https://spdx.dev/Document (auto-derived from
+      # the SPDX-JSON file format of sbom-path).
+      #
+      # Pinned to v2.4.0 (NOT v3.X / v4.X wrappers). v3.0 and v4.0 of
+      # attest-sbom are deprecation wrappers around actions/attest. v2.4.0 is
+      # the last release with self-contained docs matching CONTEXT.md D-03.
+      # v1.7 carry-forward: migrate to actions/attest@v4 as a single step.
+      # See RESEARCH §2.3 + §7.4.
+      #
+      # push-to-registry: true (D-01 inline registry-attached path). Operator
+      # retrieves via `gh attestation verify oci://...` — see Plan 23-04
+      # SECURITY.md recipes block. NOTE: cosign download attestation returns
+      # 404 against GitHub attestation artifacts (RESEARCH §2.4, issue #162).
+      - name: Attest SBOM (ATTEST-03)
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b  # v2.4.0
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: 'sbom.spdx.json'
+          push-to-registry: true
