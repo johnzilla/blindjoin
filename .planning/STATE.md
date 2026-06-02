@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
 status: executing
-last_updated: "2026-06-02T02:38:05.230Z"
+last_updated: "2026-06-02T02:41:52.434Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
   percent: 25
 ---
 
@@ -18,7 +18,7 @@ progress:
 ## Current Position
 
 Phase: 23 (cosign-image-attestations-slsa-provenance-sbom) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-02
 
