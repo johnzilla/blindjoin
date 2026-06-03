@@ -33,7 +33,7 @@ The output `sha256sum` must match the value below for the tag you checked out.
 
 | Tag | sha256 |
 | --- | --- |
-| v1.6.0 | `<TBD-v1.6.0-cut>` |
+| v1.6.0 | `3dd0679fd7d1135aefabc99e242df77c0a6af903c65cd3713d24b5e4d3ce6fd6` |
 
 Replaced at the v1.6.0 cut by running `.github/workflows/reproducible-verify.yml` via `workflow_dispatch` and copying the `Rebuilt locally:` line from its log into this table and into the workflow's `EXPECTED_SHA256` env.
 
