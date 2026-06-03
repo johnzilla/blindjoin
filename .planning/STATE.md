@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
-status: executing
-last_updated: "2026-06-02T12:49:41Z"
-last_activity: 2026-06-02 — Phase 24 CLOSED at cosign+SLSA scope. SIGN-03 (PGP/YubiKey path) deferred indefinitely after honest threat-model review: for a solo pre-customer project, the unique threats PGP mitigates are either negligible probability or better addressed by YubiKey-for-GitHub-2FA. Plan 24-05 superseded; PGP sections stripped from docs/RELEASING.md + SECURITY.md.
+status: verifying
+last_updated: "2026-06-03T00:03:18.139Z"
+last_activity: 2026-06-02
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 15
+  completed_phases: 2
+  total_plans: 16
   completed_plans: 15
-  percent: 75
+  percent: 50
 ---
 
 # Project State
