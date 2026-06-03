@@ -1,46 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: Supply-Chain Attestation
-status: completed
-last_updated: "2026-06-03T11:36:32.967Z"
-last_activity: 2026-06-03 -- Phase 25 marked complete
-progress:
-  total_phases: 4
-  completed_phases: 3
-  total_plans: 21
-  completed_plans: 20
-  percent: 75
+milestone: null
+milestone_name: null
+status: between_milestones
+last_updated: "2026-06-03"
+last_activity: 2026-06-03 -- v1.6 milestone closed
+progress: {}
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 25 — COMPLETE
-Plan: 1 of 5
-Status: Phase 25 complete
-Last activity: 2026-06-03 -- Phase 25 marked complete
+Between milestones. v1.6 closed 2026-06-03. Next milestone TBD — run `/gsd:new-milestone` to define v1.7.
+
+The v1.6.0 release tag has not been cut yet. Sequence documented in `docs/RELEASING.md`: dispatch `reproducible-verify.yml`, copy the rebuilt sha256 into the workflow env + the markdown table, commit, tag `v1.6.0`, watch release.yml.
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-06-01 — v1.6 Current Milestone)
+See: `.planning/PROJECT.md`.
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 25 — reproducible-build-recipe-scheduled-verifier-registry
 
 ## Milestone Map
 
-v1.5 shipped 2026-06-01. Phase artifacts archived to `.planning/milestones/v1.5-phases/`. Full per-phase details in `.planning/milestones/v1.5-ROADMAP.md` and `.planning/milestones/v1.5-REQUIREMENTS.md`. Per-milestone summary in `.planning/MILESTONES.md`.
-
-v1.6 in progress. Roadmap approved 2026-06-01:
-
-- **Phase 22 — Base-Image Digest Drift Detection** (DRIFT-01, DRIFT-02, DRIFT-03) — canonical `docker/digests.txt` + scheduled drift-check workflow that opens issues (not PRs) per Pitfall 11; release/docker workflows read the manifest automatically.
-- **Phase 23 — cosign Image Attestations + SLSA Provenance + SBOM** (ATTEST-01, ATTEST-02, ATTEST-03, ATTEST-04) — every ghcr.io image signed via OIDC keyless flow with SLSA v1.0 provenance via `actions/attest-build-provenance` (Pitfall 5 choice), SPDX SBOM, and `.bundle` for offline verification.
-- **Phase 24 — Release Tarball Signing (cosign + SLSA + PGP)** (SIGN-01, SIGN-02, SIGN-03) — release tarballs ship cosign blob signature + SLSA provenance + detached PGP signature as a non-OIDC alternative path.
-- **Phase 25 — Reproducible-Build Recipe + Verifier + Registry** (REPRO-01, REPRO-02, REPRO-03, REPRO-04) — `docs/REPRODUCIBLE-BUILD.md` + release.yml determinism env + scheduled `reproducible-verify.yml` pinned to `ubuntu-24.04` (NOT `ubuntu-latest` per Pitfall 7) + reproducible-builds.org registration.
-
-Phase artifacts will land under `.planning/phases/` as they're planned (start with `/gsd:discuss-phase 22`).
+All shipped milestones archived under `.planning/milestones/`:
+- v1.0 MVP — 2026-04-09
+- v1.1 Security & Availability Hardening — 2026-04-10
+- v1.2 Production Readiness — 2026-05-26
+- v1.3 Test Infrastructure & Operational Hardening — 2026-05-29
+- v1.4 BIP-322 Multi-Script Support — 2026-05-31
+- v1.5 Audit-Readiness & Multi-Script Finish — 2026-06-01
+- v1.6 Supply-Chain Attestation — 2026-06-03 (12/14 v1 reqs shipped; SIGN-03 PGP deferred, REPRO-04 registry descoped)
 
 ## Blockers
 

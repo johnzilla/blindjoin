@@ -23,21 +23,13 @@ PKARR DHT discovery live with `v0.2.0` schema advertising `sst`/`ost`. Docker Co
 CI/CD: PR-triggered test/clippy/audit gates, release and Docker workflows gated on check jobs, actions SHA-pinned, bitcoind cached + PGP-verified, corepc-node feature pin enforced, `bip322-pin-check` enforces the `=0.0.10` pin, `crit-01-grep-check` (coordinator) + `crit-01-client-grep-check` (client) enforce CRIT-01 invariant tokens.
 Coordinator hardened: RPC outside write lock, RSA signer cached per-round, address pre-validation, blinded token bounds, public-endpoint DoS resistance, real on-chain witness_utxo values in PSBT assembly, multi-script ownership-proof dispatcher with on-chain cross-check.
 
-## Last Milestone: v1.5 Audit-Readiness & Multi-Script Finish — Shipped 2026-06-01
+## Last Milestone: v1.6 Supply-Chain Attestation — Shipped 2026-06-03
 
-3 phases (19, 20, 21), 5 plans, 12 tasks. Closed all v1.4 follow-throughs (production sign bodies + accurate mixed-script fees) and readied the codebase for external security audit. Full summary in `.planning/MILESTONES.md` and `.planning/milestones/v1.5-ROADMAP.md`.
+4 phases (22, 23, 24, 25), 20 shipped plans + 1 superseded. cosign keyless OIDC signing on every ghcr.io image and every release tarball, SLSA v1.0 provenance, SPDX SBOM via Syft, base-image digest pinning with on-demand drift check, byte-equal reproducible build recipe with a dispatch-only verifier. SIGN-03 (PGP YubiKey path) deferred indefinitely 2026-06-02; REPRO-04 (reproducible-builds.org registry submission) descoped at close as vanity-badge theater. Stripped ~1,400 lines of process theater that the GSD planner had scaffolded into shipped artifacts. v1.6.0 release tag pending the reproducibility baseline-capture procedure in `docs/RELEASING.md`. Full summary in `.planning/milestones/v1.6-ROADMAP.md`.
 
-## Current Milestone: v1.6 Supply-Chain Attestation
+## Next Milestone
 
-**Goal:** Close the v1.5 unsigned-build supply-chain gap explicitly named in [SECURITY.md § Supply-chain status](../SECURITY.md). When this milestone ships, anyone pulling a blindjoin release artifact can cryptographically attribute it to the maintainer + the source tree it was built from.
-
-**Target features:**
-- **cosign image attestations** on every `ghcr.io/<owner>/blindjoin-*` image, OIDC-bound to the GitHub Actions identity (no maintainer key custody).
-- **Detached signatures** (cosign blob signatures or detached PGP) on every GitHub Release tarball, verifiable with a single command from a clean machine.
-- **Reproducible-build recipe** for the `blindjoin-linux-amd64.tar.gz` release artifact, with an independent-rebuilder verification command + documented toolchain pinning.
-- **Automated base-image digest drift check** so a stale digest in `docker/Dockerfile`'s ARG defaults fails CI rather than silently sticking.
-
-**Why this milestone:** v1.5 SECURITY.md commits to this closure plan publicly. Operators evaluating whether to run blindjoin in any environment where supply-chain assurance matters need the binaries / images they pull to be cryptographically tied to the project. Currently only `sha256` checksums exist on release archives; ghcr.io images are unsigned; there's no reproducible-build recipe. v1.6 closes all four gaps.
+TBD — run `/gsd:new-milestone` to define v1.7.
 
 ## Requirements
 
