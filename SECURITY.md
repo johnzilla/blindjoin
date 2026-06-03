@@ -52,6 +52,11 @@ To check upstream drift before a release, run `docker buildx imagetools inspect 
 
 For the highest assurance, build from source per [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md) and compare your sha256sum against the per-tag table.
 
+## Operating notes
+
+- **Back up the coordinator's PKARR key** (`coordinator_pkarr.key`, or the `coordinator-keys` Docker volume). Losing it creates a new DHT identity; participants holding your old `pk:...` will no longer discover you. The `docker/docker-compose.yml` volume note flags the same.
+- **Ban-list durability.** `append_ban_entry` (`coordinator/src/round/blame.rs`) calls `sync_all()` after each write so a ban that returned `Ok()` to the caller survives the power-loss / kernel-panic / OOM-kill window a solo-VPS operator actually hits. The ban file lives in the `coordinator-data` volume — back it up alongside the keys volume if you want bans to outlive the host.
+
 ## Release versioning
 
 The canonical release identifier is the git tag (`vX.Y.Z`) plus the matching GitHub Release. Workspace crate `version` fields stay pinned at `0.1.0` — none of the crates publish to crates.io, so the field is private and bumping it would be churn. Binaries currently expose no `--version`; if added later, they should report the git tag (`GIT_DESCRIBE` at build time), not `CARGO_PKG_VERSION`.

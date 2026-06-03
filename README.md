@@ -46,6 +46,8 @@ docker compose -f docker/docker-compose.yml up
 
 The coordinator will start, publish its address to the PKARR DHT, and wait for participants. The liquidity bot joins rounds automatically to fill the anonymity set.
 
+**Back up the `coordinator-keys` volume** (or `coordinator_pkarr.key` if you're not using Docker). Losing it creates a new DHT identity; participants holding your old `pk:...` will no longer discover you. See the volume note in [`docker/docker-compose.yml`](docker/docker-compose.yml).
+
 To get a signet UTXO for the bot, use the [signet faucet](https://signet.bc-2.jp/).
 
 ## Privacy Considerations

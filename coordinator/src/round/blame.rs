@@ -110,6 +110,9 @@ pub fn hash_utxo_str(utxo_str: &str) -> String {
 
 /// Append a single ban record to the ban file (append-only, newline-delimited JSON).
 /// Creates the file if it does not exist.
+/// Calls `sync_all()` after the write so the entry survives the kernel-buffer-not-yet-
+/// flushed-to-disk window that a solo-VPS operator's power loss / kernel panic / OOM
+/// kill actually hits in practice. fsync is cheap on a single-line append.
 /// BLAME-05.
 pub fn append_ban_entry(path: &str, utxo_str: &str, entry: &BanEntry) -> std::io::Result<()> {
     use std::io::Write;
@@ -124,7 +127,8 @@ pub fn append_ban_entry(path: &str, utxo_str: &str, entry: &BanEntry) -> std::io
         .create(true)
         .append(true)
         .open(path)?;
-    writeln!(file, "{}", line)
+    writeln!(file, "{}", line)?;
+    file.sync_all()
 }
 
 /// Load all unexpired ban entries from the ban file.
