@@ -34,3 +34,14 @@ config = "0.15"
 tower = "0.5"
 clap = { version = "4", features = ["derive", "env"] }
 proptest = "1"
+
+# Phase 25 REPRO-01: strip symbol-table entries from release binaries.
+# Belt-and-suspenders alongside --remap-path-prefix — symbols would otherwise
+# embed compiler-version-specific bytes that vary across rebuilds. Workspace-
+# level [profile.release] applies to all four crate binaries uniformly.
+# strip = "symbols" is stable since Rust 1.59; explicit "symbols" strips more
+# aggressively than the synonym `true` and is the reproducible-builds.org
+# recommended setting.
+[profile.release]
+strip = "symbols"
+
