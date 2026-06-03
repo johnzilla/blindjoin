@@ -14,7 +14,9 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
-### v1.6 — supply-chain attestation (tag pending baseline capture)
+## [1.6.0] — 2026-06-03
+
+### Supply-chain attestation
 
 Closed the v1.5 unsigned-build supply-chain gap. Every release tarball and ghcr.io image is cosign-signed (keyless OIDC, no maintainer key custody), SLSA v1.0 provenance-attested, and SPDX SBOM-attested. Base-image digests pin in `docker/digests.txt`. Release tarballs rebuild byte-for-byte from source on `ubuntu-24.04`.
 
@@ -28,7 +30,7 @@ Closed the v1.5 unsigned-build supply-chain gap. Every release tarball and ghcr.
 
 **Theater strip after Phase 25 close** (commits `bf102ab` + `54e5ea5`, ~1,400 lines deleted): removed scaffolded auto-issue creation systems with two-title schemes + label-create + dedup (both digest-drift and reproducibility verifiers), removed monthly/daily cron schedules in favor of `workflow_dispatch:` only, collapsed multi-path verify recipes to single commands, removed the colon-delimited expected-sha256 lookup file in favor of inline env values, removed the reproducible-builds.org registry submission procedure, removed `rust-toolchain-pin-check` and the two `crit-01-grep-check` CI gates (the latter enforced presence of a comment rather than behavior), removed SECURITY.md disclosure-policy ceremony and strikethrough bookkeeping, stripped planning cross-references and auditor-pose comments throughout workflow files. Real cryptographic verification and supply-chain pinning intact.
 
-**Tag pending.** v1.6.0 is the next release-ship event — sequence in [docs/RELEASING.md](docs/RELEASING.md): dispatch `reproducible-verify.yml`, copy the rebuilt sha256 into the workflow env + the markdown table, commit, `git tag -s v1.6.0`, push.
+Tagged 2026-06-03. Reproducibility baseline captured post-tag by dispatching `reproducible-verify.yml` against the published v1.6.0 release and committing the rebuilt sha256 into `EXPECTED_SHA256:` + the markdown table.
 
 ## [1.5.0] — 2026-06-01
 
