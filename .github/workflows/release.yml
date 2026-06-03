@@ -62,7 +62,15 @@ jobs:
   build:
     name: Build linux-amd64
     needs: check
-    runs-on: ubuntu-latest
+    # Phase 25 REPRO-03 / D-08 / Pitfall 7: pin the build runner image to a
+    # specific Ubuntu release rather than the rolling-release runner alias.
+    # The monthly reproducible-verify.yml runs on the same pinned image; if
+    # the build job rode the unpinned runner image, the verifier would
+    # false-positive every ~month when GitHub rotated the underlying SHA.
+    # The check job above intentionally stays on the rolling-release alias
+    # (tests/clippy/audit have no byte-equal requirement; runner rotation is
+    # acceptable there).
+    runs-on: ubuntu-24.04
     # Publish gate: only run on a real tag push. workflow_dispatch runs
     # check-only (the rehearsal path) and never uploads release artifacts.
     if: startsWith(github.ref, 'refs/tags/')
@@ -86,6 +94,33 @@ jobs:
       id-token: write
       attestations: write
 
+    # Phase 25 REPRO-01/02: binary determinism env vars. The flags below
+    # make `cargo build --release --locked` produce byte-equal output across
+    # rebuilds on the pinned ubuntu-24.04 runner image.
+    #
+    # RUSTFLAGS:           Two --remap-path-prefix flags strip embedded build-host
+    #                      paths from debug info and panic messages. Without
+    #                      these, rebuilds on a different runner produce diverging
+    #                      bytes even on identical toolchain. See REPRO-01.
+    # SOURCE_DATE_EPOCH:   Computed per REPRO-02 in the Compute step below;
+    #                      derived at runtime from `git log -1 --format=%ct
+    #                      $GITHUB_SHA` so external rebuilders can re-derive
+    #                      the same value from a fresh clone. NOT set here in
+    #                      the env: map because YAML-parse-time is too early —
+    #                      the value comes from the tagged commit's recorded
+    #                      committer time, injected via $GITHUB_ENV at the
+    #                      Compute step.
+    # CARGO_INCREMENTAL:   0 disables incremental compilation entirely, which
+    #                      otherwise embeds host-specific intermediate paths in
+    #                      metadata. See REPRO-01.
+    #
+    # Pitfall 6 (research): expect 1-2 iteration cycles after the first ship to
+    # surface project-specific nondeterminism. The reproducible-verify.yml
+    # workflow is the iteration mechanism — failures inform the next prevention.
+    env:
+      RUSTFLAGS: "--remap-path-prefix=${{ github.workspace }}=/build --remap-path-prefix=/home/runner/.cargo=/cargo"
+      CARGO_INCREMENTAL: "0"
+
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -108,8 +143,23 @@ jobs:
         id: digests
         uses: ./.github/actions/read-base-digests
 
+      # Phase 25 REPRO-02: derive SOURCE_DATE_EPOCH from the tagged commit time.
+      # Locked to git's recorded committer-time on $GITHUB_SHA so the value is
+      # reproducible from source — an external rebuilder running `git log -1
+      # --format=%ct v1.6.0` on a fresh clone gets the same epoch, the same
+      # debug-info baseline, and the same tar entry mtimes (per D-06 below).
+      # The value is written to $GITHUB_ENV; per GitHub Actions docs the
+      # assignment propagates to all subsequent steps in the same job
+      # automatically (verified 2026-06-02 via docs.github.com/en/actions docs).
+      - name: Compute SOURCE_DATE_EPOCH from tagged commit time
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct $GITHUB_SHA)" >> $GITHUB_ENV
+
+      # Phase 25 REPRO-02 / D-05: explicit --locked makes cargo refuse to
+      # update Cargo.lock during the build — fails the run if the lockfile is
+      # out of sync (exit 101) rather than silently regenerating. Fail-fast
+      # contract: a tag push with a stale Cargo.lock cannot ship binaries.
       - name: Build coordinator and client
-        run: cargo build --release --bin coordinator --bin client --bin liquidity-bot
+        run: cargo build --release --locked --bin coordinator --bin client --bin liquidity-bot
 
       - name: Package
         run: |
