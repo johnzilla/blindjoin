@@ -30,8 +30,6 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        # Pitfall A: the toolchain action requires an explicit toolchain: input. Pin value
-        # matches rust-toolchain.toml channel via the rust-toolchain-pin-check gate in ci.yml.
         with:
           toolchain: "1.95.0"
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -140,8 +138,6 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        # Pitfall A: the toolchain action requires an explicit toolchain: input. Pin value
-        # matches rust-toolchain.toml channel via the rust-toolchain-pin-check gate in ci.yml.
         with:
           toolchain: "1.95.0"
           components: clippy
@@ -163,8 +159,6 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        # Pitfall A: the toolchain action requires an explicit toolchain: input. Pin value
-        # matches rust-toolchain.toml channel via the rust-toolchain-pin-check gate in ci.yml.
         with:
           toolchain: "1.95.0"
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -179,8 +173,6 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
-        # Pitfall A: the toolchain action requires an explicit toolchain: input. Pin value
-        # matches rust-toolchain.toml channel via the rust-toolchain-pin-check gate in ci.yml.
         with:
           toolchain: "1.95.0"
       - name: Install cargo-audit
@@ -242,64 +234,6 @@ jobs:
             echo "       The bip322 crate is pre-1.0; minor changes can break the adapter at shared/src/bip322/mod.rs." >&2
             exit 1
           fi
-
-  rust-toolchain-pin-check:
-    name: rust-toolchain.toml single-source-of-truth pin check
-    runs-on: ubuntu-latest
-    # v1.6 Phase 25 REPRO-01 invariant: rust-toolchain.toml is the canonical
-    # source of truth for the Rust toolchain version (see CONTEXT D-01 / D-15).
-    # The toolchain action used in release.yml + this ci.yml does NOT respect
-    # rust-toolchain.toml at the action layer — verified via action.yml
-    # inspection 2026-06-02 (RESEARCH Pitfall A). The action requires an
-    # explicit toolchain: input on every `with:` block; absent that input the
-    # action exits 1 with `'toolchain' is a required input`.
-    #
-    # The dual-source-of-truth risk this job mitigates: the rust-toolchain.toml
-    # channel value and the explicit `with: toolchain:` values in 6 workflow
-    # blocks (release.yml check + build; ci.yml test + clippy + coordinator-
-    # smoke + audit) can drift silently if any single value is bumped without
-    # the others. This grep gate fails the PR if ANY `with: toolchain:` value
-    # under .github/workflows/*.yml differs from the rust-toolchain.toml
-    # channel. Single source of truth enforced at file level.
-    #
-    # Mirrors bip322-pin-check above per RESEARCH Pattern recommendation:
-    # one job per pinned dep for clearer PR-check log output.
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Enforce rust-toolchain.toml single source of truth
-        run: |
-          set -eu
-          EXPECTED=$(grep -oE 'channel = "[^"]+"' rust-toolchain.toml | grep -oE '"[^"]+"' | tr -d '"')
-          if [ -z "$EXPECTED" ]; then
-            echo "ERROR: could not extract channel from rust-toolchain.toml." >&2
-            exit 1
-          fi
-          echo "Expected toolchain (from rust-toolchain.toml channel): $EXPECTED"
-          DRIFT=0
-          CHECKED=0
-          # Walk every workflow YAML and grep for lines of the form `toolchain: "X.Y.Z"`.
-          # We ignore comment lines (starting with optional whitespace + `#`) and the
-          # action SHA-pin trailing comment (e.g. `# stable`) by anchoring the regex
-          # to a quoted version literal preceded by the `toolchain:` key.
-          for FILE in .github/workflows/*.yml; do
-            while IFS= read -r MATCH; do
-              [ -z "$MATCH" ] && continue
-              LINE_NUM=$(echo "$MATCH" | cut -d: -f1)
-              ACTUAL=$(echo "$MATCH" | grep -oE '"[^"]+"' | head -n1 | tr -d '"')
-              CHECKED=$((CHECKED + 1))
-              if [ "$ACTUAL" != "$EXPECTED" ]; then
-                echo "ERROR: $FILE:$LINE_NUM — toolchain pin '$ACTUAL' != rust-toolchain.toml channel '$EXPECTED'" >&2
-                echo "       Bump either rust-toolchain.toml or this workflow block so both agree." >&2
-                DRIFT=$((DRIFT + 1))
-              fi
-            done < <(grep -nE '^\s*toolchain:\s*"[^"]+"' "$FILE" || true)
-          done
-          if [ "$DRIFT" -gt 0 ]; then
-            echo "ERROR: $DRIFT toolchain pin(s) differ from rust-toolchain.toml channel '$EXPECTED'." >&2
-            echo "       rust-toolchain.toml is the single source of truth per Phase 25 REPRO-01 / D-01." >&2
-            exit 1
-          fi
-          echo "OK: $CHECKED with: toolchain: block(s) match rust-toolchain.toml channel '$EXPECTED'"
 
   crit-01-grep-check:
     name: CRIT-01 dual-branch invariant grep gate

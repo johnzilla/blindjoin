@@ -101,10 +101,7 @@ before pulling a binary or image.
 
 ### Known gaps at v1.5
 
-- **~~GitHub Release archives ship a SHA-256 checksum but NO PGP / minisign signature.~~** **Closed in v1.6 Phase 24** — see [Release tarball signatures + provenance (v1.6 onward)](#release-tarball-signatures--provenance-v16-onward).
-- **~~Docker images on `ghcr.io` are unsigned.~~** **Closed in v1.6 Phase 23** — see [Image signatures + attestations (v1.6 onward)](#image-signatures--attestations-v16-onward).
-- **~~No reproducible-build pipeline.~~** **Closed in v1.6 Phase 25** — see [Reproducibility (v1.6 onward)](#reproducibility-v16-onward).
-- **~~Base image digest pins are manual.~~** **Closed in v1.6** — see [Base-image digests (v1.6 onward)](#base-image-digests-v16-onward).
+(All v1.5-era known gaps closed in v1.6 — see the subsections below for the current verification recipes.)
 
 ### Image signatures + attestations (v1.6 onward)
 
@@ -227,37 +224,7 @@ cosign verify-attestation \
 
 ### Reproducibility (v1.6 onward)
 
-Every tagged release tarball is reproducible byte-for-byte from source on the
-pinned `ubuntu-24.04` runner image. The full recipe, expected `sha256sum` per
-release, and toolchain pins live in [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
-Continuous verification runs monthly via
-[.github/workflows/reproducible-verify.yml](.github/workflows/reproducible-verify.yml);
-a failure opens a `[reproducibility-regression]` issue. blindjoin is registered
-with the reproducible-builds.org project registry: <added after blindjoin's submission lands; see [docs/RELEASING.md](docs/RELEASING.md) §Reproducible-builds.org registry submission>.
-
-To verify a release yourself, follow the Recipe section of REPRODUCIBLE-BUILD.md.
-Quick reference (single command from a clean checkout of the tag):
-
-```bash
-export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)
-export RUSTFLAGS="--remap-path-prefix=$(pwd)=/build --remap-path-prefix=$HOME/.cargo=/cargo"
-export CARGO_INCREMENTAL=0
-cargo build --release --locked --bin coordinator --bin client --bin liquidity-bot
-mkdir -p dist
-cp target/release/coordinator target/release/client target/release/liquidity-bot dist/
-tar --sort=name --owner=0 --group=0 --numeric-owner \
-    --mtime="@${SOURCE_DATE_EPOCH}" \
-    -cf - -C dist . \
-  | gzip -n > blindjoin-linux-amd64.tar.gz
-sha256sum blindjoin-linux-amd64.tar.gz
-# Compare against the expected hash in docs/REPRODUCIBLE-BUILD.md §Expected sha256sum.
-```
-
-> **Note: Rust reproducibility long tail** — bit-for-bit equality is verified on
-> `ubuntu-24.04` only. Rebuilding on a different distribution or runner image
-> may produce divergent bytes due to system-tool differences. The monthly
-> verifier (linked above) catches `ubuntu-24.04` ImageVersion drift distinctly
-> from real divergence per Phase 25 D-12.
+Release tarballs rebuild byte-for-byte from source on `ubuntu-24.04`. Recipe and expected sha256 per tag: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
 
 ### Base-image digests (v1.6 onward)
 
@@ -298,19 +265,7 @@ issues). The workflow can be fired manually via `workflow_dispatch` from
 the Actions tab; this is the recommended rehearsal path before pulling
 any digest bump.
 
-### v1.6 supply-chain plan
-
-The v1.6 milestone has closed all four planned supply-chain items:
-
-- **~~cosign image attestations~~** ✓ Shipped in Phase 23 — see [Image signatures + attestations (v1.6 onward)](#image-signatures--attestations-v16-onward).
-- **~~Detached signatures on GitHub Release archives~~** ✓ Shipped in Phase 24 (cosign blob signatures + SLSA provenance; PGP path deferred indefinitely 2026-06-02) — see [Release tarball signatures + provenance (v1.6 onward)](#release-tarball-signatures--provenance-v16-onward).
-- **~~Reproducible-build instructions~~** ✓ Shipped in Phase 25 — see [Reproducibility (v1.6 onward)](#reproducibility-v16-onward).
-- **~~Automated base-image digest drift check~~** ✓ Shipped in Phase 22 — see [Base-image digests (v1.6 onward)](#base-image-digests-v16-onward).
-
-For the highest assurance, build from source on a known-good toolchain and
-verify against the committed `Cargo.lock` using the recipe in
-[docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md) — then compare your
-local sha256sum against the per-tag expected hash table in that same doc.
+For the highest assurance, build from source per [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md) and compare your local sha256sum against the per-tag expected hash table in that doc.
 
 ## Release versioning policy
 
