@@ -64,9 +64,10 @@
   on-chain `script_pubkey` and cross-checks against client declaration before
   the per-script verifier runs; (2) `shared::bip322` dispatcher-only public
   surface — per-script verify/sign are `pub(crate)`-only so callers cannot
-  reach them to bypass dispatch; (3) two CI grep gates (`crit-01-grep-check`
-  coordinator-side + `crit-01-client-grep-check` client-side) enforce the
-  literal `CRIT-01` token count. Adopted upstream `bip322 = "=0.0.10"` via a
+  reach them to bypass dispatch. (The historical `crit-01-grep-check` and
+  `crit-01-client-grep-check` CI gates were removed in the v1.6 theater
+  strip — they enforced a comment token, not the underlying behavior.)
+  Adopted upstream `bip322 = "=0.0.10"` via a
   26-LOC zero-lossy adapter (no custom sighash math) behind a
   `bip322-pin-check` CI gate. 5 phases (14-18), 15 plans; v1.3 P2WPKH-only
   `full_round::*` invariant held green at every v1.4 phase boundary (8/8 PASS).

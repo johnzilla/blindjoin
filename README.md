@@ -20,8 +20,9 @@ As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of
 
 ## Documentation
 
-- **[Security policy](SECURITY.md)** — how to report a vulnerability (`johnturner@gmail.com`), supported versions, audit-readiness status, the v1.6 supply-chain closure status (base-image digest pinning at Phase 22, cosign image signatures + SLSA provenance + SPDX SBOM at Phase 23), and the remaining gaps (sha256-only release archives, no reproducible-build pipeline yet). Read this first if you're considering running a coordinator in any environment where supply-chain assurance matters.
-- **[Changelog](CHANGELOG.md)** — release notes per milestone (v1.0 → v1.5), Keep-a-Changelog format.
+- **[Security policy](SECURITY.md)** — how to report a vulnerability (`johnturner@gmail.com`), audit-readiness status, and the v1.6 supply-chain posture: cosign keyless signing + SLSA provenance + SPDX SBOM on every image and release tarball, base-image digest pinning, and byte-equal reproducible builds.
+- **[Reproducible builds](docs/REPRODUCIBLE-BUILD.md)** — recipe to rebuild `blindjoin-linux-amd64.tar.gz` byte-for-byte from source on `ubuntu-24.04`.
+- **[Changelog](CHANGELOG.md)** — release notes per milestone, Keep-a-Changelog format.
 - **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.
 - **[Protocol specification (draft)](docs/PROTOCOL.md)** — BIP-style normative spec of the coordinator–client wire protocol. Work-in-progress; review and issue feedback welcome.
 - **[Technical design](blindjoin-technical-spec.md)** — architectural background and design rationale.
@@ -198,7 +199,7 @@ When `--tor` is enabled, the client uses per-phase Tor circuit isolation: input 
 
 Download pre-built binaries from [GitHub Releases](https://github.com/johnzilla/blindjoin/releases) (Linux x86_64). Other platforms: build from source with `cargo build --release`.
 
-Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `ghcr.io/johnzilla/blindjoin-client`, and `ghcr.io/johnzilla/blindjoin-bot`. **As of v1.6 Phase 23**, every tagged image push carries a cosign keyless signature, a SLSA v1.0 build provenance attestation, and an SPDX SBOM attestation — all reachable in the registry via OCI referrers. See [SECURITY.md § Image signatures + attestations](SECURITY.md#image-signatures--attestations-v16-onward) for the operator verification recipes.
+Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `ghcr.io/johnzilla/blindjoin-client`, and `ghcr.io/johnzilla/blindjoin-bot`. Every tagged image push (v1.6+) carries a cosign keyless signature, a SLSA v1.0 provenance attestation, and an SPDX SBOM attestation. Release tarballs ship the cosign `.bundle` + SLSA `.sigstore` companion assets and rebuild byte-for-byte from source. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status). Reproducibility recipe: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
 
 ## CI/CD
 
@@ -217,7 +218,9 @@ The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare 
 
 Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
 
-**Base-image digest pinning (v1.6 Phase 22):** Both `release.yml` and `docker.yml` read the canonical digest manifest at [`docker/digests.txt`](docker/digests.txt) automatically via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action — no manual `--build-arg` invocation. A daily scheduled workflow [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) resolves the upstream registry digest for each pinned tag and opens a `[digest-drift]` issue (idempotent by upstream digest hex, never auto-merged) when the canonical digest no longer matches upstream. Bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
+**Base-image digest pinning (v1.6):** Both `release.yml` and `docker.yml` read the canonical digest manifest at [`docker/digests.txt`](docker/digests.txt) automatically via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action — no manual `--build-arg` invocation. [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) runs on demand (`workflow_dispatch`) and exits non-zero when the canonical digest no longer matches upstream. Bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
+
+**Reproducible builds (v1.6):** `blindjoin-linux-amd64.tar.gz` rebuilds byte-for-byte from source on the pinned `ubuntu-24.04` runner. Recipe + per-tag expected sha256: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md). Verify any release by dispatching [`reproducible-verify.yml`](.github/workflows/reproducible-verify.yml) from the Actions tab.
 
 For branch protection setup, see [docs/branch-protection.md](docs/branch-protection.md).
 
@@ -265,7 +268,7 @@ blindjoin/
   docker/            # Docker Compose stack
     docker-compose.yml
     Dockerfile        # Multi-target Dockerfile (coordinator, client, liquidity-bot)
-    digests.txt       # Canonical base-image digest manifest (v1.6 Phase 22) — bumped only via CODEOWNERS-gated PR
+    digests.txt       # Canonical base-image digest manifest (v1.6) — bumped only via CODEOWNERS-gated PR
     bitcoind/bitcoin.conf
   docs/
     PROTOCOL.md           # BIP-style wire-protocol spec (draft; Milestone 1)
@@ -284,7 +287,8 @@ blindjoin/
       ci.yml                 # PR-triggered test, clippy --all-targets, audit gates + pinned-bitcoind install
       release.yml            # Cross-compiled binary releases (gated on test+clippy; reads docker/digests.txt)
       docker.yml             # Multi-arch Docker image publishing (gated on test+clippy; reads docker/digests.txt)
-      digest-drift-check.yml # Daily upstream digest drift check (v1.6 Phase 22), opens issue on drift
+      digest-drift-check.yml # On-demand upstream digest drift check (v1.6); exit non-zero on drift
+      reproducible-verify.yml # On-demand byte-equal rebuild verifier (v1.6)
   .bitcoind-version  # Pinned Bitcoin Core version used by CI's integration test job
   CONTRIBUTING.md    # Local prerequisites + how to run integration tests
   TODO.md            # Open and recently-resolved tech-debt items
@@ -292,12 +296,7 @@ blindjoin/
 
 ## Security Model
 
-**Reporting a vulnerability:** see [SECURITY.md](SECURITY.md) for the
-disclosure policy, contact (`johnturner@gmail.com`), supported-versions
-table, and the known supply-chain gaps + v1.6 closure plan. The section
-below describes the protocol-level guarantees and operator-facing
-hardening; the disclosure surface and the audit-readiness pointer live
-in SECURITY.md.
+**Reporting a vulnerability:** email `johnturner@gmail.com` with subject `[blindjoin security]`. Full policy: [SECURITY.md](SECURITY.md). The section below describes the protocol-level guarantees and operator-facing hardening.
 
 The coordinator **cannot**:
 - Link inputs to outputs (RSA blind signatures, RFC 9474)
@@ -316,13 +315,13 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 60/min, writes 30/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. All four knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP), so the coordinator deliberately uses `GlobalKeyExtractor`; sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
 
-**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. The `cargo audit` CI step blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. The `cargo clippy --all-targets` CI step blocks merge on any lint, including in integration-test code. As of v1.3 Phase 9, CI's `bitcoind` install verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, pulled from a SHA-pinned `guix.sigs` commit) before extracting it — the install will fail closed on a substituted binary or a stale key. **As of v1.6 Phase 22**, base-image digests for `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1` are pinned in [`docker/digests.txt`](docker/digests.txt) — release and Docker builds read them automatically through a composite action with a fail-fast regex contract, and a daily `digest-drift-check.yml` workflow opens an idempotent `[digest-drift]` issue on upstream movement so bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS). **As of v1.6 Phase 23**, every tagged ghcr.io image push is cosign-signed (keyless OIDC, `sigstore/cosign-installer@v3.10.1` + cosign 2.6.3), carries a SLSA v1.0 build provenance attestation (via `actions/attest-build-provenance`), and an SPDX SBOM attestation (Syft via `anchore/sbom-action` + `actions/attest-sbom`). A `sigstore-pin-check` CI job fails the build if any sigstore-ecosystem action loses its 40-hex commit-SHA pin. The operator-facing `cosign verify`, `gh attestation verify`, and offline `cosign save` recipes live in [SECURITY.md § Image signatures + attestations](SECURITY.md#image-signatures--attestations-v16-onward).
+**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. `cargo audit` blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. `cargo clippy --all-targets` blocks merge on any lint, including in integration-test code. CI's `bitcoind` install (v1.3+) verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, from a SHA-pinned `guix.sigs` commit). v1.6 adds: base-image digest pinning ([`docker/digests.txt`](docker/digests.txt)) threaded into builds via a composite action; cosign keyless OIDC signing + SLSA v1.0 provenance + SPDX SBOM on every ghcr.io image push and on every release tarball; pinned cosign-installer at v3.10.1 (cosign 2.6.3); a `sigstore-pin-check` CI gate that fails the build on a floating sigstore-action tag; and byte-equal reproducible builds for `blindjoin-linux-amd64.tar.gz` on `ubuntu-24.04`. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status). Reproducibility recipe: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
 
 **External audit charter (v1.5):** [docs/AUDIT-CHARTER.md](docs/AUDIT-CHARTER.md) enumerates in-scope modules with file:symbol refs, threat models per module, the 9 cross-shape rejection properties locked at v1.4, the v=2 OwnershipProof PSBT handling boundary, the RSA SecretKey zeroization window (RoundSecretKey + bounded lifetime per AUDIT-03), out-of-scope dependencies, residual risks accepted with rationale, and a glossary mapping project terms to plain audit language.
 
 **Test infrastructure (v1.3 Phase 9):** Integration tests under `tests/integration/` no longer silently graceful-skip in CI — under `BLINDJOIN_REQUIRE_BITCOIND=1` (workflow-level env), tests that can't find bitcoind PANIC, surfacing the misconfiguration immediately. The historical `Box::leak(node)` pattern that blocked cargo's stdout pipe behind orphan bitcoind processes is replaced with a `BitcoindGuard` RAII type whose `Drop::drop` runs `node.stop()` via `tokio::spawn_blocking`. All 8 `full_round::*` end-to-end tests run by default (six former `#[ignore = "TODO(Phase-10)..."]` carve-outs were closed once the wire-format mismatch in client/server witness encoding was repaired). See [CONTRIBUTING.md](CONTRIBUTING.md) for local invocation.
 
-**Multi-script script-type integrity (v1.4):** The coordinator's `validate_utxo` derives the `ScriptType` of every input from the on-chain `script_pubkey` (not from the client-declared field on the wire) and cross-checks against the declaration; mismatch returns `Bip322Error::ScriptTypeMismatch` **before** the per-script verifier ever runs. The invariant is double-anchored in CI: a `crit-01-grep-check` job greps for ≥2 `CRIT-01` tokens in `coordinator/src/bitcoin/utxo.rs` (the v=1 and v=2 dispatcher arms); a `crit-01-client-grep-check` job greps for ≥1 in `client/src/round/input.rs` (where the client populates `script_type` from the wallet, not from a CLI echo). The `shared::bip322` dispatcher is the only public verifier surface — per-script verify/sign functions are `pub(crate)`-only, so a caller cannot reach `p2wpkh::verify` from outside the crate to bypass dispatch. A `bip322-pin-check` CI job enforces the `bip322 = "=0.0.10"` exact pin (the crate is pre-1.0 and any minor release can break us). 9 cross-shape rejection tests in `shared/tests/bip322_cross_shape.rs` lock the V1.4-CRIT-01 spoofing-vector closure at the `shared/` crate boundary.
+**Multi-script script-type integrity (v1.4):** The coordinator's `validate_utxo` derives the `ScriptType` of every input from the on-chain `script_pubkey` (not from the client-declared field on the wire) and cross-checks against the declaration; mismatch returns `Bip322Error::ScriptTypeMismatch` **before** the per-script verifier ever runs. The `shared::bip322` dispatcher is the only public verifier surface — per-script verify/sign functions are `pub(crate)`-only, so a caller cannot reach `p2wpkh::verify` from outside the crate to bypass dispatch. A `bip322-pin-check` CI job enforces the `bip322 = "=0.0.10"` exact pin (the crate is pre-1.0 and any minor release can break the adapter at `shared/src/bip322/mod.rs`). 9 cross-shape rejection tests in `shared/tests/bip322_cross_shape.rs` lock the V1.4-CRIT-01 spoofing-vector closure at the `shared/` crate boundary.
 
 ## Key Dependencies
 

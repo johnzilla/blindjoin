@@ -14,63 +14,21 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
-### v1.6 — supply-chain attestation (in progress)
+### v1.6 — supply-chain attestation (tag pending baseline capture)
 
-- **Phase 22 — base-image digest drift detection (DRIFT-01/02/03).**
-  - [`docker/digests.txt`](docker/digests.txt) ships as the canonical pin manifest
-    for `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`
-    (one `image:tag@sha256:HEX` per line, regex-validated).
-  - New composite action [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/)
-    parses the manifest with a fail-fast contract (4+ auditor-grepable
-    `Refusing to build without a valid manifest.` error trailers); emits
-    named `debian_ref` / `cargo_chef_ref` outputs.
-  - [`release.yml`](.github/workflows/release.yml) and
-    [`docker.yml`](.github/workflows/docker.yml) now read the manifest
-    automatically — tagged builds no longer need manual `--build-arg DEBIAN_REF=…`.
-  - New scheduled workflow
-    [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) runs daily
-    (`0 9 * * *` UTC) plus `workflow_dispatch`; resolves upstream digests via
-    `docker buildx imagetools inspect` and opens a `[digest-drift]` GitHub
-    issue when the canonical and upstream digests diverge. Idempotent by
-    upstream digest hex — a second run with the same drift does not open a
-    duplicate.
-  - Governance: new [`.github/CODEOWNERS`](.github/CODEOWNERS) maps both the
-    manifest and the parser action to the maintainer. GitHub Ruleset on `main`
-    (`require_code_owner_review: true`) blocks unreviewed digest bumps for
-    outside contributors. See [docs/branch-protection.md](docs/branch-protection.md)
-    for the full ruleset config and the documented admin-bypass trade-off.
-  - Documented in [SECURITY.md §Supply-chain status](SECURITY.md#supply-chain-status)
-    and [CONTRIBUTING.md §Bumping base-image digests](CONTRIBUTING.md#bumping-base-image-digests).
+Closed the v1.5 unsigned-build supply-chain gap. Every release tarball and ghcr.io image is cosign-signed (keyless OIDC, no maintainer key custody), SLSA v1.0 provenance-attested, and SPDX SBOM-attested. Base-image digests pin in `docker/digests.txt`. Release tarballs rebuild byte-for-byte from source on `ubuntu-24.04`.
 
-- **Phase 23 — cosign image attestations + SLSA provenance + SPDX SBOM (ATTEST-01/02/03/04).**
-  - [`.github/workflows/docker.yml`](.github/workflows/docker.yml) grew its `docker`
-    job permissions to four scopes (`contents: read`, `packages: write`,
-    `id-token: write`, `attestations: write`) and now signs every tagged image
-    push with cosign via `sigstore/cosign-installer@v3.10.1` + cosign 2.6.3
-    (keyless OIDC, `cosign sign --yes`).
-  - Three additional steps land after the cosign sign step: `anchore/sbom-action`
-    generates an SPDX SBOM via Syft, `actions/attest-sbom` signs it as a SLSA
-    in-toto SBOM attestation pushed to the OCI registry, and
-    `actions/attest-build-provenance` emits a SLSA v1.0 provenance attestation —
-    all three reachable in the registry via OCI referrers.
-  - New `sigstore-pin-check` job in [`ci.yml`](.github/workflows/ci.yml) mirrors
-    the existing `bip322-pin-check` pattern: greps `.github/workflows/` for
-    `sigstore/cosign-installer`, `actions/attest-build-provenance`,
-    `actions/attest-sbom`, and `anchore/sbom-action` and fails CI if any
-    appears without a 40-hex commit-SHA pin.
-  - [`SECURITY.md`](SECURITY.md) gains an `### Image signatures + attestations (v1.6 onward)`
-    subsection documenting the four operator recipes — `cosign verify` with a
-    narrow `--certificate-identity-regexp` (Pitfall 1), `gh attestation verify`
-    for both SLSA provenance and SPDX SBOM predicates, and `cosign save --dir`
-    + `cosign verify --local-image` for offline verification (ATTEST-04). Pitfall
-    callouts for the GHCR UI badge timing (Pitfall 10) and the cosign 3.0 CLI
-    drift (`>= 2.6.3, < 3.0.0` pin per Pitfall 13) are inline.
-  - The v1.5 "Docker images on ghcr.io are unsigned" known-gap bullet is now
-    struck through with a cross-link to the new subsection.
+12 of 14 v1 requirements shipped. SIGN-03 (PGP YubiKey path) deferred indefinitely 2026-06-02 (cosign+SLSA covers the threat model; PGP would be ongoing key-rotation cost for negligible solo-project benefit). REPRO-04 (reproducible-builds.org registry submission) descoped 2026-06-03.
 
-- Remaining v1.6 phases (release-tarball signing, reproducible-build recipe)
-  are not yet started. See [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md)
-  for the full milestone scope.
+- **Base-image digest pinning (DRIFT-01/02/03):** `docker/digests.txt` is the canonical manifest for `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. `release.yml` + `docker.yml` thread the values into builds via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action. [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) runs on `workflow_dispatch`, exits non-zero on drift. `docker/digests.txt` is CODEOWNERS-gated.
+- **Image attestations (ATTEST-01..04):** Every tagged ghcr.io push gets `cosign sign` (keyless OIDC), `actions/attest-build-provenance` (SLSA v1.0), `actions/attest-sbom` + `anchore/sbom-action` (SPDX SBOM via Syft). cosign-installer pinned at v3.10.1 / cosign 2.6.3. `sigstore-pin-check` CI job catches floating tags on the four sigstore/sbom actions.
+- **Release tarball signatures (SIGN-01/02):** Every `blindjoin-linux-amd64.tar.gz` ships a cosign `.bundle` companion and a SLSA `.sigstore` provenance bundle via the same `actions/attest-build-provenance` machinery.
+- **Reproducible builds (REPRO-01/02/03):** `rust-toolchain.toml` pins rustc 1.95.0; `Cargo.toml` adds `[profile.release] strip = "symbols"`; `release.yml` build job runs on the pinned `ubuntu-24.04` with deterministic `RUSTFLAGS` + `CARGO_INCREMENTAL=0` + `SOURCE_DATE_EPOCH` from the tagged commit + `cargo build --release --locked` + deterministic 5-flag `tar` piped through `gzip -n`. Recipe + per-tag expected sha256: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md). On-demand verifier: [`reproducible-verify.yml`](.github/workflows/reproducible-verify.yml).
+- **SECURITY.md** rewritten with single-recipe verify commands for image and tarball signatures and a single-line pointer to the reproducibility recipe.
+
+**Theater strip after Phase 25 close** (commits `bf102ab` + `54e5ea5`, ~1,400 lines deleted): removed scaffolded auto-issue creation systems with two-title schemes + label-create + dedup (both digest-drift and reproducibility verifiers), removed monthly/daily cron schedules in favor of `workflow_dispatch:` only, collapsed multi-path verify recipes to single commands, removed the colon-delimited expected-sha256 lookup file in favor of inline env values, removed the reproducible-builds.org registry submission procedure, removed `rust-toolchain-pin-check` and the two `crit-01-grep-check` CI gates (the latter enforced presence of a comment rather than behavior), removed SECURITY.md disclosure-policy ceremony and strikethrough bookkeeping, stripped planning cross-references and auditor-pose comments throughout workflow files. Real cryptographic verification and supply-chain pinning intact.
+
+**Tag pending.** v1.6.0 is the next release-ship event — sequence in [docs/RELEASING.md](docs/RELEASING.md): dispatch `reproducible-verify.yml`, copy the rebuilt sha256 into the workflow env + the markdown table, commit, `git tag -s v1.6.0`, push.
 
 ## [1.5.0] — 2026-06-01
 

@@ -101,12 +101,16 @@ by the `bip322-pin-check` CI gate. The crate is pre-1.0; any minor release
 can break the wire format. The pin + gate prevents a `cargo update` from
 silently swapping in a behavior change.
 
-**CI assertion:** The `crit-01-grep-check` job greps for ≥2 `CRIT-01`
-tokens in `coordinator/src/bitcoin/utxo.rs` (the v=1 and v=2 dispatcher
-arms); the `crit-01-client-grep-check` job greps for ≥1 in
-`client/src/round/input.rs`. These gates fail closed if a future refactor
-removes the inline `// CRIT-01: …` markers that signal the invariant to
-human reviewers.
+**Behavioral assertions:** The 9 cross-shape rejection tests in
+`shared/tests/bip322_cross_shape.rs` lock the V1.4-CRIT-01 spoofing-vector
+closure at the `shared/` crate boundary. The `// CRIT-01: …` inline
+markers at the v=1 and v=2 dispatcher arms in
+`coordinator/src/bitcoin/utxo.rs` and at the v=2 envelope construction in
+`client/src/round/input.rs` signal the invariant to human reviewers. (The
+historical `crit-01-grep-check` / `crit-01-client-grep-check` CI gates
+were removed in the v1.6 theater strip — they enforced the presence of a
+comment, not the underlying behavior, and the behavioral cross-shape
+tests are the real gate.)
 
 ### V1.4-CRIT-02 — silent sighash regression
 
