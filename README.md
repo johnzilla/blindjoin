@@ -1,5 +1,14 @@
 # blindjoin
 
+[![Release](https://img.shields.io/github/v/release/johnzilla/blindjoin?logo=github&color=blue)](https://github.com/johnzilla/blindjoin/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/johnzilla/blindjoin/ci.yml?branch=main&logo=githubactions&logoColor=white&label=CI)](https://github.com/johnzilla/blindjoin/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Rust 1.95](https://img.shields.io/badge/rust-1.95.0-CE412B?logo=rust&logoColor=white)](rust-toolchain.toml)
+[![Bitcoin signet](https://img.shields.io/badge/Bitcoin-signet-F7931A?logo=bitcoin&logoColor=white)](#what-this-does)
+[![Tor: arti](https://img.shields.io/badge/Tor-arti--client-7E4798?logo=torproject&logoColor=white)](https://gitlab.torproject.org/tpo/core/arti)
+[![Signed by cosign + SLSA](https://img.shields.io/badge/signed-cosign%20%2B%20SLSA-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#supply-chain-status)
+[![Reproducible build](https://img.shields.io/badge/reproducible-byte--equal-success)](docs/REPRODUCIBLE-BUILD.md)
+
 A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures (RFC 9474) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via PKARR DHT and all production traffic flows over Tor hidden services.
 
 MIT licensed. No fees. No company. No terms of service.
