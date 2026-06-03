@@ -103,7 +103,7 @@ are pinned by digest in [`docker/digests.txt`](docker/digests.txt) — the
 canonical manifest — and consumed by the release pipeline via the composite
 action at [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/).
 
-**When you'd bump:** the on-demand [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) workflow has reported drift, OR you want to proactively refresh a base image (e.g. picking up a Debian security backport).
+**When you'd bump:** before cutting a release, the two `docker buildx imagetools inspect` commands in [docs/RELEASING.md](docs/RELEASING.md) have shown drift, OR you want to proactively refresh a base image (e.g. picking up a Debian security backport).
 
 **How to bump (per PR):**
 

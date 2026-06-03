@@ -48,7 +48,7 @@ Release tarballs rebuild byte-for-byte from source on `ubuntu-24.04`. Recipe + e
 
 `docker/Dockerfile` derives from `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. Both are digest-pinned in [`docker/digests.txt`](docker/digests.txt) and threaded into `docker buildx --build-arg` via [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/). Bumps go through PR review — `docker/digests.txt` is CODEOWNERS-gated.
 
-Run [`.github/workflows/digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) via `workflow_dispatch` to check the pinned digests against upstream. Exits non-zero on drift.
+To check upstream drift before a release, run `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'` against each entry in `docker/digests.txt` (see `docs/RELEASING.md`).
 
 For the highest assurance, build from source per [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md) and compare your sha256sum against the per-tag table.
 

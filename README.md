@@ -218,7 +218,7 @@ The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare 
 
 Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
 
-**Base-image digest pinning (v1.6):** Both `release.yml` and `docker.yml` read the canonical digest manifest at [`docker/digests.txt`](docker/digests.txt) automatically via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action — no manual `--build-arg` invocation. [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) runs on demand (`workflow_dispatch`) and exits non-zero when the canonical digest no longer matches upstream. Bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
+**Base-image digest pinning (v1.6):** Both `release.yml` and `docker.yml` read the canonical digest manifest at [`docker/digests.txt`](docker/digests.txt) automatically via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action — no manual `--build-arg` invocation; a malformed manifest fails the build at the composite-action regex gate. Pre-release drift check is two `docker buildx imagetools inspect` commands documented in [docs/RELEASING.md](docs/RELEASING.md). Bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
 **Reproducible builds (v1.6):** `blindjoin-linux-amd64.tar.gz` rebuilds byte-for-byte from source on the pinned `ubuntu-24.04` runner. Recipe + per-tag expected sha256: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md). Verify any release by dispatching [`reproducible-verify.yml`](.github/workflows/reproducible-verify.yml) from the Actions tab.
 
@@ -287,7 +287,6 @@ blindjoin/
       ci.yml                 # PR-triggered test, clippy --all-targets, audit gates + pinned-bitcoind install
       release.yml            # Cross-compiled binary releases (gated on test+clippy; reads docker/digests.txt)
       docker.yml             # Multi-arch Docker image publishing (gated on test+clippy; reads docker/digests.txt)
-      digest-drift-check.yml # On-demand upstream digest drift check (v1.6); exit non-zero on drift
       reproducible-verify.yml # On-demand byte-equal rebuild verifier (v1.6)
   .bitcoind-version  # Pinned Bitcoin Core version used by CI's integration test job
   CONTRIBUTING.md    # Local prerequisites + how to run integration tests

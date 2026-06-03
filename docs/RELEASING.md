@@ -44,6 +44,17 @@ cosign verify-blob \
 
 Must return `Verified OK`. If not, `gh release delete vX.Y.Z`, fix, re-tag.
 
+## Base-image digest check (before a release)
+
+Before tagging, confirm the digests in `docker/digests.txt` still match upstream. Two commands:
+
+```bash
+docker buildx imagetools inspect debian:bookworm-slim                    --format '{{.Manifest.Digest}}'
+docker buildx imagetools inspect lukemathwalker/cargo-chef:latest-rust-1 --format '{{.Manifest.Digest}}'
+```
+
+If either differs from the corresponding `@sha256:...` in `docker/digests.txt`, decide whether to bump (security backport → yes; arbitrary metadata churn → no), then update the manifest in a single-line PR (CODEOWNERS-gated; do not auto-merge).
+
 ## Reproducibility baseline (first release after a Rust/runner bump)
 
 Before tagging, dispatch `.github/workflows/reproducible-verify.yml` from the Actions tab. The first run will fail because the workflow's `EXPECTED_SHA256` env still holds `<TBD-v1.6.0-cut>`. Copy the `Rebuilt locally:` sha256 from the log into:
