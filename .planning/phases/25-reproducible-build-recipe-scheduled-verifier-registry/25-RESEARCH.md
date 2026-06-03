@@ -716,22 +716,22 @@ Replacement step 4 prose (replacing the current draft-flip):
 | A6 | Phase 22's `bip322-pin-check` CI grep pattern is the right template for a new `rust-toolchain-pin-check` job to enforce single-source-of-truth between `rust-toolchain.toml` and `with: toolchain:` values | Pitfall A (KEEP-with-pin-match) | LOW — verified pattern exists at ci.yml:214-236 and is well-established. Planner can mirror exactly |
 | A7 | The `dtolnay/rust-toolchain` at SHA `3c5f7ea2…` will still require `toolchain:` input on the next CI run (no behavior change since the SHA is pinned) | Pitfall A | HIGH confidence; the action.yml at that SHA was inspected verbatim 2026-06-02 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should the `rust-toolchain-pin-check` grep gate be ADDED to ci.yml as part of Phase 25, or DEFERRED to a follow-on?**
    - What we know: Pitfall A surfaces the dual-source-of-truth risk between `rust-toolchain.toml` and `with: toolchain:` blocks. A grep gate prevents drift.
    - What's unclear: CONTEXT D-21 doesn't mention this gate (it assumes the file wins, so no gate needed). Adding a new ci.yml job expands Phase 25's CI surface beyond what D-21 implies.
-   - Recommendation: ADD the gate in Phase 25 as part of the same PLAN that lands D-01/D-21. Mirrors `bip322-pin-check`'s ~10-line shape; near-zero marginal cost; closes the dual-source-of-truth window opened by KEEP-with-pin-match. If planner prefers, can be a separate small PLAN (D-21B style) — but should not be deferred to a future phase.
+   - RESOLVED — Recommendation: ADD the gate in Phase 25 as part of the same PLAN that lands D-01/D-21. Mirrors `bip322-pin-check`'s ~10-line shape; near-zero marginal cost; closes the dual-source-of-truth window opened by KEEP-with-pin-match. If planner prefers, can be a separate small PLAN (D-21B style) — but should not be deferred to a future phase.
 
 2. **What value to put for `ImageVersion:` in `docs/REPRODUCIBLE-BUILD.md` initially?**
    - What we know: D-09 §3 (Toolchain pins) and D-12 reference the ImageVersion as a pinned value to compare against. D-10 procedure captures the sha256 at v1.6.0-rc.0 rehearsal.
    - What's unclear: The ImageVersion at rc.0 cut isn't known yet. D-10 captures it post-hoc.
-   - Recommendation: Initial value `<TBD-v1.6.0-cut>` (same placeholder as the sha256). The rc.0 rehearsal procedure (D-10 in docs/RELEASING.md) captures BOTH ImageVersion AND sha256 in one step, and the maintainer commits both replacements before tagging.
+   - RESOLVED — Recommendation: Initial value `<TBD-v1.6.0-cut>` (same placeholder as the sha256). The rc.0 rehearsal procedure (D-10 in docs/RELEASING.md) captures BOTH ImageVersion AND sha256 in one step, and the maintainer commits both replacements before tagging.
 
 3. **Should the verifier exit-fail on `[reproducibility-regression]` mismatch even if an existing issue is open?**
    - What we know: Phase 22's `digest-drift-check.yml` returns 0 if an existing issue is open (idempotent — skip create, continue). Example 5 here exits 1 in both create-and-skip-create branches on mismatch.
    - What's unclear: Whether the planner wants "monthly run goes red until fixed" (exit 1 always on mismatch) or "monthly run goes green once issue is acknowledged" (exit 0 when existing issue open).
-   - Recommendation: Exit 1 ALWAYS on mismatch (Example 5 shape). A green monthly run is the precondition for D-14 registry submission — silencing the red because an issue is open weakens that precondition. Trade-off accepted.
+   - RESOLVED — Recommendation: Exit 1 ALWAYS on mismatch (Example 5 shape). A green monthly run is the precondition for D-14 registry submission — silencing the red because an issue is open weakens that precondition. Trade-off accepted.
 
 ## Environment Availability
 
