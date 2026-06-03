@@ -1,28 +1,17 @@
 name: Release
 
 env:
-  # Force GitHub Actions runner to execute Node 20 JS actions on Node 24,
-  # silencing the deprecation warning ahead of the June 2026 hard cutover.
-  # See: actions/checkout v6.0.2 still declares `using: node20` — upgrading
-  # the action SHA is tracked separately (see TODO at top of ci.yml).
+  # Silence the Node 20 deprecation warning until we bump actions/checkout to v6.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  # Release-smoke gate (P0-5, v1.5 release-readiness): integration tests
-  # under tests/integration/* must FAIL on bitcoind-missing rather than
-  # graceful-skip during a release. The composite install-bitcoind action
-  # provisions the pinned bitcoind in <90s on cache miss and ~0s on cache
-  # hit; the trade-off is small relative to release confidence.
+  # Make integration tests fail (not skip) when bitcoind is missing — release builds
+  # must run the full integration suite.
   BLINDJOIN_REQUIRE_BITCOIND: "1"
 
 on:
   push:
     tags: ['v*']
-  # workflow_dispatch enables rehearsal of the check job (release-smoke
-  # gate under BLINDJOIN_REQUIRE_BITCOIND=1 via the composite
-  # install-bitcoind action) without cutting a tag or publishing
-  # artifacts. Trigger from the Actions tab on any branch; the `build`
-  # job below is gated on `refs/tags/*` so a dispatch run runs check
-  # only and stops short of uploading to GitHub Releases. See
-  # .planning/quick/260531-ubf-*/SUMMARY.md for the rehearsal procedure.
+  # workflow_dispatch rehearses the check job (release-smoke gate) without cutting
+  # a tag. The build job below is gated on refs/tags/* so dispatch runs check only.
   workflow_dispatch:
 
 permissions:
@@ -39,16 +28,9 @@ jobs:
           toolchain: "1.95.0"
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      # Composite source-of-truth — see .github/actions/install-bitcoind/action.yml.
-      # Same PGP+SHA256 integrity gate as ci.yml. The release pipeline runs
-      # the full --all-targets suite (not --lib) so a tag push cannot ship
-      # binaries unless every integration test under tests/integration/*
-      # has executed against the pinned bitcoind. Trade-off: ~30s on cache
-      # hit, ~90s on cache miss (the first job after a .bitcoind-version
-      # bump). Acceptable cost for release-grade confidence.
       - name: Install pinned bitcoind
         uses: ./.github/actions/install-bitcoind
-      - name: Run tests (workspace, all targets — integration suite included)
+      - name: Run tests
         run: cargo test --workspace --all-targets
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -60,61 +42,17 @@ jobs:
   build:
     name: Build linux-amd64
     needs: check
-    # Phase 25 REPRO-03 / D-08 / Pitfall 7: pin the build runner image to a
-    # specific Ubuntu release rather than the rolling-release runner alias.
-    # The monthly reproducible-verify.yml runs on the same pinned image; if
-    # the build job rode the unpinned runner image, the verifier would
-    # false-positive every ~month when GitHub rotated the underlying SHA.
-    # The check job above intentionally stays on the rolling-release alias
-    # (tests/clippy/audit have no byte-equal requirement; runner rotation is
-    # acceptable there).
+    # Pinned runner image (not the rolling alias) so reproducible-verify.yml on
+    # the same pin doesn't false-positive on runner-image rotation.
     runs-on: ubuntu-24.04
-    # Publish gate: only run on a real tag push. workflow_dispatch runs
-    # check-only (the rehearsal path) and never uploads release artifacts.
     if: startsWith(github.ref, 'refs/tags/')
-    # Phase 24 SIGN-01/SIGN-02: cosign keyless signing + actions/attest-build-provenance need:
-    #   - contents:     write — softprops/action-gh-release uploads Release assets. Without
-    #                   this, softprops fails with 403 Forbidden on the Releases API call.
-    #                   See Phase 24 D-02.
-    #   - id-token:     write — OIDC token for Fulcio cert exchange. Without this,
-    #                   cosign sign-blob fails with the opaque "fulcio: 400 Bad
-    #                   Request" error. See PITFALLS Pitfall 2 + Phase 23 D-02.
-    #   - attestations: write — persist the SLSA provenance attestation to GitHub's
-    #                   attestations API. Without this, actions/attest-build-provenance
-    #                   fails with 403 Forbidden on the API call. See Phase 23
-    #                   RESEARCH §2.1 + the matching docker.yml block at lines 67-70.
-    # Deliberately omitted (auditor-grepable per Plan 22-04): packages, PR-write,
-    # pages, issues, deployments. These tokens MUST NOT appear anywhere in this file.
-    # release.yml does NOT push to ghcr.io — the absence of a literal `packages:` token
-    # at any indentation is the file-level audit gate confirming the no-ghcr-push contract.
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: write       # softprops uploads to the Releases API
+      id-token: write       # OIDC for cosign Fulcio cert exchange
+      attestations: write   # actions/attest-build-provenance writes to the attestations API
 
-    # Phase 25 REPRO-01/02: binary determinism env vars. The flags below
-    # make `cargo build --release --locked` produce byte-equal output across
-    # rebuilds on the pinned ubuntu-24.04 runner image.
-    #
-    # RUSTFLAGS:           Two --remap-path-prefix flags strip embedded build-host
-    #                      paths from debug info and panic messages. Without
-    #                      these, rebuilds on a different runner produce diverging
-    #                      bytes even on identical toolchain. See REPRO-01.
-    # SOURCE_DATE_EPOCH:   Computed per REPRO-02 in the Compute step below;
-    #                      derived at runtime from `git log -1 --format=%ct
-    #                      $GITHUB_SHA` so external rebuilders can re-derive
-    #                      the same value from a fresh clone. NOT set here in
-    #                      the env: map because YAML-parse-time is too early —
-    #                      the value comes from the tagged commit's recorded
-    #                      committer time, injected via $GITHUB_ENV at the
-    #                      Compute step.
-    # CARGO_INCREMENTAL:   0 disables incremental compilation entirely, which
-    #                      otherwise embeds host-specific intermediate paths in
-    #                      metadata. See REPRO-01.
-    #
-    # Pitfall 6 (research): expect 1-2 iteration cycles after the first ship to
-    # surface project-specific nondeterminism. The reproducible-verify.yml
-    # workflow is the iteration mechanism — failures inform the next prevention.
+    # Determinism env. SOURCE_DATE_EPOCH is computed at a step below (from the
+    # tagged commit time) — not declared here because YAML-parse is too early.
     env:
       RUSTFLAGS: "--remap-path-prefix=${{ github.workspace }}=/build --remap-path-prefix=/home/runner/.cargo=/cargo"
       CARGO_INCREMENTAL: "0"
@@ -128,49 +66,24 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
-      # Phase 22 DRIFT-03: read the canonical base-image digest manifest.
-      # This step is a supply-chain gate — a tag push cannot publish a
-      # release tarball unless docker/digests.txt is present and well-formed
-      # (the composite action exits 1 otherwise; see
-      # .github/actions/read-base-digests/action.yml). Outputs are unused by
-      # the cargo build directly but exported for downstream phases
-      # (Phase 25 reproducibility recipe) and for log-audit observability.
+      # Reads docker/digests.txt; exits 1 if missing or malformed.
       - name: Read canonical base-image digests
         id: digests
         uses: ./.github/actions/read-base-digests
 
-      # Phase 25 REPRO-02: derive SOURCE_DATE_EPOCH from the tagged commit time.
-      # Locked to git's recorded committer-time on $GITHUB_SHA so the value is
-      # reproducible from source — an external rebuilder running `git log -1
-      # --format=%ct v1.6.0` on a fresh clone gets the same epoch, the same
-      # debug-info baseline, and the same tar entry mtimes (per D-06 below).
-      # The value is written to $GITHUB_ENV; per GitHub Actions docs the
-      # assignment propagates to all subsequent steps in the same job
-      # automatically (verified 2026-06-02 via docs.github.com/en/actions docs).
-      - name: Compute SOURCE_DATE_EPOCH from tagged commit time
+      # SOURCE_DATE_EPOCH = the tagged commit's committer time. $GITHUB_SHA on a
+      # tag-push IS the tag SHA, so external rebuilders can re-derive this with
+      # `git log -1 --format=%ct v1.6.0` on a fresh clone.
+      - name: Compute SOURCE_DATE_EPOCH
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct $GITHUB_SHA)" >> $GITHUB_ENV
 
-      # Phase 25 REPRO-02 / D-05: explicit --locked makes cargo refuse to
-      # update Cargo.lock during the build — fails the run if the lockfile is
-      # out of sync (exit 101) rather than silently regenerating. Fail-fast
-      # contract: a tag push with a stale Cargo.lock cannot ship binaries.
+      # --locked fails the run on a stale Cargo.lock instead of silently regenerating.
       - name: Build coordinator and client
         run: cargo build --release --locked --bin coordinator --bin client --bin liquidity-bot
 
-      # Phase 25 REPRO-01 / D-06: deterministic tar + gzip. Five flags load-bearing
-      # for byte-equality:
-      #   --sort=name      — deterministic file order across filesystem-walk variance
-      #   --owner=0        — strip runner user identity from tar headers
-      #   --group=0        — strip runner group identity from tar headers
-      #   --numeric-owner  — emit numeric (not name-resolved) uid/gid; immune to
-      #                      runner /etc/passwd lookups
-      #   --mtime=...      — uniform entry timestamps from SOURCE_DATE_EPOCH (D-03)
-      # And one flag on gzip:
-      #   gzip -n          — strip the original filename + mtime from the gzip
-      #                      header. Default gzip embeds both; this is the most
-      #                      common "tar bytes match, gzip bytes don't" failure
-      #                      mode in repro-build reports (per Debian wiki
-      #                      ReproducibleBuilds/TimestampsInGzipHeaders).
+      # Deterministic tar+gzip. The five tar flags + `gzip -n` (which strips the
+      # original filename and mtime from the gzip header) are all load-bearing
+      # for byte-equality.
       - name: Package (deterministic tar + gzip)
         run: |
           mkdir -p dist
@@ -183,98 +96,31 @@ jobs:
             | gzip -n > blindjoin-linux-amd64.tar.gz
           sha256sum blindjoin-linux-amd64.tar.gz > blindjoin-linux-amd64.tar.gz.sha256
 
-      # Phase 24 SIGN-01: cosign keyless OIDC signing toolchain.
-      # Pin reuses Phase 23 docker.yml SHA verbatim; single source of truth — if
-      # either sigstore action rotates, both workflows update together via the
-      # sigstore-pin-check gate at ci.yml:292-326 which greps all of
-      # .github/workflows/. Installer pinned to v3.10.1 (last v3.X — see Phase 23
-      # RESEARCH §2.3). v4.X of cosign-installer mandates cosign 3.x which is
-      # operator-incompatible with the documented `>= 2.6.3, < 3.0.0` range in
-      # SECURITY.md (D-08). cosign-release pinned to v2.6.3 (latest 2.x stable).
-      - name: Install cosign (keyless signing toolchain)
+      # cosign-installer v3.10.1 is the last v3.x; v4.x mandates cosign 3.x which
+      # breaks the documented cosign >= 2.6.3, < 3.0.0 verify range. Hold on v3.x
+      # until the docs and operator instructions are migrated.
+      - name: Install cosign
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
         with:
           cosign-release: 'v2.6.3'
 
-      # Phase 24 SIGN-01: cosign keyless OIDC blob signing.
-      # Produces blindjoin-linux-amd64.tar.gz.bundle (sig + cert + Rekor inclusion
-      # proof in cosign 2.x bundle format — one JSON file).
-      #
-      # Operator-side verify recipe (full version in SECURITY.md per Plan 24-03):
-      #   cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle \
-      #     --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
-      #     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-      #     blindjoin-linux-amd64.tar.gz
-      #
-      # --yes: non-interactive; required in CI (would otherwise prompt for
-      # transparency-log consent).
-      # --bundle <file>: writes the cosign 2.x bundle format to a file (sig +
-      # cert + Rekor proof in one JSON file). Operator passes the same file via
-      # --bundle to verify-blob.
-      # See PITFALLS Pitfall 3: the transparency-log upload flag MUST NOT be
-      # disabled — Rekor is the operator-facing transparency guarantee for SIGN-01.
-      - name: Sign tarball with cosign (keyless OIDC) — SIGN-01
+      # Keyless OIDC blob signing → blindjoin-linux-amd64.tar.gz.bundle
+      # (sig + cert + Rekor inclusion proof in one JSON).
+      - name: Sign tarball with cosign
         run: cosign sign-blob --yes --bundle blindjoin-linux-amd64.tar.gz.bundle blindjoin-linux-amd64.tar.gz
 
-      # Phase 24 SIGN-02: SLSA v1.0 in-toto build provenance attestation.
-      # Predicate type emitted: https://slsa.dev/provenance/v1 (auto-derived from
-      # the workflow context — the action names the builder workflow (release.yml),
-      # the tag ref, the source commit, and the runner image from the GHA context
-      # automatically; no explicit predicate-type input needed).
-      #
-      # RESEARCH §3.2 CORRECTION on CONTEXT D-14: the action does NOT accept an
-      # output-name input at v3.2.0 (verified against action.yml at the pinned
-      # SHA, which declares exactly 8 inputs and 3 outputs including bundle-path).
-      # The bundle is written to a path under ${RUNNER_TEMP} and exposed via the
-      # bundle-path output; the next step mv's it to the deterministic .sigstore
-      # filename so softprops can pick it up.
-      #
-      # The OCI-registry-push input is NOT set (defaults false; Phase 24 is not
-      # pushing to an OCI registry — tarball provenance lives at the GH
-      # Attestations API + on-disk .sigstore bundle per D-04 two-path UX).
-      # Auditor-grepable per Plan 22-04 lesson: this comment paraphrases the
-      # input name so the file-level absence audit at no-OCI-push continues
-      # to hold.
-      #
-      # Pitfall 5: actions/attest-build-provenance is the locked path (roadmap-
-      # level decision inherited from Phase 23). The alternative slsa-github-
-      # generator workflow MUST NOT be added — two competing attestations would
-      # result.
-      #
-      # `id: provenance` is REQUIRED — the next step (rename) references
-      # ${{ steps.provenance.outputs.bundle-path }}. Without the id, the
-      # expression resolves to the empty string and the mv silently fails.
-      - name: Attest tarball build provenance — SIGN-02
+      # SLSA v1.0 build provenance. The action's bundle-path output points at a
+      # tempfile; we rename it to .sigstore so softprops can upload it as an
+      # operator-discoverable asset.
+      - name: Attest tarball build provenance
         id: provenance
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f  # v3.2.0
         with:
           subject-path: blindjoin-linux-amd64.tar.gz
 
-      # Phase 24 SIGN-02 (rename): relocate the provenance bundle to the
-      # deterministic .sigstore filename that Plan 24-03's SECURITY.md recipe and
-      # the softprops upload files: list reference. The action writes the bundle
-      # to a path under ${RUNNER_TEMP}; we mv it to the workspace root so
-      # softprops can pick it up.
-      #
-      # RESEARCH §3.2 CORRECTION: the action has no `output-name` input at
-      # v3.2.0; without this rename step the softprops upload fails with
-      # "file not found" on the blindjoin-linux-amd64.tar.gz.sigstore entry
-      # in the files: list. This step is load-bearing infrastructure, not a
-      # nicety — it is the bridge from the action's runner-tempfile output
-      # to the operator-readable .sigstore convention.
-      - name: Rename provenance bundle to .sigstore Release asset filename
+      - name: Rename provenance bundle to .sigstore
         run: mv "${{ steps.provenance.outputs.bundle-path }}" blindjoin-linux-amd64.tar.gz.sigstore
 
-      # Phase 25 D-13: Phase 24 SIGN-03 (PGP path) was deferred indefinitely
-      # 2026-06-02 (commit f11d544). The release publishes directly — every tag
-      # push produces a non-draft GitHub Release with all 4 assets (tarball +
-      # sha256 + cosign bundle + SLSA provenance). The reproducible-verify.yml
-      # workflow can `gh release download` without auth gymnastics since
-      # public releases require no token.
-      #
-      # Phase 24 D-15: files: list is in semantic order — artifact → integrity →
-      # signature → provenance. No .asc PGP detached signature is uploaded
-      # (SIGN-03 deferred).
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:

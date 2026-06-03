@@ -1,28 +1,13 @@
 name: Docker
 
 env:
-  # Force GitHub Actions runner to execute Node 20 JS actions on Node 24,
-  # silencing the deprecation warning ahead of the June 2026 hard cutover.
-  # See: actions/checkout v6.0.2 still declares `using: node20` — upgrading
-  # the action SHA is tracked separately (see TODO at top of ci.yml).
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  # Release-smoke gate (P0-5, v1.5 release-readiness): a tag push cannot
-  # publish Docker images to ghcr.io unless the integration suite has
-  # executed against the pinned bitcoind. Same trade-off as release.yml:
-  # ~30s cache hit, ~90s cache miss; acceptable for release-grade
-  # confidence on Docker images that operators will pull and run.
   BLINDJOIN_REQUIRE_BITCOIND: "1"
 
 on:
   push:
     tags: ['v*']
-  # workflow_dispatch enables rehearsal of the check job (release-smoke
-  # gate under BLINDJOIN_REQUIRE_BITCOIND=1 via the composite
-  # install-bitcoind action) without cutting a tag or pushing images.
-  # Trigger from the Actions tab on any branch; the `docker` matrix job
-  # below is gated on `refs/tags/*` so a dispatch run runs check only
-  # and stops short of pushing to ghcr.io. See
-  # .planning/quick/260531-ubf-*/SUMMARY.md for the rehearsal procedure.
+  # workflow_dispatch rehearses the check job without pushing images.
   workflow_dispatch:
 
 permissions:
@@ -36,13 +21,12 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      # Composite source-of-truth — see .github/actions/install-bitcoind/action.yml.
       - name: Install pinned bitcoind
         uses: ./.github/actions/install-bitcoind
-      - name: Run tests (workspace, all targets — integration suite included)
+      - name: Run tests
         run: cargo test --workspace --all-targets
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -55,26 +39,12 @@ jobs:
     name: Docker ${{ matrix.image }}
     needs: check
     runs-on: ubuntu-latest
-    # Publish gate: only run on a real tag push. workflow_dispatch runs
-    # check-only (the rehearsal path) and never pushes images to ghcr.io.
     if: startsWith(github.ref, 'refs/tags/')
-    # Phase 23 ATTEST-01/02/03: cosign keyless signing + attest-* actions need:
-    #   - contents:     read — checkout the source tree.
-    #   - packages:     write — push image + sig + attestation to ghcr.io.
-    #   - id-token:     write — OIDC token for Fulcio cert exchange. Without this,
-    #                   cosign sign fails with the opaque "fulcio: 400 Bad
-    #                   Request" error. See PITFALLS Pitfall 2.
-    #   - attestations: write — persist the attestation to GitHub's attestations
-    #                   API. Without this, actions/attest-build-provenance fails
-    #                   with 403 Forbidden on the API call. RESEARCH §2.1
-    #                   correction — CONTEXT D-02 omitted this; it is required.
-    # Deliberately omitted (auditor-grepable per Plan 22-04): PR-write, pages,
-    # issues, deployments. These tokens MUST NOT appear anywhere in this file.
     permissions:
       contents: read
-      packages: write
-      id-token: write
-      attestations: write
+      packages: write       # push image + sig + attestation to ghcr.io
+      id-token: write       # OIDC for cosign Fulcio cert exchange
+      attestations: write   # actions/attest-* writes to the attestations API
     strategy:
       fail-fast: false
       matrix:
@@ -97,11 +67,8 @@ jobs:
 
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
-      # NOTE: `type=semver` requires strict 3-part tags (vX.Y.Z). Two-part tags
-      # like `v1.3` produce zero image tags and fail this job at the
-      # `docker buildx build --push` step with `tag is needed when pushing to
-      # registry`. Always tag milestone releases as `vMAJOR.MINOR.PATCH` — see
-      # CONTRIBUTING.md § "Tagging releases".
+      # type=semver requires 3-part tags (vX.Y.Z). Two-part tags produce zero image
+      # tags and fail the push step. Always tag vMAJOR.MINOR.PATCH.
       - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         id: meta
         with:
@@ -110,19 +77,12 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
-      # Phase 22 DRIFT-03: read the canonical base-image digest manifest
-      # and pass its values to docker buildx via --build-arg. This
-      # eliminates manual --build-arg invocation per the v1.5 P0-2/3
-      # Dockerfile-side ARG scaffold. A tag push cannot publish ghcr.io
-      # images unless docker/digests.txt is present and well-formed
-      # (the composite action exits 1 otherwise; see
-      # .github/actions/read-base-digests/action.yml).
       - name: Read canonical base-image digests
         id: digests
         uses: ./.github/actions/read-base-digests
 
       - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        id: build  # Phase 23: needed by cosign sign + attest-* downstream steps for outputs.digest
+        id: build
         with:
           context: .
           file: docker/Dockerfile
@@ -130,72 +90,32 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Phase 22 DRIFT-03: pinned base-image digests from
-          # docker/digests.txt threaded as build args. The Dockerfile's
-          # `ARG CARGO_CHEF_REF` / `ARG DEBIAN_REF` scaffold (v1.5 P0-2/3)
-          # consumes these in the `FROM ${...}` lines.
           build-args: |
             DEBIAN_REF=${{ steps.digests.outputs.debian_ref }}
             CARGO_CHEF_REF=${{ steps.digests.outputs.cargo_chef_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Phase 23 ATTEST-01: cosign keyless OIDC signing toolchain.
-      # Installer pinned to v3.10.1 (last v3.X — see RESEARCH §2.3). v4.X
-      # of cosign-installer mandates cosign 3.x which is operator-incompatible
-      # with the documented `>= 2.6.3, < 3.0.0` range in SECURITY.md (D-08).
-      # cosign-release pinned to v2.6.3 (latest 2.x stable; no CLI-breaking
-      # changes from 2.5.x through 2.6.x verified at sigstore/cosign release
-      # notes). Pin contract enforced by Plan 23-03 sigstore-pin-check gate.
-      - name: Install cosign (keyless signing toolchain)
+      # cosign-installer pinned at v3.10.1 (last v3.x) to keep the operator-facing
+      # cosign 2.x verify range valid. v4.x mandates cosign 3.x.
+      - name: Install cosign
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
         with:
           cosign-release: 'v2.6.3'
 
-      # Phase 23 ATTEST-01: produces ghcr.io/.../blindjoin-<image>:sha256-<HEX>.sig
-      # — a Fulcio-issued cert bound to the GHA OIDC subject claim, plus the
-      # Rekor transparency-log inclusion proof. Operator-side `cosign verify`
-      # recipe in SECURITY.md verifies against the locked
-      # --certificate-identity-regexp (see Plan 23-04 SECURITY.md rewrite).
-      #
-      # NOTE: cosign sign and actions/attest-build-provenance are NOT
-      # interchangeable — they produce different OCI artifacts under different
-      # tag conventions (<digest>.sig vs sha256-<HEX> referrer manifest).
-      # ATTEST-01 specifically requires the <digest>.sig form; Plan 23-02
-      # delivers ATTEST-02 (provenance) + ATTEST-03 (SBOM) via attest-* actions.
-      # See RESEARCH §2.4 (NEW Pitfall §7.3) for the distinction.
-      #
-      # --yes: non-interactive; required in CI (would otherwise prompt for
-      # transparency-log consent).
-      # Re-running this step on the same digest is idempotent at the registry
-      # (cosign 2.x stores at content-addressed `sha256-<HEX>.sig`; re-sign
-      # produces a new Rekor entry but the registry tag is overwritten safely).
-      # See PITFALLS Pitfall 3: the tlog-upload flag MUST NOT be disabled —
-      # Rekor is the operator-facing transparency guarantee for ATTEST-01.
-      - name: Sign image with cosign (keyless OIDC) — ATTEST-01
+      # cosign sign produces ghcr.io/.../blindjoin-<image>@sha256-<HEX>.sig
+      # (legacy tag convention). attest-build-provenance below produces a separate
+      # referrer-manifest artifact — both are required, they're not interchangeable.
+      - name: Sign image with cosign
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
 
-      # Phase 23 ATTEST-03 (generator half): scan the just-pushed image with
-      # Syft (bundled inside anchore/sbom-action) and write the SBOM to
-      # sbom.spdx.json on the runner FS. RESEARCH §2.2 correction: CONTEXT.md
-      # D-03 asserted that actions/attest-sbom "invokes Syft internally"; that
-      # is incorrect — attest-sbom does NOT generate SBOMs. This generator
-      # step is REQUIRED before the attest-sbom step; see RESEARCH §2.2 + §7.1.
-      #
-      # image: uses the build-push-action outputs.digest (digest-pinned form)
-      # so Syft scans the EXACT bytes pushed — avoids the latent race where a
-      # tag-form reference could resolve to a different digest if a concurrent
-      # push raced the scan (RESEARCH Assumption A2).
-      #
-      # upload-artifact: false / upload-release-assets: false — the operator-
-      # facing artifact is the ATTESTATION (next step), not the SBOM file
-      # itself. Default upload-artifact is TRUE; explicit false prevents a
-      # 90-day workflow-artifact from being retained and creating the "which
-      # SBOM is canonical?" question the attestation answers (RESEARCH §8 Q4).
-      - name: Generate SPDX SBOM with Syft (ATTEST-03 generator)
+      # Syft generates the SBOM file. attest-sbom (next step) signs and pushes it
+      # as an attestation; it does NOT generate SBOMs itself, so this step is a
+      # hard prerequisite — do not reorder.
+      - name: Generate SPDX SBOM with Syft
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
           image: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}@${{ steps.build.outputs.digest }}
@@ -204,29 +124,9 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
-      # Phase 23 ATTEST-03 (attest half): sign sbom.spdx.json as a SLSA
-      # in-toto SBOM attestation and push it to the OCI registry alongside the
-      # image as a referrer manifest at ghcr.io/.../blindjoin-<image>@sha256:<HEX>.
-      #
-      # RESEARCH §2.2 correction: this step CONSUMES the SBOM file; it does
-      # NOT generate one. The previous step (anchore/sbom-action) is the
-      # generator; sbom-path: 'sbom.spdx.json' is a hard dependency on it.
-      # DO NOT reorder these two steps.
-      #
-      # Predicate type emitted: https://spdx.dev/Document (auto-derived from
-      # the SPDX-JSON file format of sbom-path).
-      #
-      # Pinned to v2.4.0 (NOT v3.X / v4.X wrappers). v3.0 and v4.0 of
-      # attest-sbom are deprecation wrappers around actions/attest. v2.4.0 is
-      # the last release with self-contained docs matching CONTEXT.md D-03.
-      # v1.7 carry-forward: migrate to actions/attest@v4 as a single step.
-      # See RESEARCH §2.3 + §7.4.
-      #
-      # push-to-registry: true (D-01 inline registry-attached path). Operator
-      # retrieves via `gh attestation verify oci://...` — see Plan 23-04
-      # SECURITY.md recipes block. NOTE: cosign download attestation returns
-      # 404 against GitHub attestation artifacts (RESEARCH §2.4, issue #162).
-      - name: Attest SBOM (ATTEST-03)
+      # attest-sbom v2.4.0 is the last self-contained release; v3.x/v4.x are
+      # deprecation wrappers around actions/attest.
+      - name: Attest SBOM
         uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b  # v2.4.0
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}
@@ -234,41 +134,9 @@ jobs:
           sbom-path: 'sbom.spdx.json'
           push-to-registry: true
 
-      # Phase 23 ATTEST-02: SLSA v1.0 in-toto build provenance attestation.
-      # Predicate type emitted: https://slsa.dev/provenance/v1 (auto-derived
-      # from the workflow context — no explicit predicate-type input needed).
-      # The action names the builder workflow (docker.yml), the tag ref, the
-      # source commit, and the runner image from the GHA context automatically.
-      #
-      # RESEARCH §2.4 + §7.3 — cosign sign (Plan 23-01) and attest-build-
-      # provenance are NOT interchangeable. They produce DIFFERENT OCI artifacts
-      # under different tag conventions: cosign sign produces <digest>.sig
-      # (ATTEST-01 requirement), while attest-build-provenance produces a
-      # sha256-<HEX> referrer manifest (ATTEST-02 requirement). BOTH steps are
-      # required; they satisfy distinct REQ-IDs.
-      #
-      # Retrieval: `gh attestation verify oci://ghcr.io/.../blindjoin-<image>@<digest>
-      # --repo <owner>/blindjoin` is the PRIMARY operator path (see Plan 23-04
-      # SECURITY.md recipes block). cosign download attestation returns 404
-      # against these artifacts (GitHub attestation API uses referrer semantics,
-      # not the legacy .att tag convention) — RESEARCH §2.4 + issue #162.
-      #
-      # Pitfall 5: actions/attest-build-provenance is the locked path (roadmap-
-      # level decision; CONTEXT D-03 names this action verbatim). The alternative
-      # slsa-github-generator workflow MUST NOT be added — two competing
-      # attestations would result.
-      #
-      # Pinned to v3.2.0 (NOT v4.X wrapper). v4.0 of attest-build-provenance
-      # is a deprecation wrapper around actions/attest. v3.2.0 is the last
-      # release with self-contained docs matching CONTEXT.md D-03. v1.7
-      # carry-forward: migrate to actions/attest@v4 as a single consolidated
-      # step. See RESEARCH §2.3 + §7.4.
-      #
-      # push-to-registry: true (D-01 inline registry-attached path). No extra
-      # with: inputs beyond the three locked ones — predicate-type, workflow-
-      # file, tag-ref, and source-commit are all auto-derived from workflow
-      # context (RESEARCH §3.4).
-      - name: Attest build provenance (ATTEST-02)
+      # attest-build-provenance v3.2.0 is the last self-contained release; v4.x is
+      # a deprecation wrapper around actions/attest.
+      - name: Attest build provenance
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f  # v3.2.0
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/blindjoin-${{ matrix.image }}

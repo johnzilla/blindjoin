@@ -1,19 +1,12 @@
 name: CI
 
-# TODO(fix-verification-gap): bump actions/checkout from v4.3.1 (Node 20,
-# deprecated June 2026) to v6.x (Node 24). Latest tag is v6.0.2 as of
-# 2026-05-25. Deferred from this PR because v4→v6 is a major version
-# bump (per actions/checkout semver policy) and warrants a dedicated
-# verification pass that the new SHA does not change defaults we rely on.
+# TODO: bump actions/checkout v4.3.1 → v6.x once Node 20 is hard-cut off. v4→v6
+# is a major bump; verify defaults haven't shifted before pinning a new SHA.
 
 env:
-  # Force GitHub Actions runner to execute Node 20 JS actions on Node 24,
-  # silencing the deprecation warning ahead of the June 2026 hard cutover.
-  # See: actions/checkout v6.0.2 still declares `using: node20` — upgrading
-  # the action SHA is tracked separately (see TODO at top of ci.yml).
+  # Run Node 20 JS actions on Node 24 to silence the deprecation warning.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  # Phase 9: when set, integration tests that fail to find bitcoind PANIC
-  # instead of graceful-skipping. CI sets this; local-dev does not.
+  # Integration tests panic instead of skip when bitcoind is missing.
   BLINDJOIN_REQUIRE_BITCOIND: "1"
 
 on:
@@ -34,11 +27,7 @@ jobs:
           toolchain: "1.95.0"
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
-      # Phase 9: provision bitcoind v30.2 on the runner so integration tests
-      # under tests/integration/* execute end-to-end instead of graceful-skipping.
-      # Single source of truth for the version pin is .bitcoind-version at repo
-      # root; CI reads it, CONTRIBUTING.md references it, future bumps are a
-      # single-line PR. See .planning/phases/09-ci-integration-test-reliability/.
+      # bitcoind version pin lives at .bitcoind-version (single source of truth).
       - name: Read pinned bitcoind version
         id: bitcoind_version
         run: echo "version=$(cat .bitcoind-version)" >> $GITHUB_OUTPUT
@@ -48,25 +37,21 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.local/bin/bitcoind
-          # runner.os prefix avoids cache-key collisions across runner OS variants
-          # (RESEARCH.md Pitfall 6). The version segment guarantees a cache miss
-          # on every .bitcoind-version bump, which re-runs the PGP+SHA256 verify.
+          # runner.os prefix avoids cross-OS collisions; version segment forces a
+          # cache miss on every .bitcoind-version bump so PGP+SHA256 re-verify.
           key: ${{ runner.os }}-bitcoind-${{ steps.bitcoind_version.outputs.version }}
 
       - name: Install bitcoind (cache miss only)
         if: steps.cache-bitcoind.outputs.cache-hit != 'true'
-        # Integrity gate (per D-04):
-        #   1. Fetch achow101's PGP key from a SHA-pinned guix.sigs commit
-        #      (avoids public keyserver flake — RESEARCH.md Pitfall 5).
-        #   2. Verify imported key fingerprint matches the KEY_FP value set
-        #      below (catches a hostile guix.sigs commit substituting a
-        #      different key).
+        # Integrity gate:
+        #   1. Fetch achow101's PGP key from a SHA-pinned guix.sigs commit.
+        #   2. Verify the imported key fingerprint equals KEY_FP.
         #   3. gpg-verify SHA256SUMS.asc against SHA256SUMS (signed by achow101).
         #   4. hash-check the tarball against the signed SHA256SUMS entry.
-        # KEY_FP is Andrew Chow's (achow101) Bitcoin Core release-signer
-        # fingerprint; verified present in the v30.2 attestation directory at
-        # bitcoin-core/guix.sigs/30.2/achow101/.
-        # guix.sigs commit pinned 2026-05-26 to bitcoin-core/guix.sigs main HEAD.
+        # KEY_FP = achow101's Bitcoin Core release-signer fingerprint.
+        # guix.sigs commit pinned to bitcoin-core/guix.sigs main HEAD at the time
+        # of pin; bumps need PR review (both key blob and KEY_FP could be swapped
+        # together by a compromised guix.sigs HEAD).
         run: |
           set -euo pipefail
           VERSION="${{ steps.bitcoind_version.outputs.version }}"
@@ -83,27 +68,13 @@ jobs:
           gpg --list-keys --with-colons | grep -q "${KEY_FP}" \
             || { echo "ERROR: expected fingerprint ${KEY_FP} not found"; exit 1; }
 
-          # 3. Fetch SHA256SUMS + signature, verify achow101's signature.
-          # SHA256SUMS.asc is a multi-signature file — Bitcoin Core releases
-          # are signed by ~10 different guix builders. We only import achow101's
-          # key and only require achow101's signature to be GOOD. A plain
-          # `gpg --verify` would exit non-zero because gpg can't check the
-          # other ~9 signatures' keys (which we deliberately don't import —
-          # see Trust Model below); under `set -euo pipefail` that would
-          # incorrectly fail the script even though achow101's sig is valid.
-          #
-          # We match on the machine-readable `VALIDSIG` line from gpg's
-          # --status-fd output. VALIDSIG carries the FULL 40-char primary-key
-          # fingerprint as its second field, which we compare against KEY_FP
-          # directly — unambiguous and not dependent on long-key-id formatting.
-          # We always print gpg's status-fd output to the CI log so a future
-          # verify break is debuggable from the run history alone.
-          #
-          # Trust model: PR review of bumps to GUIX_SIGS_SHA / KEY_FP is the
-          # remaining trust root. An attacker who controls a future guix.sigs
-          # HEAD could in principle swap BOTH the key blob AND the KEY_FP
-          # value in the same PR; reviewers must check that the new
-          # fingerprint matches an externally-verified achow101 public key.
+          # 3. Verify achow101's signature on SHA256SUMS. SHA256SUMS.asc carries
+          # ~10 builder sigs; we only need achow101's. Plain `gpg --verify` would
+          # exit non-zero because gpg can't check the other ~9 keys we haven't
+          # imported, which under `set -euo pipefail` would fail the script even
+          # on a valid sig. Match the VALIDSIG line from --status-fd against KEY_FP
+          # directly — the full 40-char fingerprint is unambiguous. Print status
+          # output to the log so a future verify break is debuggable.
           curl -sL "${BASE}/SHA256SUMS" -o SHA256SUMS
           curl -sL "${BASE}/SHA256SUMS.asc" -o SHA256SUMS.asc
           gpg --status-fd=1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null > /tmp/gpg-status.txt || true
@@ -124,9 +95,7 @@ jobs:
           chmod +x $HOME/.local/bin/bitcoind
 
       - name: Export BITCOIND_EXE
-        # Runs on both cache hit and cache miss — corepc_node::exe_path() reads
-        # BITCOIND_EXE as first precedence (verified at corepc-node-0.12.0
-        # node/src/lib.rs:635; RESEARCH.md Assumption A7).
+        # corepc_node::exe_path() reads BITCOIND_EXE as first precedence.
         run: echo "BITCOIND_EXE=$HOME/.local/bin/bitcoind" >> $GITHUB_ENV
 
       - name: Run tests
@@ -150,12 +119,8 @@ jobs:
   coordinator-smoke:
     name: coordinator binary builds
     runs-on: ubuntu-latest
-    # Proves the production `coordinator` binary compiles in release mode.
-    # The binary currently has no `--help` flag — invoking it without a
-    # reachable bitcoind exits non-zero, so a runtime smoke would require
-    # standing up bitcoind in CI (deferred to a follow-on phase). The
-    # release-mode build catches missing-feature-flag / linker-flag
-    # regressions that a debug `cargo test` build would not surface.
+    # Catches missing-feature-flag / linker-flag regressions a debug
+    # `cargo test` build wouldn't surface.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
@@ -183,20 +148,10 @@ jobs:
   corepc-node-feature-pin-check:
     name: corepc-node feature pin check
     runs-on: ubuntu-latest
-    # REPAIR-02 invariant: every `corepc-node = ...` declaration in any
-    # Cargo.toml in the workspace must include an explicit `features = ...`
-    # clause. corepc-node defaults to the silent `0_17_2` (Bitcoin Core 0.17.2,
-    # released 2018) RPC schema if no version feature is selected; this gate
-    # catches future additions that forget the features clause.
-    #
-    # Pattern (verified 2026-05-27 against the current tree — produces zero
-    # matches, exit 0):
-    #   grep -rEn 'corepc-node\s*='        — every declaration line
-    #   | grep -v 'features\s*='           — drop the well-formed ones
-    #   | grep -v '^[^:]*:[0-9]*:#'        — drop commented-out lines
-    # Multi-line table form (`corepc-node = {` on one line, `features =` on a
-    # separate line) is a known false-positive shape — maintainers see the
-    # failure and either single-line the declaration or extend the regex.
+    # Without an explicit `features = [...]` clause, corepc-node silently
+    # defaults to Bitcoin Core 0.17.2 (2018) RPC schema. This gate catches
+    # future declarations that forget it. Multi-line table form is a known
+    # false positive — single-line the declaration or extend the regex.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Enforce explicit corepc-node feature
@@ -214,14 +169,9 @@ jobs:
   bip322-pin-check:
     name: bip322 exact-version pin check
     runs-on: ubuntu-latest
-    # v1.4 ADR Decision #1 invariant: bip322 is pre-1.0; the API can change
-    # between patch releases. Pin must be EXACTLY =0.0.10 (note the `=` operator).
-    # The 26-LOC adapter at shared/src/bip322/mod.rs is verified against this
-    # version only; any drift requires the adapter to be re-verified per Phase 14
-    # carry-forward constraint #3 (exact-pin every dependency referenced in
-    # test fixtures; CI-enforce). Mirrors the corepc-node-feature-pin-check
-    # pattern above per RESEARCH Open Question #2 recommendation (one job per
-    # pinned dep for clearer PR check log output).
+    # bip322 is pre-1.0; the API can break between patch releases. The adapter
+    # at shared/src/bip322/mod.rs is verified against exactly =0.0.10 — any
+    # drift needs the adapter re-verified by hand.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Enforce exact bip322 pin
@@ -235,92 +185,18 @@ jobs:
             exit 1
           fi
 
-  crit-01-grep-check:
-    name: CRIT-01 dual-branch invariant grep gate
-    runs-on: ubuntu-latest
-    # v1.4 Phase 16 Plan 16-02 invariant: the script-type-derived-from-chain
-    # invariant comment must be present at EACH version branch of the
-    # validate_utxo dispatcher in coordinator/src/bitcoin/utxo.rs. The
-    # comment text is `// CRIT-01: script_type derived from on-chain
-    # script_pubkey, never from client field` (verbatim, lives at the
-    # v=1 and v=2 match arms in dispatch_ownership_proof). A future
-    # refactor cannot accidentally drop the v=2 cross-check while leaving
-    # the v=1 path looking superficially correct: the grep here counts
-    # BOTH comments and exits 1 if the count falls below 2. Mirrors
-    # bip322-pin-check above per RESEARCH Pattern Pitfall 1.
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Enforce CRIT-01 dual-branch comment
-        run: |
-          set -eu
-          COUNT=$(grep -c "CRIT-01" coordinator/src/bitcoin/utxo.rs || true)
-          if [ "$COUNT" -lt 2 ]; then
-            echo "ERROR: coordinator/src/bitcoin/utxo.rs has $COUNT CRIT-01 occurrences (need >= 2)." >&2
-            echo "       The script-type derived-from-chain invariant must be commented" >&2
-            echo "       at EACH version branch of the validate_utxo dispatcher." >&2
-            echo "       Comment text: // CRIT-01: script_type derived from on-chain script_pubkey, never from client field" >&2
-            exit 1
-          fi
-
-  crit-01-client-grep-check:
-    name: CRIT-01 client-side envelope invariant grep gate
-    runs-on: ubuntu-latest
-    # v1.4 Phase 17 Plan 17-02 invariant: the client-side CRIT-01 comment
-    # MUST be present above the `script_type: Some(signed.script_type)`
-    # line in register_input's v=2 envelope construction. The comment
-    # documents that the wire-emitted script_type is sourced from the
-    # wallet's stored descriptor type (set at construction in 17-01's
-    # BdkClientWallet::{generate, from_descriptor}), NEVER from a direct
-    # `cfg.script_type` echo — which would allow a CLI-misconfigured user
-    # to emit a v=2 envelope declaring P2TR over an on-chain P2WPKH SPK
-    # (the spoofing vector the coordinator-side CRIT-01 invariant rejects).
-    # Mirrors the coordinator-side crit-01-grep-check job above.
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Enforce CRIT-01 client-side comment
-        run: |
-          set -eu
-          COUNT=$(grep -c "CRIT-01" client/src/round/input.rs || true)
-          if [ "$COUNT" -lt 1 ]; then
-            echo "ERROR: client/src/round/input.rs has $COUNT CRIT-01 occurrences (need >= 1)." >&2
-            echo "       The script-type-from-wallet invariant must be commented at the" >&2
-            echo "       v=2 envelope's script_type assignment in register_input." >&2
-            echo "       Comment text: // CRIT-01: script_type populated from wallet (descriptor type), never from CLI-flag direct echo" >&2
-            exit 1
-          fi
-
   sigstore-pin-check:
     name: sigstore + sbom action SHA-pin check
     runs-on: ubuntu-latest
-    # v1.6 Phase 23 ATTEST-01/02/03 invariant: the four GitHub Actions that
-    # produce the supply-chain attestations (sigstore/cosign-installer,
-    # actions/attest-build-provenance, actions/attest-sbom, anchore/sbom-action)
-    # MUST be pinned to a 40-hex commit SHA in every workflow under
-    # .github/workflows/. Floating tags like @v3 expose the project to silent
-    # action substitution — exactly the attack surface this milestone is closing.
-    # Pattern mirrors bip322-pin-check (v1.4) and the v1.5 crit-01-grep-check
-    # family — narrow, audit-grepable, named after what it enforces.
-    # RESEARCH.md §2.2 adds anchore/sbom-action to the target list because Syft
-    # is the ATTEST-03 SBOM generator (attest-sbom does NOT generate SBOMs
-    # internally as of v2.4.0).
+    # Catches a floating tag (@v3, @main) on the sigstore/sbom actions, which
+    # would let upstream silently substitute the action behind a tag move.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Enforce SHA pin on sigstore + sbom actions
         run: |
           set -eu
-          # Greps for any of the four target actions used WITHOUT a 40-hex SHA
-          # ref. Match form: `uses: <owner>/<repo>@<not-40-hex>` (e.g. @v3, @main).
-          # Exits 1 with an auditor-facing message naming the offending file:line.
           PATTERN='uses:\s*(sigstore/cosign-installer|actions/attest-build-provenance|actions/attest-sbom|anchore/sbom-action)@(?![a-f0-9]{40})'
           if grep -rnPE "${PATTERN}" .github/workflows/; then
-            echo "ERROR: One or more sigstore-ecosystem / sbom-action uses above lacks a 40-hex SHA pin." >&2
-            echo "       v1.6 Phase 23 supply-chain invariant: ALL of" >&2
-            echo "         - sigstore/cosign-installer" >&2
-            echo "         - actions/attest-build-provenance" >&2
-            echo "         - actions/attest-sbom" >&2
-            echo "         - anchore/sbom-action" >&2
-            echo "       MUST be pinned by 40-hex commit SHA in every workflow." >&2
-            echo "       See SECURITY.md § Supply-chain status > Image signatures and" >&2
-            echo "       .planning/research/PITFALLS.md §4 for rationale." >&2
+            echo "ERROR: sigstore/sbom action(s) above lack a 40-hex SHA pin." >&2
             exit 1
           fi

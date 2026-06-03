@@ -1,195 +1,45 @@
 name: Digest drift check
 
-# Daily drift check of docker/digests.txt against the upstream registry digests.
-# Opens an issue (NOT a PR) on drift, per .planning/research/PITFALLS.md §11:
-# auto-merging digest bumps would defeat the entire supply-chain assurance this
-# milestone is closing. Human review is the whole point.
-#
-# Idempotency (per .planning/research/PITFALLS.md §9): before opening an issue
-# the workflow greps existing open `digest-drift`-labeled issues for the
-# upstream digest hex. Match → skip. This prevents daily-run issue spam when
-# drift persists across multiple runs before the maintainer cuts a PR.
-#
-# Tool choice: `docker buildx imagetools inspect --format '{{.Manifest.Digest}}'`
-# is preinstalled on ubuntu-24.04, returns a single-line `sha256:HEX`, and
-# matches the digest shape recorded in docker/digests.txt. No install step
-# needed. `crane` and `skopeo` considered; both rejected (one adds a
-# SHA-pinned action install for marginal UX gain, the other is heavyweight).
-#
-# Rehearsal: workflow_dispatch is wired so the workflow can be fired manually
-# from any branch before the first scheduled run, per the precedent in
-# .planning/quick/260531-ubf-*/SUMMARY.md Task D.
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+# On-demand check that docker/digests.txt matches upstream registry digests.
+# Run before bumping the manifest or any time you want to know if base images
+# have moved. Exits non-zero on drift; no issue/PR is opened.
 
 on:
-  schedule:
-    # 09:00 UTC daily — outside the US-eastern business-hours Actions queue
-    # peak and outside the maintainer's typical synchronous review hours.
-    # Verified 2026-06-01 to not collide with any other scheduled workflow
-    # (`grep -r 'schedule:' .github/workflows/` returns zero matches).
-    - cron: '0 9 * * *'
   workflow_dispatch:
 
-# Minimum privileges:
-#   - contents: read   — checkout + read docker/digests.txt
-#   - issues:   write  — `gh issue create` / `gh issue list` on drift
-# Deliberately omitted scopes (auditor-grepable: these tokens MUST NOT appear
-# anywhere in this file): packages (we don't push anything), id-token (no
-# cosign here — that's Phase 23), and PR-write (PITFALLS.md §11 — drift
-# opens issues only, never PRs; auto-merging digest bumps would defeat the
-# entire supply-chain assurance this milestone is closing).
 permissions:
   contents: read
-  issues: write
 
 jobs:
   drift-check:
-    name: Resolve upstream digests and diff
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      # Parse docker/digests.txt via the single source-of-truth composite
-      # action. This is the same parser release.yml + docker.yml use, so
-      # "shape valid for build" == "shape valid for drift check".
       - name: Read canonical digests
         id: digests
         uses: ./.github/actions/read-base-digests
 
-      - name: Resolve upstream digests and open issue on drift
+      - name: Diff canonical vs upstream
         env:
           DEBIAN_REF:     ${{ steps.digests.outputs.debian_ref }}
           CARGO_CHEF_REF: ${{ steps.digests.outputs.cargo_chef_ref }}
-          GH_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
-          # Ensure the digest-drift label exists (idempotent; first run creates it).
-          gh label create digest-drift \
-            --description "Automated base-image digest drift report from digest-drift-check.yml" \
-            --color "fbca04" 2>/dev/null || true
-
+          drift=0
           check_one() {
-            local CANONICAL_REF="$1"     # e.g. "debian:bookworm-slim@sha256:abc..."
-            local IMAGE_TAG="${CANONICAL_REF%@*}"               # "debian:bookworm-slim"
-            local CANONICAL_DIGEST="${CANONICAL_REF#*@}"        # "sha256:abc..."
-            local CANONICAL_HEX="${CANONICAL_DIGEST#sha256:}"
-
-            echo "Checking ${IMAGE_TAG}…"
+            local CANONICAL_REF="$1"
+            local IMAGE_TAG="${CANONICAL_REF%@*}"
+            local CANONICAL_DIGEST="${CANONICAL_REF#*@}"
             local UPSTREAM_DIGEST
-            UPSTREAM_DIGEST=$(docker buildx imagetools inspect "${IMAGE_TAG}" \
-              --format '{{.Manifest.Digest}}')
-            local UPSTREAM_HEX="${UPSTREAM_DIGEST#sha256:}"
-
+            UPSTREAM_DIGEST=$(docker buildx imagetools inspect "${IMAGE_TAG}" --format '{{.Manifest.Digest}}')
             if [ "${UPSTREAM_DIGEST}" = "${CANONICAL_DIGEST}" ]; then
-              echo "  ✓ no drift (digest still ${CANONICAL_DIGEST})"
-              return 0
+              echo "OK ${IMAGE_TAG}: ${CANONICAL_DIGEST}"
+            else
+              echo "DRIFT ${IMAGE_TAG}: canonical=${CANONICAL_DIGEST} upstream=${UPSTREAM_DIGEST}"
+              drift=1
             fi
-
-            echo "  ✗ DRIFT: canonical=${CANONICAL_DIGEST} upstream=${UPSTREAM_DIGEST}"
-
-            # Idempotency gate (PITFALLS.md §9): search by upstream digest hex,
-            # NOT by image-tag. Two different drifts of the same tag are two
-            # different issues.
-            local TITLE="[digest-drift] ${IMAGE_TAG} moved to ${UPSTREAM_DIGEST}"
-            local EXISTING
-            EXISTING=$(gh issue list \
-              --label digest-drift \
-              --state open \
-              --search "${UPSTREAM_HEX} in:title" \
-              --json number,title \
-              --jq '.[] | select(.title == "'"${TITLE}"'") | .number' \
-              | head -n1)
-
-            if [ -n "${EXISTING}" ]; then
-              echo "  → existing issue #${EXISTING} already tracks this drift; skipping (idempotent per PITFALLS.md §9)"
-              return 0
-            fi
-
-            # Compose body. ${IMAGE_NAMESPACE} / ${IMAGE_TAG_PART} support
-            # the Docker Hub registry link in the body table.
-            local IMAGE_NAMESPACE IMAGE_TAG_PART HUB_PATH
-            IMAGE_NAMESPACE="${IMAGE_TAG%%:*}"
-            IMAGE_TAG_PART="${IMAGE_TAG#*:}"
-            # Strip any path prefix for the Docker Hub library namespace
-            # (debian → library/debian on Hub URL).
-            case "${IMAGE_NAMESPACE}" in
-              */*) HUB_PATH="${IMAGE_NAMESPACE}" ;;
-              *)   HUB_PATH="library/${IMAGE_NAMESPACE}" ;;
-            esac
-
-            BODY=$(cat <<EOF
-          The canonical base-image digest for \`${IMAGE_TAG}\` recorded in
-          [\`docker/digests.txt\`](https://github.com/${GITHUB_REPOSITORY}/blob/main/docker/digests.txt)
-          no longer matches the upstream registry.
-
-          | | Digest |
-          |---|---|
-          | **Canonical (this repo)** | \`${CANONICAL_DIGEST}\` |
-          | **Upstream now** | \`${UPSTREAM_DIGEST}\` |
-          | **Registry** | https://hub.docker.com/r/${HUB_PATH}/tags?name=${IMAGE_TAG_PART} |
-
-          This is an automated report from
-          [\`.github/workflows/digest-drift-check.yml\`](https://github.com/${GITHUB_REPOSITORY}/blob/main/.github/workflows/digest-drift-check.yml)
-          (workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}).
-
-          ### Triage (per .planning/research/PITFALLS.md §8)
-
-          Before bumping \`docker/digests.txt\`, classify the drift:
-
-          - **Low-severity (docs/metadata retag).** A re-tag whose diff is
-            confined to \`/usr/share/doc/\`, \`/var/lib/dpkg/\`, or a CHANGELOG
-            update is a routine security-backport republish. Bump the manifest
-            in a same-day PR.
-          - **Substantive (library or binary change).** A diff touching
-            \`libc6\`, \`openssl\`, \`ca-certificates\`, the Rust toolchain
-            version in \`lukemathwalker/cargo-chef\`, or any \`usr/bin/*\` is
-            supply-chain-significant. Investigate the upstream release notes
-            before bumping.
-
-          Quick diff command (run locally on a clean machine):
-
-          \`\`\`bash
-          docker pull ${IMAGE_TAG}@${CANONICAL_DIGEST}
-          docker pull ${IMAGE_TAG}@${UPSTREAM_DIGEST}
-          docker run --rm -v /tmp:/out ${IMAGE_TAG}@${CANONICAL_DIGEST} \\
-            sh -c 'dpkg -l > /out/old.txt 2>/dev/null || apt list --installed > /out/old.txt'
-          docker run --rm -v /tmp:/out ${IMAGE_TAG}@${UPSTREAM_DIGEST} \\
-            sh -c 'dpkg -l > /out/new.txt 2>/dev/null || apt list --installed > /out/new.txt'
-          diff /tmp/old.txt /tmp/new.txt
-          \`\`\`
-
-          ### Resolving this issue
-
-          1. Decide whether to accept the new digest (per triage above).
-          2. **Open a PR** that updates the single line in \`docker/digests.txt\`
-             for \`${IMAGE_TAG}\` to \`${IMAGE_TAG}@${UPSTREAM_DIGEST}\`.
-             CODEOWNERS approval on the file path is required by branch
-             protection. **Do not auto-merge** (see SECURITY.md §Supply-chain
-             status and .planning/research/PITFALLS.md §11).
-          3. Close this issue from the merged PR via \`Closes #<this-issue-number>\`.
-
-          ---
-
-          *This issue will not be re-opened by tomorrow's scheduled drift
-          check — idempotency keyed on the digest-hex (\`${UPSTREAM_HEX}\`),
-          per .planning/research/PITFALLS.md §9.*
-          EOF
-          )
-
-            gh issue create \
-              --title "${TITLE}" \
-              --body "${BODY}" \
-              --label digest-drift \
-              --assignee "${GITHUB_REPOSITORY_OWNER}"
-
-            echo "  → opened new issue: ${TITLE}"
           }
-
           check_one "${DEBIAN_REF}"
           check_one "${CARGO_CHEF_REF}"
-
-          echo
-          echo "Drift check complete."
+          exit $drift

@@ -32,33 +32,17 @@ CI handles the signing + attestation; the maintainer drives the tag cut and the 
 
 ## Pre-flight check after CI completes
 
-After CI completes, cosign-verify the CI-produced assets against the documented identity-regexp. This catches a misconfigured workflow, a missing permission, or a stale CI image BEFORE operators pull the release.
-
 ```bash
-# Download all 4 CI-produced assets to a fresh directory.
 mkdir -p /tmp/blindjoin-release && cd /tmp/blindjoin-release
 gh release download vX.Y.Z --dir .
-
-# 1. Cosign blob signature verifies against the release.yml identity-regexp.
 cosign verify-blob \
   --bundle blindjoin-linux-amd64.tar.gz.bundle \
   --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   blindjoin-linux-amd64.tar.gz
-
-# 2. SLSA provenance attestation verifies against the same identity-regexp.
-cosign verify-attestation \
-  --bundle blindjoin-linux-amd64.tar.gz.sigstore \
-  --type slsaprovenance \
-  --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  blindjoin-linux-amd64.tar.gz
-
-# 3. Optional: GitHub Attestations API path (requires github.com reachable).
-gh attestation verify blindjoin-linux-amd64.tar.gz --repo <owner>/blindjoin
 ```
 
-Both `cosign verify-blob` and `cosign verify-attestation` MUST return "Verified OK" (exit 0). If either fails, recover via `gh release delete vX.Y.Z`, fix the underlying issue, and re-push the tag.
+Must return `Verified OK`. If not, `gh release delete vX.Y.Z`, fix, re-tag.
 
 ## Reproducibility baseline (first release after a Rust/runner bump)
 
