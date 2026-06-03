@@ -137,7 +137,12 @@
   2. `.github/workflows/release.yml`'s build job uses `cargo build --release --locked` explicitly (not implicit), `SOURCE_DATE_EPOCH` derived from `$(git log -1 --format=%ct $GITHUB_SHA)`, `RUSTFLAGS` set per REPRO-01, and `CARGO_INCREMENTAL=0` in env — the recipe in `REPRODUCIBLE-BUILD.md` and the workflow are anchored to each other via comment cross-reference.
   3. `.github/workflows/reproducible-verify.yml` runs monthly on `schedule: cron` AND on `workflow_dispatch`, pulls the latest release tarball via `gh release download`, rebuilds on a `runs-on: ubuntu-24.04` (pinned, NOT `ubuntu-latest`, per Pitfall 7) runner per the REPRO-01 recipe, and asserts `sha256sum` equality; on mismatch it opens a `[reproducibility-regression]` issue whose message distinguishes "runner image drift" from "actual sha256 mismatch on identical env" (Pitfall 7).
   4. After REPRO-01 + REPRO-03 have been continuously green for ≥1 monthly verification cycle, blindjoin is registered with [reproducible-builds.org](https://reproducible-builds.org) project registry; the public registry entry links to `docs/REPRODUCIBLE-BUILD.md`, observable by visiting the registry page.
-**Plans**: TBD
+**Plans**: 5 plans
+- [ ] 25-01-PLAN.md — rust-toolchain.toml + Cargo.toml [profile.release] + 6 with: toolchain: alignments + rust-toolchain-pin-check CI gate (REPRO-01 toolchain pin half; RESEARCH Pitfall A KEEP-with-pin-match OVERRIDE of D-21)
+- [ ] 25-02-PLAN.md — release.yml build job determinism (ubuntu-24.04 pin + env: block + Compute SOURCE_DATE_EPOCH step + --locked + deterministic tar/gzip + D-13 draft:true removal) — REPRO-02
+- [ ] 25-03-PLAN.md — docs/REPRODUCIBLE-BUILD.md (7-section operator doc) + docs/REPRODUCIBLE-BUILD.expected-sha256.txt (verifier lookup file per D-18) — REPRO-01 doc half
+- [ ] 25-04-PLAN.md — .github/workflows/reproducible-verify.yml (scheduled monthly + workflow_dispatch + 7-step verify job + D-12 two-title issue scheme + title-exact dedup + Phase 24 cosign re-verify) — REPRO-03
+- [ ] 25-05-PLAN.md — docs/RELEASING.md D-13 docs-side cleanup + D-10 v1.6.0-rc.0 rehearsal section + D-14 registry submission procedure + SECURITY.md ### Reproducibility (v1.6 onward) subsection + strikethrough updates — REPRO-04
 
 ## Progress
 
@@ -165,7 +170,7 @@
 | 22. Base-Image Digest Drift Detection | v1.6 | 6/6 | Complete    | 2026-06-01 |
 | 23. cosign Image Attestations + SLSA + SBOM | v1.6 | 5/5 | Complete    | 2026-06-02 |
 | 24. Release Tarball Signing (cosign + SLSA) | v1.6 | 4/4 | Complete | 2026-06-02 |
-| 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/? | Not started | — |
+| 25. Reproducible-Build Recipe + Verifier + Registry | v1.6 | 0/5 | Planned     | — |
 
 Full v1.0 details: `.planning/milestones/v1.0-ROADMAP.md`
 Full v1.1 details: `.planning/milestones/v1.1-ROADMAP.md`
