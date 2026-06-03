@@ -2,32 +2,32 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Supply-Chain Attestation
-status: executing
-last_updated: "2026-06-03T01:04:38.543Z"
-last_activity: 2026-06-03 -- Phase 25 planning complete
+status: completed
+last_updated: "2026-06-03T11:36:32.967Z"
+last_activity: 2026-06-03 -- Phase 25 marked complete
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 21
-  completed_plans: 15
-  percent: 50
+  completed_plans: 20
+  percent: 75
 ---
 
 # Project State
 
 ## Current Position
 
-Phase: 24 (release-tarball-signing-cosign-slsa) — COMPLETE (cosign + SLSA scope; SIGN-03 PGP path deferred indefinitely)
-Plan: 4 of 4 shipped (24-05 superseded — was YubiKey ceremony for the deferred PGP path)
-Status: Ready to execute
-Last activity: 2026-06-03 -- Phase 25 planning complete
+Phase: 25 — COMPLETE
+Plan: 1 of 5
+Status: Phase 25 complete
+Last activity: 2026-06-03 -- Phase 25 marked complete
 
 ## Project Reference
 
 See: `.planning/PROJECT.md` (updated 2026-06-01 — v1.6 Current Milestone)
 
 **Core value:** Anyone can run a CoinJoin coordinator that cryptographically cannot link inputs to outputs, and coordinators are disposable — discoverable and replaceable via DHT.
-**Current focus:** Phase 24 — release-tarball-signing-cosign-slsa-pgp
+**Current focus:** Phase 25 — reproducible-build-recipe-scheduled-verifier-registry
 
 ## Milestone Map
 
