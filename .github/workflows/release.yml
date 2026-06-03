@@ -161,13 +161,30 @@ jobs:
       - name: Build coordinator and client
         run: cargo build --release --locked --bin coordinator --bin client --bin liquidity-bot
 
-      - name: Package
+      # Phase 25 REPRO-01 / D-06: deterministic tar + gzip. Five flags load-bearing
+      # for byte-equality:
+      #   --sort=name      — deterministic file order across filesystem-walk variance
+      #   --owner=0        — strip runner user identity from tar headers
+      #   --group=0        — strip runner group identity from tar headers
+      #   --numeric-owner  — emit numeric (not name-resolved) uid/gid; immune to
+      #                      runner /etc/passwd lookups
+      #   --mtime=...      — uniform entry timestamps from SOURCE_DATE_EPOCH (D-03)
+      # And one flag on gzip:
+      #   gzip -n          — strip the original filename + mtime from the gzip
+      #                      header. Default gzip embeds both; this is the most
+      #                      common "tar bytes match, gzip bytes don't" failure
+      #                      mode in repro-build reports (per Debian wiki
+      #                      ReproducibleBuilds/TimestampsInGzipHeaders).
+      - name: Package (deterministic tar + gzip)
         run: |
           mkdir -p dist
           cp target/release/coordinator dist/
           cp target/release/client dist/
           cp target/release/liquidity-bot dist/
-          tar czf blindjoin-linux-amd64.tar.gz -C dist .
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH}" \
+              -cf - -C dist . \
+            | gzip -n > blindjoin-linux-amd64.tar.gz
           sha256sum blindjoin-linux-amd64.tar.gz > blindjoin-linux-amd64.tar.gz.sha256
 
       # Phase 24 SIGN-01: cosign keyless OIDC signing toolchain.
@@ -252,21 +269,19 @@ jobs:
       - name: Rename provenance bundle to .sigstore Release asset filename
         run: mv "${{ steps.provenance.outputs.bundle-path }}" blindjoin-linux-amd64.tar.gz.sigstore
 
-      # Phase 24 D-07: Release ships as draft until the maintainer uploads the
-      # .asc detached PGP signature (per docs/RELEASING.md procedure) and runs
-      # `gh release edit vX.Y.Z --draft=false`. Operators visiting the Releases
-      # page never see a release missing the PGP signature — consistent
-      # verification UX (every published release has all 5 assets, or it's a draft).
+      # Phase 25 D-13: Phase 24 SIGN-03 (PGP path) was deferred indefinitely
+      # 2026-06-02 (commit f11d544). The release publishes directly — every tag
+      # push produces a non-draft GitHub Release with all 4 assets (tarball +
+      # sha256 + cosign bundle + SLSA provenance). The reproducible-verify.yml
+      # workflow can `gh release download` without auth gymnastics since
+      # public releases require no token.
       #
       # Phase 24 D-15: files: list is in semantic order — artifact → integrity →
-      # signature → provenance. The .asc PGP detached signature is uploaded
-      # post-CI by the maintainer; it is NOT in this list. Per D-06 PGP signing
-      # is OUT of release.yml entirely (CI does not hold the PGP private key and
-      # MUST NOT — that defeats SIGN-03's non-OIDC alternative path rationale).
-      - name: Upload to GitHub Releases (draft — maintainer flips out of draft after PGP upload)
+      # signature → provenance. No .asc PGP detached signature is uploaded
+      # (SIGN-03 deferred).
+      - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
         with:
-          draft: true
           files: |
             blindjoin-linux-amd64.tar.gz
             blindjoin-linux-amd64.tar.gz.sha256
