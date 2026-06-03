@@ -42,7 +42,7 @@ No PGP detached signature; Sigstore reachability is required.
 
 ### Reproducibility
 
-Release tarballs rebuild byte-for-byte from source on `ubuntu-24.04`. Recipe + expected sha256 per tag: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
+Release tarballs rebuild byte-for-byte from source on `ubuntu-24.04`. Native recipe (exact byte match) and a Docker recipe (verify from any host — macOS, NixOS, Windows-WSL, whatever) + expected sha256 per tag: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
 
 ### Base-image digests
 
