@@ -41,7 +41,7 @@ git checkout vX.Y.Z
 docker run --rm -v "$(pwd)":/work -w /work ubuntu:24.04 bash -euxc '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq curl git build-essential pkg-config libssl-dev ca-certificates
+  apt-get install -y -qq curl git build-essential pkg-config libssl-dev libsqlite3-dev ca-certificates
   curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain none --profile minimal
   . "$HOME/.cargo/env"
