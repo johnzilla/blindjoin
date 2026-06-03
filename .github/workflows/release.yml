@@ -35,8 +35,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        # Pitfall A: the toolchain action requires an explicit toolchain: input. Pin value
+        # matches rust-toolchain.toml channel via the rust-toolchain-pin-check gate in ci.yml.
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
           components: clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       # Composite source-of-truth — see .github/actions/install-bitcoind/action.yml.
@@ -88,8 +90,10 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        # Pitfall A: the toolchain action requires an explicit toolchain: input. Pin value
+        # matches rust-toolchain.toml channel via the rust-toolchain-pin-check gate in ci.yml.
         with:
-          toolchain: stable
+          toolchain: "1.95.0"
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
