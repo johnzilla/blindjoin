@@ -3,7 +3,7 @@
 <details>
 <summary>What is BlindJoin?</summary>
 
-BlindJoin is a standalone CoinJoin coordinator and client for Bitcoin Signet. It uses RSA blind signatures (RFC 9474) so the coordinator cryptographically cannot link transaction inputs to outputs.
+BlindJoin is a standalone CoinJoin coordinator and client for Bitcoin Signet. It uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) so the coordinator cryptographically cannot link transaction inputs to outputs.
 
 Coordinators are discoverable via PKARR DHT, and all production traffic runs over Tor hidden services. MIT licensed. No fees. No company. No terms of service.
 

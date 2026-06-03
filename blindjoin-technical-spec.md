@@ -8,7 +8,7 @@ A standalone, open-source CoinJoin coordinator and client for Bitcoin signet/tes
 
 ## Executive Summary
 
-blindjoin is a lightweight CoinJoin coordinator that anyone can run. It uses RSA blind signatures (RFC 9474) to ensure the coordinator cannot link transaction inputs to outputs. Participants discover coordinators through Pubky's decentralized DHT (PKARR), and all protocol traffic flows over Tor hidden services. The project ships as a Docker Compose stack that goes from zero to a working CoinJoin round in under five minutes on Bitcoin signet.
+blindjoin is a lightweight CoinJoin coordinator that anyone can run. It uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) to ensure the coordinator cannot link transaction inputs to outputs. Participants discover coordinators through Pubky's decentralized DHT (PKARR), and all protocol traffic flows over Tor hidden services. The project ships as a Docker Compose stack that goes from zero to a working CoinJoin round in under five minutes on Bitcoin signet.
 
 This is infrastructure, not a product. The coordinator software is MIT licensed and designed for signet/testnet. What anyone does with it beyond that is their own decision.
 
@@ -51,7 +51,7 @@ COORDINATOR — Rust Binary
 │  ┌──────────────┐  ┌─────────────────────────────┐   │
 │  │ Round Manager │  │ Blind Signature Engine      │   │
 │  │  • State FSM  │  │  • blind-rsa-signatures     │   │
-│  │  • Timeouts   │  │  • RFC 9474 compliant       │   │
+│  │  • Timeouts   │  │  • [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) compliant       │   │
 │  │  • Blame      │  │  • No custom crypto         │   │
 │  └──────────────┘  └─────────────────────────────┘   │
 │  ┌──────────────┐  ┌─────────────────────────────┐   │
@@ -76,7 +76,7 @@ BITCOIN NETWORK — Signet (default)
 
 ## Round Protocol
 
-blindjoin uses a fixed-denomination CoinJoin with RSA blind signatures for unlinkability. This is the same general approach used by early Wasabi Wallet (v1) and JoinMarket, with the blind signature scheme upgraded to the IETF RFC 9474 standard.
+blindjoin uses a fixed-denomination CoinJoin with RSA blind signatures for unlinkability. This is the same general approach used by early Wasabi Wallet (v1) and JoinMarket, with the blind signature scheme upgraded to the IETF [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) standard.
 
 ### Denomination Selection
 
@@ -236,7 +236,7 @@ The CLI client can discover coordinators by:
 
 | Action | Why |
 |--------|-----|
-| Link inputs to outputs | RSA blind signatures (RFC 9474) make this cryptographically impossible |
+| Link inputs to outputs | RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) make this cryptographically impossible |
 | Steal funds | The coordinator never holds private keys; participants sign their own inputs |
 | Identify participants by IP | All connections are Tor-only; each phase uses a fresh circuit |
 | Reconstruct round data after completion | All round state is zeroed from memory post-broadcast |
@@ -281,7 +281,7 @@ All four hardening knobs (`rate_limit_info_per_min`, `rate_limit_writes_per_min`
 
 | Crate | Purpose | Author / Provenance |
 |-------|---------|---------------------|
-| `blind-rsa-signatures` | RFC 9474 RSA blind signatures | Frank Denis (jedisct1), author of libsodium |
+| `blind-rsa-signatures` | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signatures | Frank Denis (jedisct1), author of libsodium |
 | `bitcoin` (rust-bitcoin) | Bitcoin primitives, script, serialization | Rust Bitcoin community, widely audited |
 | `bdk` (Bitcoin Dev Kit) | Wallet operations, PSBT, coin selection | Spiral (fka Square Crypto) funded |
 | `secp256k1` | ECDSA signing/verification (via rust-bitcoin) | Rust wrapper around Bitcoin Core's libsecp256k1 |

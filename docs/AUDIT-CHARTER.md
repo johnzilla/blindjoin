@@ -32,7 +32,7 @@ quickly — when in doubt, search the file by symbol name.
 
 | File:Symbol | Description | Orientation (line at v1.5 ship) |
 |---|---|---|
-| `coordinator/src/blind/rsa.rs::RsaBlindSigner` | RFC 9474 RSA blind signer (per-round ephemeral). 6 public methods cached at round bootstrap: `generate`, `public_key_hash`, `blind_sign`, `from_der_secret_key`, `secret_key_der`, `public_key_spki_der`. | ~line 99 |
+| `coordinator/src/blind/rsa.rs::RsaBlindSigner` | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signer (per-round ephemeral). 6 public methods cached at round bootstrap: `generate`, `public_key_hash`, `blind_sign`, `from_der_secret_key`, `secret_key_der`, `public_key_spki_der`. | ~line 99 |
 | `coordinator/src/blind/rsa.rs::RoundSecretKey` | Newtype wrapping `BjSecretKey` (`blind_rsa_signatures::SecretKey<Sha384, PSS, Randomized>`). AUDIT-03 lifetime-bound mitigation: makes the per-round key a value the FSM can null at one chokepoint. | ~line 33 |
 | `coordinator/src/blind/rsa.rs::RoundSecretKey::drop` | Empty-crypto Drop body emitting one PII-safe `tracing::debug!` event under target `blindjoin::audit`. The transitive `<rsa::RsaPrivateKey as Drop>::drop` chain does the cryptographically meaningful work (see §5). | ~line 52 |
 | `coordinator/src/round/state.rs::RoundStateInner` | Sensitive round material. Manual `Drop` zeroes `Vec<u8>` / `[u8; 32]` fields and iter-mut-zeroizes HashMap/HashSet values before clearing (HashMap does not implement `Zeroize`). | ~line 92 |
@@ -425,7 +425,7 @@ per-row. blindjoin's USAGE shapes of these components ARE in scope — see
 |---|---|
 | `arti-client` (Tor circuit isolation + hidden-service hosting) | Upstream Tor Project Arti 2.x audit posture. The blindjoin codebase consumes the public `arti-client` API only; no fork, no patch, no custom transport layer. Arti is the only viable in-process Tor implementation in Rust. |
 | `pkarr` (Mainline DHT discovery layer) | Pubky project audit posture. blindjoin publishes a signed DNS-like packet via the public `pkarr` API; no fork, no custom DHT transport. The PKARR record contents are the in-scope surface, not the DHT machinery. |
-| `blind-rsa-signatures` (jedisct1) crate **internals** | RFC 9474 RSA blind signature primitive. The upstream crate is written by jedisct1 (libsodium author), production-grade, and the only RFC 9474-compliant Rust implementation. OUR USAGE shape — the AUDIT-03 `RoundSecretKey` wrapper at [§5](#rsa-secret-key-zeroization-window) — IS in-scope. |
+| `blind-rsa-signatures` (jedisct1) crate **internals** | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signature primitive. The upstream crate is written by jedisct1 (libsodium author), production-grade, and the only [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)-compliant Rust implementation. OUR USAGE shape — the AUDIT-03 `RoundSecretKey` wrapper at [§5](#rsa-secret-key-zeroization-window) — IS in-scope. |
 | `bip322 = "=0.0.10"` (rust-bitcoin org) crate **internals** | BIP-322 verify path. Exact-pinned (`=0.0.10`) and enforced by the `bip322-pin-check` CI gate; the crate is pre-1.0 and any minor release can break the wire format. OUR 26-LOC zero-lossy adapter at `shared/src/bip322/mod.rs::verify_via_bip322_crate` IS in-scope ([§1](#in-scope-modules)). |
 | `rust-bitcoin` (consensus primitives + PSBT) and `secp256k1` (curve primitives) | Upstream rust-bitcoin team audit posture. These are the consensus-critical primitives the entire Rust Bitcoin ecosystem depends on. blindjoin uses the public API exclusively. |
 | `bdk_wallet` (client-side descriptor wallet) | The coordinator never runs bdk_wallet. The CLIENT's USAGE shape — `client/src/wallet.rs::sign_bip322` — IS in-scope insofar as it constructs the v=2 OwnershipProof PSBT (see [§4](#v-2-ownershipproof-psbt-handling)). The crate's descriptor parser, UTXO selector, and key derivation are out-of-scope. |
@@ -588,7 +588,7 @@ code.
 | D-122 / D-124 | Phase 20 per-script vbyte table + `ScriptType` plumbing through `ParticipantInput` |
 | D-128 | `RoundSecretKey` newtype inside `RsaBlindSigner` + `Option<RsaBlindSigner>` on `RoundStateInner` (Phase 21) |
 | D-130 | `transition_to(Phase::Idle)` is the SOLE FSM trigger that nulls `RoundStateInner` and fires the Drop chain |
-| ADR Decision #1 | RSA blind signatures (RFC 9474) chosen over WabiSabi — no production Rust WabiSabi exists |
+| ADR Decision #1 | RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) chosen over WabiSabi — no production Rust WabiSabi exists |
 | ADR Decision #2 | Mixed-rounds privacy tradeoff — accept partial fingerprint signal for larger anonymity sets |
 | ADR Decision #3 | v=2 OwnershipProof PSBT wire format — full BIP-174 PSBT envelope, not bare `psbt::Input` |
 | ADR Decision #4 | `bdk_wallet` for client-side P2TR sign — descriptor-based, byte-equal Schnorr keypath |
@@ -598,7 +598,7 @@ code.
 | PRIV-01 | Round-end memory zeroization gate — `transition_to_idle_clears_inner` test at `state.rs::tests` |
 | CRIT-01 | Chain-derived `ScriptType` inheritance (v1.4) — the load-bearing CRIT-01 cross-check at `validate_utxo` |
 | BLAME-02 | Missing-output blame edge — `OutputReg → Blame → Idle` FSM path |
-| RFC 9474 | RSA Blind Signatures — IETF standard for the unlinkable signing primitive |
+| [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) | RSA Blind Signatures — IETF standard for the unlinkable signing primitive |
 | BIP-174 | PSBT (Partially Signed Bitcoin Transaction) — the wire format used by the v=2 OwnershipProof envelope |
 | BIP-322 | Generic Signed Message Format — the verification protocol used for UTXO ownership proofs |
 | PKARR | Public-Key Addressable Resource Records — Pubky's signed-DNS-packet discovery layer over Mainline DHT |

@@ -23,7 +23,7 @@
 
 This document specifies blindjoin, a protocol for coordinating CoinJoin
 transactions on the Bitcoin network. blindjoin uses RSA blind signatures
-(RFC 9474) to make it cryptographically infeasible for the coordinator to link
+([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) to make it cryptographically infeasible for the coordinator to link
 participant inputs to participant outputs. Coordinators are discovered via
 records published to the Mainline DHT under the PKARR (Public-Key Addressable
 Resource Records) convention, removing the need for hardcoded coordinator lists
@@ -55,7 +55,7 @@ blindjoin's design goals are, in order:
    input produced which output; this guarantee is structural, not policy.
 2. **Discovery without operators.** No hardcoded coordinator list, no relay
    operator, no central registry.
-3. **Standards adherence.** RFC 9474 for blind signatures, BIP-322 for
+3. **Standards adherence.** [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) for blind signatures, BIP-322 for
    ownership proofs, PSBT (BIP-174) for partial-signature exchange.
 4. **Operator simplicity.** A new coordinator should be deployable by anyone
    with a Bitcoin Core node and Docker.
@@ -81,7 +81,7 @@ and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 
 | Primitive | Specification | Implementation |
 |---|---|---|
-| Blind signatures | [RFC 9474](https://datatracker.ietf.org/doc/html/rfc9474) RSABSSA-SHA384-PSS-Randomized | [`blind-rsa-signatures` v0.17](https://crates.io/crates/blind-rsa-signatures) |
+| Blind signatures | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSABSSA-SHA384-PSS-Randomized | [`blind-rsa-signatures` v0.17](https://crates.io/crates/blind-rsa-signatures) |
 | Ownership proofs | [BIP-322 Simple](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki) | Dispatcher in [`shared/src/bip322/`](../shared/src/bip322/) wrapping the upstream [`bip322 = "=0.0.10"`](https://crates.io/crates/bip322) crate (rust-bitcoin org) via a 26-LOC zero-lossy adapter. Per-script implementations (P2WPKH, P2TR, P2SH-P2WPKH) live in sibling files behind a `pub(crate)`-only surface so callers cannot reach them to bypass dispatch. |
 | Coordinator identity | Ed25519 over [PKARR](https://github.com/pubky/pkarr) | [`pkarr` v5](https://crates.io/crates/pkarr) |
 | Transport | Tor v3 hidden services (server); isolated client circuits | [`arti-client` v0.41](https://crates.io/crates/arti-client) |
@@ -138,7 +138,7 @@ containing:
   v1.4 decoder is a two-phase try-parse that accepts the legacy
   array-of-hex shape as `version = 1`, so a v1.3 client continues to
   interoperate with a v1.4 coordinator byte-for-byte.
-- `blinded_token`: an RFC 9474-blinded message commitment, base64-encoded.
+- `blinded_token`: an [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)-blinded message commitment, base64-encoded.
 - `change_address`: the bech32 address for the participant's change output
   (this is linkable to the input; participants are advised so).
 
@@ -149,7 +149,7 @@ The coordinator MUST:
 2. Verify the BIP-322 ownership proof; reject on any failure.
 3. Reject blinded tokens whose byte length exceeds the RSA modulus length.
 4. Reject any UTXO present on the persisted ban list.
-5. Issue an RFC 9474 blind signature over the blinded token using the
+5. Issue an [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) blind signature over the blinded token using the
    round's ephemeral RSA private key.
 6. Issue an HMAC-SHA-256 session token bound to the round and UTXO,
    returned alongside the blind signature, used to authorize the future
@@ -169,7 +169,7 @@ on a **separate Tor circuit** (the "Bob" circuit), with:
   output.
 - `amount_sats`: the output amount.
 - `msg_randomizer`: 32 bytes of randomizer for the
-  RSABSSA-SHA384-PSS-Randomized scheme (RFC 9474 §3.3.2).
+  RSABSSA-SHA384-PSS-Randomized scheme ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) §3.3.2).
 
 The coordinator MUST:
 
@@ -252,7 +252,7 @@ deferring to that file:
 
 ## Rationale
 
-### Why RFC 9474 (RSABSSA) rather than chaumian e-cash or Schnorr blind sigs
+### Why [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) (RSABSSA) rather than chaumian e-cash or Schnorr blind sigs
 
 **[TODO]** Discuss the trade-off between RSABSSA (RFC-standardized,
 mature primitive, larger signatures) versus Wasabi's chaumian e-cash

@@ -195,7 +195,7 @@ Tagged 2026-06-03. Reproducibility baseline captured post-tag by dispatching `re
 
 ### Added
 
-- **CoinJoin coordinator with RSA blind signatures** (RFC 9474) ensuring
+- **CoinJoin coordinator with RSA blind signatures** ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) ensuring
   cryptographic input-output unlinkability.
 - **Round state machine**: `IDLE → INPUT_REG → OUTPUT_REG → SIGNING →
   BROADCAST | BLAME → IDLE`.

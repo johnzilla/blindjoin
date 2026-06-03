@@ -9,7 +9,7 @@
 [![Signed by cosign + SLSA](https://img.shields.io/badge/signed-cosign%20%2B%20SLSA-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#supply-chain-status)
 [![Reproducible build](https://img.shields.io/badge/reproducible-byte--equal-success)](docs/REPRODUCIBLE-BUILD.md)
 
-A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures (RFC 9474) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via PKARR DHT and all production traffic flows over Tor hidden services.
+A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via PKARR DHT and all production traffic flows over Tor hidden services.
 
 MIT licensed. No fees. No company. No terms of service.
 
@@ -23,7 +23,7 @@ MIT licensed. No fees. No company. No terms of service.
 6. Coordinator broadcasts the final CoinJoin transaction
 7. Non-signers are detected, banned, and the round restarts with remaining participants
 
-The blind signature scheme (RFC 9474) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses an ephemeral RSA key whose lifetime is bounded by a Rust type signature: `RoundStateInner.rsa_signer: Option<RsaBlindSigner>` is set to `None` at the SOLE FSM chokepoint `RoundState::transition_to(Phase::Idle)` (see [docs/AUDIT-CHARTER.md §5](docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window)), which triggers the transitive `rsa::RsaPrivateKey` `ZeroizeOnDrop` chain. The remainder of the round state — registered inputs, partial signatures, blinded tokens — is zeroized from memory by the same Drop sequence.
+The blind signature scheme ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) makes it cryptographically impossible for the coordinator to determine which input produced which output. Each round uses an ephemeral RSA key whose lifetime is bounded by a Rust type signature: `RoundStateInner.rsa_signer: Option<RsaBlindSigner>` is set to `None` at the SOLE FSM chokepoint `RoundState::transition_to(Phase::Idle)` (see [docs/AUDIT-CHARTER.md §5](docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window)), which triggers the transitive `rsa::RsaPrivateKey` `ZeroizeOnDrop` chain. The remainder of the round state — registered inputs, partial signatures, blinded tokens — is zeroized from memory by the same Drop sequence.
 
 As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of P2WPKH + P2TR + P2SH-P2WPKH inputs) under an operator-configurable allowlist. The script type of every input is derived from on-chain `script_pubkey` and cross-checked against the client's declaration — a malicious client cannot bypass the per-script-type sighash verification by lying about which type its input is.
 
@@ -311,7 +311,7 @@ blindjoin/
 **Reporting a vulnerability:** email `johnturner@gmail.com` with subject `[blindjoin security]`. Full policy: [SECURITY.md](SECURITY.md). The section below describes the protocol-level guarantees and operator-facing hardening.
 
 The coordinator **cannot**:
-- Link inputs to outputs (RSA blind signatures, RFC 9474)
+- Link inputs to outputs (RSA blind signatures, [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html))
 - Steal funds (participants sign their own inputs)
 - Reconstruct round data after completion (round-end zeroization is structurally bounded — see [docs/AUDIT-CHARTER.md §5](docs/AUDIT-CHARTER.md#rsa-secret-key-zeroization-window))
 - Correlate input and output registration by Tor circuit (client uses isolated circuits)
@@ -339,7 +339,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 | Crate | Purpose |
 |-------|---------|
-| `blind-rsa-signatures` | RFC 9474 RSA blind signatures (jedisct1) |
+| `blind-rsa-signatures` | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signatures (jedisct1) |
 | `bitcoin` (rust-bitcoin) | Bitcoin primitives, PSBT, scripts |
 | `bip322` | BIP-322 Simple verifier (rust-bitcoin org). Exact-pinned to `=0.0.10` and enforced by a `bip322-pin-check` CI gate — the crate is pre-1.0 and any minor release can break the wire format. Wrapped behind a 26-LOC zero-lossy adapter so a future swap is mechanical. |
 | `bdk_wallet` | Client wallet: key management, UTXO selection, PSBT signing |
