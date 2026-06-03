@@ -50,6 +50,8 @@ The coordinator will start, publish its address to the PKARR DHT, and wait for p
 
 To get a signet UTXO for the bot, use the [signet faucet](https://signet.bc-2.jp/).
 
+**Running just the coordinator** (your own bitcoind / remote RPC, no bot): use [`docker/docker-compose.coordinator-only.yml`](docker/docker-compose.coordinator-only.yml). Edit the two `REQUIRED` lines (RPC URL + your public `.onion`/host), then `docker compose -f docker/docker-compose.coordinator-only.yml up -d`. Pulls the signed `ghcr.io/johnzilla/blindjoin-coordinator:1.6.0` image — no local build.
+
 ## Privacy Considerations
 
 blindjoin accepts mixed input script types (P2WPKH, P2TR, P2SH-P2WPKH) in a

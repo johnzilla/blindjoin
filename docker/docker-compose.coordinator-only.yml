@@ -1,0 +1,47 @@
+# blindjoin coordinator — production solo path
+#
+# Use this when you already have a bitcoind (your own VPS / a remote signet RPC)
+# and don't want the all-in-one dev stack (no local bitcoind, no liquidity-bot).
+#
+# Edit the two REQUIRED lines below, then:
+#   docker compose -f docker/docker-compose.coordinator-only.yml up -d
+#   docker compose -f docker/docker-compose.coordinator-only.yml logs -f coordinator
+#
+# Coordinator logs `PKARR identity ready — share this key with clients: pk:...`
+# on startup. Back up the `coordinator-keys` volume — losing it changes the DHT
+# identity. See SECURITY.md §Operating notes.
+
+services:
+  coordinator:
+    image: ghcr.io/johnzilla/blindjoin-coordinator:1.6.0
+    environment:
+      # REQUIRED — point at your bitcoind. Signet RPC defaults to port 38332.
+      BLINDJOIN__NETWORK__BITCOIN_RPC_URL: "http://192.0.2.10:38332"
+      BLINDJOIN__NETWORK__BITCOIN_RPC_USER: "${BITCOIN_RPC_USER}"
+      BLINDJOIN__NETWORK__BITCOIN_RPC_PASS: "${BITCOIN_RPC_PASS}"
+      BLINDJOIN__NETWORK__BITCOIN_NETWORK: "signet"
+
+      # REQUIRED — your public address as participants will reach you. For Tor:
+      # the coordinator's .onion (set up separately; arti runs in-process).
+      # For clearnet testing: host:port.
+      BLINDJOIN__DISCOVERY__COORDINATOR_PUBLIC_ADDR: "your.onion.address:8080"
+
+      BLINDJOIN__COORDINATOR__LISTEN_ADDR: "0.0.0.0:8080"
+      BLINDJOIN__DISCOVERY__PKARR_KEY_FILE: "/app/keys/coordinator_pkarr.key"
+      BLINDJOIN__COORDINATOR__BAN_FILE_PATH: "/app/data/ban_list.jsonl"
+    volumes:
+      - coordinator-keys:/app/keys   # back this up — DHT identity
+      - coordinator-data:/app/data   # append-only ban list (fsync'd per write)
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/info || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  coordinator-keys:
+  coordinator-data:
