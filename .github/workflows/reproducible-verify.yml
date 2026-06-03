@@ -91,3 +91,171 @@ jobs:
           [[ -n "${ImageVersion:-}" ]] || { echo "ImageVersion env var not set — verifier requires a GitHub-hosted ubuntu-24.04 runner"; exit 1; }
           echo "VERIFIER_IMAGE_VERSION=${ImageVersion}" >> $GITHUB_ENV
           echo "Verifier image: ${ImageVersion}"
+
+      # Discover the latest published release tag via the GitHub API; the
+      # verifier always re-verifies the most recent release rather than a
+      # hard-coded tag so a new release is picked up on the next scheduled
+      # run with no workflow edit. Sanity check fails the run loudly if the
+      # repo has no published releases (Phase 22-style fail-fast guard).
+      - name: Resolve latest release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(gh release view --json tagName --jq .tagName)
+          [[ -n "$LATEST_TAG" ]] || { echo "No releases found — verifier requires at least one published release"; exit 1; }
+          echo "LATEST_TAG=${LATEST_TAG}" >> $GITHUB_ENV
+          echo "Latest release tag: ${LATEST_TAG}"
+
+      # Download the tarball + the cosign bundle (and the .sigstore SLSA
+      # provenance bundle pattern-glob also matches blindjoin-linux-amd64.tar.gz*).
+      # gh release download requires no auth for public releases per D-13's
+      # post-cleanup contract; the GITHUB_TOKEN is supplied defensively to stay
+      # within rate limits on subsequent gh calls in the same job.
+      - name: Download release tarball + cosign bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/rel
+          gh release download "${LATEST_TAG}" --pattern 'blindjoin-linux-amd64.tar.gz*' --dir /tmp/rel
+          ls -la /tmp/rel
+
+      # Phase 24 SIGN-01 inheritance — cosign re-verify ties reproducibility
+      # green-status to signed-supply-chain green-status; both must hold for
+      # a green monthly run. The verifier neither signs nor mints attestations
+      # (read-only operation); no id-token scope is requested. SHA pin reused
+      # verbatim from release.yml; Phase 23's sigstore-pin-check gate at
+      # ci.yml:292-326 covers this use automatically (no new gate needed).
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
+        with:
+          cosign-release: 'v2.6.3'
+
+      - name: Re-verify cosign blob signature on downloaded tarball
+        run: |
+          cd /tmp/rel
+          cosign verify-blob \
+            --bundle blindjoin-linux-amd64.tar.gz.bundle \
+            --certificate-identity-regexp 'https://github.com/${{ github.repository_owner }}/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            blindjoin-linux-amd64.tar.gz
+
+      # Pitfall C: actions/checkout's default behavior checks out the full
+      # tree including Cargo.lock — do NOT add sparse-checkout, which would
+      # omit Cargo.lock and break `cargo build --locked` with exit 101.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          ref: ${{ env.LATEST_TAG }}
+
+      # Pitfall A: dtolnay/rust-toolchain requires an explicit toolchain:
+      # input. Pin value matches rust-toolchain.toml channel via the
+      # rust-toolchain-pin-check gate in ci.yml.
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9  # stable
+        with:
+          toolchain: "1.95.0"
+
+      # Rebuild step uses the SAME determinism env + tar/gzip pipeline as
+      # release.yml's build job (Plan 25-02). Any drift between this step and
+      # release.yml is the supply-chain threat the verifier exists to surface.
+      # Step-level env: block — this workflow has no job-level env, so the
+      # determinism vars must be declared here (no inheritance to fall back on).
+      - name: Rebuild per REPRO-01 recipe
+        env:
+          RUSTFLAGS: "--remap-path-prefix=${{ github.workspace }}=/build --remap-path-prefix=/home/runner/.cargo=/cargo"
+          CARGO_INCREMENTAL: "0"
+        run: |
+          # SOURCE_DATE_EPOCH derives from the checked-out tag's commit per REPRO-02.
+          # After actions/checkout with ref: ${{ env.LATEST_TAG }}, HEAD IS the tag
+          # commit. $GITHUB_SHA in this workflow context is the trigger commit
+          # (default-branch HEAD on cron/dispatch), NOT the tag, so MUST NOT be used
+          # here. The release.yml build job legitimately uses $GITHUB_SHA because it
+          # runs on tag push where $GITHUB_SHA IS the tag SHA; the verifier runs on
+          # cron/dispatch where they diverge. Both derive the same value (the tag
+          # commit's committer time) — only the source-of-SHA differs by workflow context.
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)
+          cargo build --release --locked --bin coordinator --bin client --bin liquidity-bot
+          mkdir -p dist
+          cp target/release/coordinator dist/
+          cp target/release/client dist/
+          cp target/release/liquidity-bot dist/
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH}" \
+              -cf - -C dist . \
+            | gzip -n > blindjoin-linux-amd64.tar.gz
+
+      # D-12 two-title classification + Phase 22 title-exact dedup. Expected
+      # sha256 + pinned ImageVersion both come from
+      # docs/REPRODUCIBLE-BUILD.expected-sha256.txt via a single awk -F: pass
+      # (D-18 + BLOCKER 2 fix). The verifier never parses markdown — the
+      # previous `grep -oE "ImageVersion.{0,5}[0-9.]+" docs/REPRODUCIBLE-BUILD.md`
+      # returned nothing (the markdown table row label is "ubuntu-24.04 runner
+      # image", not the literal token "ImageVersion"), so every mismatch was
+      # mis-classified as HIGH-severity. Single awk pass returns BOTH fields
+      # from one lookup line, eliminating the drift-vs-divergence failure mode.
+      - name: Compare sha256 + classify result + open issue on mismatch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          EXPECTED_DOWNLOADED=$(sha256sum /tmp/rel/blindjoin-linux-amd64.tar.gz | cut -d' ' -f1)
+          ACTUAL=$(sha256sum blindjoin-linux-amd64.tar.gz | cut -d' ' -f1)
+          echo "Expected (downloaded release): ${EXPECTED_DOWNLOADED}"
+          echo "Actual   (rebuilt locally):    ${ACTUAL}"
+
+          # D-18 + BLOCKER 2 fix: single awk -F: pass derives BOTH the expected
+          # sha256 AND the pinned ImageVersion from the colon-delimited
+          # <tag>:<sha256>:<image-version> line in
+          # docs/REPRODUCIBLE-BUILD.expected-sha256.txt. Verifier no longer
+          # parses markdown.
+          LOOKUP=$(awk -F: -v tag="${LATEST_TAG}" '$1 == tag {print $2 " " $3}' docs/REPRODUCIBLE-BUILD.expected-sha256.txt)
+          EXPECTED_DOC=$(echo "${LOOKUP}" | cut -d' ' -f1)
+          PINNED_IMAGE_VERSION=$(echo "${LOOKUP}" | cut -d' ' -f2)
+          [[ -n "${EXPECTED_DOC}" && -n "${PINNED_IMAGE_VERSION}" ]] || { EXPECTED_DOC="UNKNOWN"; PINNED_IMAGE_VERSION="UNKNOWN"; }
+          echo "Expected (per docs/REPRODUCIBLE-BUILD.expected-sha256.txt): ${EXPECTED_DOC}"
+          echo "Pinned ImageVersion (per docs/REPRODUCIBLE-BUILD.expected-sha256.txt): ${PINNED_IMAGE_VERSION}"
+
+          # Ensure the reproducibility-regression label exists (idempotent;
+          # first run creates it). Mirrors digest-drift-check.yml:69-72.
+          gh label create reproducibility-regression \
+            --description "Automated reproducibility regression report from reproducible-verify.yml" \
+            --color "fbca04" 2>/dev/null || true
+
+          # Green case: rebuilt tarball matches the downloaded release tarball
+          # byte-for-byte. Reproducibility is verified for this tag on the
+          # current runner ImageVersion.
+          if [ "${EXPECTED_DOWNLOADED}" = "${ACTUAL}" ]; then
+            echo "✓ Reproducibility verified for ${LATEST_TAG} on ImageVersion ${VERIFIER_IMAGE_VERSION}"
+            exit 0
+          fi
+
+          # Mismatch classification (D-12): runner-image-drift vs real-divergence.
+          # PINNED_IMAGE_VERSION already populated above from the single awk
+          # lookup (BLOCKER 2 fix). When the lookup returned UNKNOWN, treat as
+          # divergence (HIGH-severity) — we can't safely classify as drift
+          # without a known-good pinned ImageVersion to compare against.
+          if [ "${VERIFIER_IMAGE_VERSION}" != "${PINNED_IMAGE_VERSION}" ] && [ "${PINNED_IMAGE_VERSION}" != "UNKNOWN" ]; then
+            TITLE="[reproducibility-regression] runner image drift: ImageVersion ${PINNED_IMAGE_VERSION} → ${VERIFIER_IMAGE_VERSION}"
+            BODY="GitHub rotated the ubuntu-24.04 runner image SHA. Verify reproducibility on the new image; update docs/REPRODUCIBLE-BUILD.md with the new ImageVersion if green; investigate if not. Not a supply-chain signal until investigated."
+          else
+            TITLE="[reproducibility-regression] sha256 mismatch on ImageVersion ${VERIFIER_IMAGE_VERSION}"
+            BODY="Rebuilt tarball diverges from published ${LATEST_TAG} on the SAME ubuntu-24.04 ImageVersion ${VERIFIER_IMAGE_VERSION}. This is a real supply-chain signal — published release does not reproduce from source. Compare diffoscope output; suspect tampering, compromised CI, or undocumented build-env drift."
+          fi
+
+          # Phase 22 title-exact dedup pattern (digest-drift-check.yml:96-109).
+          # Same input → same title; same title → no duplicate issue created.
+          EXISTING=$(gh issue list \
+            --label reproducibility-regression \
+            --state open \
+            --search "\"${TITLE}\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"${TITLE}\") | .number" \
+            | head -n1)
+          if [ -n "${EXISTING}" ]; then
+            echo "→ existing issue #${EXISTING} already tracks this regression; skipping (idempotent)"
+            exit 1   # still fail the run — green-only is the contract (RESEARCH Open Question #3)
+          fi
+
+          gh issue create \
+            --title "${TITLE}" \
+            --body "${BODY}" \
+            --label reproducibility-regression \
+            --assignee "${GITHUB_REPOSITORY_OWNER}"
+          exit 1   # mismatch must fail the run
