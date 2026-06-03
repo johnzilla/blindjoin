@@ -31,7 +31,7 @@ The output `sha256sum` must match the value below for the tag you checked out.
 
 ## Recipe B — verify on any machine using Docker
 
-Use this on macOS / Arch / NixOS / Windows-WSL / any host that isn't `ubuntu-24.04` natively. Runs the same recipe inside a fresh `ubuntu:24.04` container. Expected outcome: byte-equal output to Recipe A in most environments — but Docker Hub's `ubuntu:24.04` and the GitHub Actions `ubuntu-24.04` runner image diverge slightly in glibc / linker versions, so a sha256 mismatch here can be a benign distro-layer difference rather than tampering. If you want a hard byte-equality guarantee, use Recipe A.
+Use this on macOS / Arch / NixOS / Windows-WSL / any host that isn't `ubuntu-24.04` natively. Runs the same recipe inside a fresh `ubuntu:24.04` container. Verified 2026-06-03 to produce a byte-identical tarball to Recipe A — the `--remap-path-prefix` + `SOURCE_DATE_EPOCH` + deterministic tar/gzip pipeline bridges the small differences between Docker Hub's `ubuntu:24.04` and the GitHub Actions `ubuntu-24.04` runner.
 
 ```bash
 git clone https://github.com/<owner>/blindjoin.git
