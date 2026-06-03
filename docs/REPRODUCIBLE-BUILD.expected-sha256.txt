@@ -1,0 +1,15 @@
+# Phase 25 REPRO-01 / D-18: machine-readable expected-sha256 + ImageVersion lookup table.
+# Format: <tag>:<sha256hex>:<image-version>   (colon-delimited, one per line, no whitespace, no quotes)
+#   - <tag>           — release tag (e.g. v1.6.0)
+#   - <sha256hex>     — expected sha256 of blindjoin-linux-amd64.tar.gz (64 hex chars)
+#   - <image-version> — pinned ubuntu-24.04 runner ImageVersion (e.g. 20260520.1.0)
+# Comment lines (starting with #) and blank lines are ignored by the verifier.
+# The verifier (.github/workflows/reproducible-verify.yml) derives BOTH the
+# expected sha256 AND the pinned ImageVersion from this file in a single
+# awk -F: lookup. The markdown table in docs/REPRODUCIBLE-BUILD.md is
+# human-facing only — verifier never parses markdown (per Phase 25 BLOCKER 2 fix).
+# See docs/REPRODUCIBLE-BUILD.md §Expected sha256sum for the human-readable table.
+# The v1.6.0-rc.0 rehearsal procedure (docs/RELEASING.md §Reproducibility
+# verification rehearsal) captures both real values and replaces both placeholders.
+
+v1.6.0:<TBD-v1.6.0-cut-sha256>:<TBD-v1.6.0-cut-imageversion>
