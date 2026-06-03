@@ -51,7 +51,7 @@
 - [x] **B-02: BIP-322 multi-script support — SHIPPED as v1.4 milestone.**
   Coordinator accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs under an
   operator-configurable `[bip]` allowlist; advertises `supported_script_types`
-  over PKARR (`v0.2.0` schema, compact `sst`/`ost` fields, 209-byte
+  over [PKARR](https://github.com/pubky/pkarr) (`v0.2.0` schema, compact `sst`/`ost` fields, 209-byte
   production-onion payload) and `/round/info`. Client wallet supports
   `--type {p2wpkh|p2tr|p2sh-p2wpkh}` with BIP-84/86/49 descriptor templates
   (literal templates with `coin=0'` across all networks per RESEARCH Pitfall 2

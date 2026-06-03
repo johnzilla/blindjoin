@@ -1,6 +1,6 @@
 # blindjoin — Technical Specification
 
-A standalone, open-source CoinJoin coordinator and client for Bitcoin signet/testnet, discoverable via Pubky (PKARR), private via Tor, built in Rust. MIT licensed. No fees. No company. No terms of service.
+A standalone, open-source CoinJoin coordinator and client for Bitcoin signet/testnet, discoverable via Pubky ([PKARR](https://github.com/pubky/pkarr)), private via Tor, built in Rust. MIT licensed. No fees. No company. No terms of service.
 
 > **Note:** This document is the architectural and design-rationale companion to the normative wire-protocol specification at [`docs/PROTOCOL.md`](docs/PROTOCOL.md). For implementation-level message formats, field semantics, and round-lifecycle MUST/SHOULD requirements, refer to PROTOCOL.md. This document covers the higher-level system design.
 
@@ -8,7 +8,7 @@ A standalone, open-source CoinJoin coordinator and client for Bitcoin signet/tes
 
 ## Executive Summary
 
-blindjoin is a lightweight CoinJoin coordinator that anyone can run. It uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) to ensure the coordinator cannot link transaction inputs to outputs. Participants discover coordinators through Pubky's decentralized DHT (PKARR), and all protocol traffic flows over Tor hidden services. The project ships as a Docker Compose stack that goes from zero to a working CoinJoin round in under five minutes on Bitcoin signet.
+blindjoin is a lightweight CoinJoin coordinator that anyone can run. It uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) to ensure the coordinator cannot link transaction inputs to outputs. Participants discover coordinators through Pubky's decentralized DHT ([PKARR](https://github.com/pubky/pkarr)), and all protocol traffic flows over Tor hidden services. The project ships as a Docker Compose stack that goes from zero to a working CoinJoin round in under five minutes on Bitcoin signet.
 
 This is infrastructure, not a product. The coordinator software is MIT licensed and designed for signet/testnet. What anyone does with it beyond that is their own decision.
 
@@ -27,13 +27,13 @@ This is infrastructure, not a product. The coordinator software is MIT licensed 
 ## Architecture Overview
 
 ```
-DISCOVERY LAYER — Pubky / PKARR
+DISCOVERY LAYER — Pubky / [PKARR](https://github.com/pubky/pkarr)
 ┌──────────────────────────────────────────────────────┐
-│  Coordinator publishes PKARR record to DHT:           │
+│  Coordinator publishes [PKARR](https://github.com/pubky/pkarr) record to DHT:           │
 │    • .onion address                                   │
 │    • Round parameters (denomination, min participants) │
 │    • Software version, uptime, rounds completed        │
-│  Participants resolve coordinator via PKARR lookup     │
+│  Participants resolve coordinator via [PKARR](https://github.com/pubky/pkarr) lookup     │
 └────────────────────┬─────────────────────────────────┘
                      │ DHT lookup
                      ▼
@@ -55,7 +55,7 @@ COORDINATOR — Rust Binary
 │  │  • Blame      │  │  • No custom crypto         │   │
 │  └──────────────┘  └─────────────────────────────┘   │
 │  ┌──────────────┐  ┌─────────────────────────────┐   │
-│  │ Bitcoin RPC  │  │ PKARR Publisher              │   │
+│  │ Bitcoin RPC  │  │ [PKARR](https://github.com/pubky/pkarr) Publisher              │   │
 │  │  • signet    │  │  • Announce rounds           │   │
 │  │  • testnet4  │  │  • Update .onion address     │   │
 │  │  • mainnet   │  │  • Heartbeat / status        │   │
@@ -196,11 +196,11 @@ The blame protocol does not compromise privacy — the coordinator already knows
 
 ---
 
-## Pubky / PKARR Discovery
+## Pubky / [PKARR](https://github.com/pubky/pkarr) Discovery
 
 ### Coordinator Announcement
 
-The coordinator publishes a PKARR record to the Mainline DHT containing:
+The coordinator publishes a [PKARR](https://github.com/pubky/pkarr) record to the Mainline DHT containing:
 
 ```json
 {
@@ -218,15 +218,15 @@ The coordinator publishes a PKARR record to the Mainline DHT containing:
 }
 ```
 
-This record is signed by the coordinator's PKARR key and resolvable by anyone querying the DHT. The coordinator refreshes this record on a heartbeat (every 5 minutes) and on state transitions (round start, round complete).
+This record is signed by the coordinator's [PKARR](https://github.com/pubky/pkarr) key and resolvable by anyone querying the DHT. The coordinator refreshes this record on a heartbeat (every 5 minutes) and on state transitions (round start, round complete).
 
 ### Client Discovery
 
 The CLI client can discover coordinators by:
 
-1. **Direct key:** User provides a known coordinator PKARR public key
+1. **Direct key:** User provides a known coordinator [PKARR](https://github.com/pubky/pkarr) public key
 2. **Crawl:** Client queries known seed keys that maintain lists of active coordinators (a lightweight, decentralized directory)
-3. **Manual .onion:** User provides a Tor .onion address directly, bypassing PKARR entirely (useful for testing)
+3. **Manual .onion:** User provides a Tor .onion address directly, bypassing [PKARR](https://github.com/pubky/pkarr) entirely (useful for testing)
 
 ---
 
@@ -298,7 +298,7 @@ All four hardening knobs (`rate_limit_info_per_min`, `rate_limit_writes_per_min`
 
 | Crate | Purpose | Author / Provenance |
 |-------|---------|---------------------|
-| `pkarr` | PKARR DHT record publishing/resolution | Synonym (Pubky team) |
+| `pkarr` | [PKARR](https://github.com/pubky/pkarr) DHT record publishing/resolution | Synonym (Pubky team) |
 
 ### Infrastructure
 
@@ -323,7 +323,7 @@ blindjoin/
 ├── coordinator/                   # Coordinator binary
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs                # Entry point: Tor setup, PKARR publish, start API
+│       ├── main.rs                # Entry point: Tor setup, [PKARR](https://github.com/pubky/pkarr) publish, start API
 │       ├── config.rs              # Configuration: network, denomination, timeouts
 │       ├── round/
 │       │   ├── mod.rs
@@ -346,14 +346,14 @@ blindjoin/
 │       │   └── api.rs             # JSON-RPC API handlers (axum)
 │       └── discovery/
 │           ├── mod.rs
-│           └── pkarr.rs           # PKARR record publishing + heartbeat
+│           └── pkarr.rs           # [PKARR](https://github.com/pubky/pkarr) record publishing + heartbeat
 │
 ├── client/                        # CLI participant client
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs                # CLI entry point
 │       ├── config.rs              # Client configuration
-│       ├── discover.rs            # Find coordinators via PKARR or direct .onion
+│       ├── discover.rs            # Find coordinators via [PKARR](https://github.com/pubky/pkarr) or direct .onion
 │       ├── wallet.rs              # Key management, UTXO selection (via bdk)
 │       ├── round/
 │       │   ├── mod.rs
@@ -383,7 +383,7 @@ blindjoin/
 │   │   ├── full_round.rs          # End-to-end: 5 clients complete a CoinJoin on signet
 │   │   ├── blame.rs               # Client refuses to sign, blame protocol activates
 │   │   ├── sybil.rs               # Coordinator with majority sybil inputs
-│   │   └── discovery.rs           # Client finds coordinator via PKARR
+│   │   └── discovery.rs           # Client finds coordinator via [PKARR](https://github.com/pubky/pkarr)
 │   └── unit/
 │       ├── blind_sig.rs           # Blind signature round-trip tests
 │       ├── state_machine.rs       # FSM transition tests
@@ -436,7 +436,7 @@ control_port = 9051
 
 [discovery]
 pkarr_enabled = true
-heartbeat_interval_secs = 300           # Re-publish PKARR record every 5 min
+heartbeat_interval_secs = 300           # Re-publish [PKARR](https://github.com/pubky/pkarr) record every 5 min
 seed_keys = []                          # Optional: known coordinator directory keys
 ```
 
@@ -613,7 +613,7 @@ volumes:
 | `blame_non_signer` | 1 of 5 clients refuses to sign; blame protocol bans them; round restarts with 4 |
 | `blame_no_output` | Client registers input but never registers output; round times out gracefully |
 | `sybil_majority` | 3 of 5 participants are sybils from same operator; CoinJoin still valid (reduced anonymity set but protocol integrity maintained) |
-| `discovery_pkarr` | Client discovers coordinator via PKARR DHT lookup; connects; completes round |
+| `discovery_pkarr` | Client discovers coordinator via [PKARR](https://github.com/pubky/pkarr) DHT lookup; connects; completes round |
 | `tor_circuit_isolation` | Input registration and output registration use different Tor circuits (verified via Tor control protocol) |
 | `concurrent_rounds` | Two rounds execute simultaneously without state leakage |
 
@@ -656,8 +656,8 @@ volumes:
 
 ### Phase 4: Discovery & Deployment (Weeks 9-10)
 
-- [ ] PKARR record publishing (coordinator)
-- [ ] PKARR discovery (client)
+- [ ] [PKARR](https://github.com/pubky/pkarr) record publishing (coordinator)
+- [ ] [PKARR](https://github.com/pubky/pkarr) discovery (client)
 - [ ] Tor hidden service setup
 - [ ] Docker Compose stack (bitcoind + tor + coordinator + bot)
 - [ ] Liquidity bot (auto-join rounds)

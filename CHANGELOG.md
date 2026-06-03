@@ -100,7 +100,7 @@ Tagged 2026-06-03. Reproducibility baseline captured post-tag by dispatching `re
 - **Upstream `bip322 = "=0.0.10"` crate** adopted via a 26-LOC zero-lossy
   adapter at `shared/src/bip322/mod.rs`, replacing the in-tree
   implementation. Pinned via the `bip322-pin-check` CI grep gate.
-- **PKARR record v0.2.0** with `sst`/`ost` compact field names
+- **[PKARR](https://github.com/pubky/pkarr) record v0.2.0** with `sst`/`ost` compact field names
   advertising supported / output script types in 209 bytes (11-byte
   headroom under the 220-byte threshold). Clients reject mismatched
   coordinators with `DiscoveryError::UnsupportedScriptType` **before**
@@ -205,7 +205,7 @@ Tagged 2026-06-03. Reproducibility baseline captured post-tag by dispatching `re
   isolation (Alice / Bob), anti-censorship PSBT verification.
 - **UTXO ownership proof via BIP-322** (P2WPKH at v1.0; multi-script
   added at v1.4).
-- **PKARR DHT discovery**: coordinators publish `.onion` addresses, round
+- **[PKARR](https://github.com/pubky/pkarr) DHT discovery**: coordinators publish `.onion` addresses, round
   parameters, and status to Mainline. Clients resolve without
   hardcoded addresses.
 - **Tor v3 hidden service** via `arti-client`. No clearnet endpoint in

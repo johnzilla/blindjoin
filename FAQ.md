@@ -5,7 +5,7 @@
 
 BlindJoin is a standalone CoinJoin coordinator and client for Bitcoin Signet. It uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) so the coordinator cryptographically cannot link transaction inputs to outputs.
 
-Coordinators are discoverable via PKARR DHT, and all production traffic runs over Tor hidden services. MIT licensed. No fees. No company. No terms of service.
+Coordinators are discoverable via [PKARR](https://github.com/pubky/pkarr) DHT, and all production traffic runs over Tor hidden services. MIT licensed. No fees. No company. No terms of service.
 
 </details>
 
@@ -52,7 +52,7 @@ Yes — easily.
 - Use Docker Compose (recommended) for a full stack including bitcoind.
 - Or build from source and run the coordinator binary with Tor mode enabled for production.
 
-Coordinators automatically announce themselves via PKARR DHT so clients can discover them.
+Coordinators automatically announce themselves via [PKARR](https://github.com/pubky/pkarr) DHT so clients can discover them.
 
 </details>
 
@@ -121,7 +121,7 @@ As of v1.4, BlindJoin accepts three input script types in a single round:
 
 Pick the type at wallet generation with `client --generate-wallet --type {p2wpkh|p2tr|p2sh-p2wpkh}` (default: `p2wpkh` for backwards compatibility).
 
-Operators can run a single-script-type coordinator by disabling the others in `coordinator.toml` (`[bip] allow_p2tr = false`, etc.) — the supported set is advertised over the PKARR DHT and on `/info`, so clients reject mismatched coordinators **before** opening a Tor circuit.
+Operators can run a single-script-type coordinator by disabling the others in `coordinator.toml` (`[bip] allow_p2tr = false`, etc.) — the supported set is advertised over the [PKARR](https://github.com/pubky/pkarr) DHT and on `/info`, so clients reject mismatched coordinators **before** opening a Tor circuit.
 
 The coordinator derives the input's script type from the on-chain `script_pubkey` (not from any client-declared field) and cross-checks against the client's declaration; a malicious client cannot lie about its script type to bypass the per-script-type sighash verifier. See the README §Security Model "Multi-script script-type integrity" for the CRIT-01 invariant.
 

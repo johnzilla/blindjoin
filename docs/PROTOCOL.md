@@ -25,7 +25,7 @@ This document specifies blindjoin, a protocol for coordinating CoinJoin
 transactions on the Bitcoin network. blindjoin uses RSA blind signatures
 ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) to make it cryptographically infeasible for the coordinator to link
 participant inputs to participant outputs. Coordinators are discovered via
-records published to the Mainline DHT under the PKARR (Public-Key Addressable
+records published to the Mainline DHT under the [PKARR](https://github.com/pubky/pkarr) (Public-Key Addressable
 Resource Records) convention, removing the need for hardcoded coordinator lists
 or relay-operator-mediated rendezvous. All production transport runs over Tor
 v3 hidden services; clients use isolated Tor circuits across protocol phases to
@@ -47,7 +47,7 @@ infrastructure is operator-mediated: a relay operator can be subpoenaed,
 deplatformed, or sanctioned. blindjoin specifies a discovery layer that is
 not operator-mediated: signed records on the Mainline DHT, retrievable from
 any participating node, with cryptographic identity established by Ed25519
-keypairs under the PKARR convention.
+keypairs under the [PKARR](https://github.com/pubky/pkarr) convention.
 
 blindjoin's design goals are, in order:
 
@@ -73,8 +73,8 @@ and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 
 | Role | Description |
 |---|---|
-| Coordinator | Runs the round state machine; publishes a PKARR record; verifies inputs; issues blind signatures; assembles the PSBT; broadcasts the final transaction. |
-| Participant (Client) | Discovers a coordinator via PKARR; registers a UTXO with a BIP-322 ownership proof; submits a blinded token; retrieves the blind signature; registers an unblinded output on a separate Tor circuit; signs its input in the assembled PSBT. |
+| Coordinator | Runs the round state machine; publishes a [PKARR](https://github.com/pubky/pkarr) record; verifies inputs; issues blind signatures; assembles the PSBT; broadcasts the final transaction. |
+| Participant (Client) | Discovers a coordinator via [PKARR](https://github.com/pubky/pkarr); registers a UTXO with a BIP-322 ownership proof; submits a blinded token; retrieves the blind signature; registers an unblinded output on a separate Tor circuit; signs its input in the assembled PSBT. |
 | Bitcoin Node | A trusted (operator-controlled) Bitcoin Core node providing UTXO validation, mempool fee estimation, PSBT construction, and broadcast. |
 
 ### Cryptographic primitives
@@ -90,7 +90,7 @@ and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 
 ### Discovery
 
-A coordinator MUST publish a PKARR record to the Mainline DHT containing:
+A coordinator MUST publish a [PKARR](https://github.com/pubky/pkarr) record to the Mainline DHT containing:
 
 - The coordinator's reachable address: `.onion` hostname (production) or
   `host:port` (development only).
@@ -103,11 +103,11 @@ A coordinator MUST publish a PKARR record to the Mainline DHT containing:
   advertised input type SHOULD reject the coordinator at discovery time
   rather than opening a Tor circuit.
 
-The PKARR record MUST be signed by the coordinator's Ed25519 keypair (the
+The [PKARR](https://github.com/pubky/pkarr) record MUST be signed by the coordinator's Ed25519 keypair (the
 "coordinator identity key"); clients MUST verify the signature before
 trusting any address contained in the record.
 
-A coordinator SHOULD re-publish its PKARR record at intervals not shorter
+A coordinator SHOULD re-publish its [PKARR](https://github.com/pubky/pkarr) record at intervals not shorter
 than 60 seconds and not longer than 600 seconds. The default in the reference
 implementation is 300 seconds (5 minutes), matching typical Mainline DHT TTL.
 
@@ -261,7 +261,7 @@ and emerging Schnorr blind signature schemes (smaller still, but lack
 mature implementations and clearly published security proofs at time of
 writing).
 
-### Why PKARR/DHT rather than Nostr
+### Why [PKARR](https://github.com/pubky/pkarr)/DHT rather than Nostr
 
 **[TODO]** Discuss the trade-off between Mainline DHT (no relay operator,
 peer-to-peer, established with millions of nodes for BitTorrent) and
@@ -288,7 +288,7 @@ the Tor isolation harness in [`client/src/tor.rs`](../client/src/tor.rs).
 ## Acknowledgements
 
 This work is funded by an OpenSats Bitcoin grant (application submitted
-2026-06; this document is a Milestone 1 deliverable). The PKARR family of
+2026-06; this document is a Milestone 1 deliverable). The [PKARR](https://github.com/pubky/pkarr) family of
 primitives is the work of the Pubky team and the broader Mainline DHT
 community. The `blind-rsa-signatures` crate is maintained by Frank Denis.
 

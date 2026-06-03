@@ -424,7 +424,7 @@ per-row. blindjoin's USAGE shapes of these components ARE in scope — see
 | Component | Rationale (relies on…) |
 |---|---|
 | `arti-client` (Tor circuit isolation + hidden-service hosting) | Upstream Tor Project Arti 2.x audit posture. The blindjoin codebase consumes the public `arti-client` API only; no fork, no patch, no custom transport layer. Arti is the only viable in-process Tor implementation in Rust. |
-| `pkarr` (Mainline DHT discovery layer) | Pubky project audit posture. blindjoin publishes a signed DNS-like packet via the public `pkarr` API; no fork, no custom DHT transport. The PKARR record contents are the in-scope surface, not the DHT machinery. |
+| `pkarr` (Mainline DHT discovery layer) | Pubky project audit posture. blindjoin publishes a signed DNS-like packet via the public `pkarr` API; no fork, no custom DHT transport. The [PKARR](https://github.com/pubky/pkarr) record contents are the in-scope surface, not the DHT machinery. |
 | `blind-rsa-signatures` (jedisct1) crate **internals** | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signature primitive. The upstream crate is written by jedisct1 (libsodium author), production-grade, and the only [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)-compliant Rust implementation. OUR USAGE shape — the AUDIT-03 `RoundSecretKey` wrapper at [§5](#rsa-secret-key-zeroization-window) — IS in-scope. |
 | `bip322 = "=0.0.10"` (rust-bitcoin org) crate **internals** | BIP-322 verify path. Exact-pinned (`=0.0.10`) and enforced by the `bip322-pin-check` CI gate; the crate is pre-1.0 and any minor release can break the wire format. OUR 26-LOC zero-lossy adapter at `shared/src/bip322/mod.rs::verify_via_bip322_crate` IS in-scope ([§1](#in-scope-modules)). |
 | `rust-bitcoin` (consensus primitives + PSBT) and `secp256k1` (curve primitives) | Upstream rust-bitcoin team audit posture. These are the consensus-critical primitives the entire Rust Bitcoin ecosystem depends on. blindjoin uses the public API exclusively. |
@@ -543,11 +543,11 @@ prose below is the threat-model treatment.
   increases the sybil cost. **Disposition: ACCEPTED**; mitigation via
   operator policy.
 
-- **PKARR replay window.** Pubky DHT records are versioned with a
+- **[PKARR](https://github.com/pubky/pkarr) replay window.** Pubky DHT records are versioned with a
   monotonic sequence number, but a stale record may resolve momentarily
   before the latest version propagates to all DHT nodes. A participant
   reaching a stale record may attempt to contact a former coordinator
-  address. **Disposition: ACCEPTED**; relies on PKARR protocol design
+  address. **Disposition: ACCEPTED**; relies on [PKARR](https://github.com/pubky/pkarr) protocol design
   (Pubky upstream) and the operator practice of leaving old `.onion`
   addresses online for a short grace period after rotation.
 
@@ -601,7 +601,7 @@ code.
 | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) | RSA Blind Signatures — IETF standard for the unlinkable signing primitive |
 | BIP-174 | PSBT (Partially Signed Bitcoin Transaction) — the wire format used by the v=2 OwnershipProof envelope |
 | BIP-322 | Generic Signed Message Format — the verification protocol used for UTXO ownership proofs |
-| PKARR | Public-Key Addressable Resource Records — Pubky's signed-DNS-packet discovery layer over Mainline DHT |
+| [PKARR](https://github.com/pubky/pkarr) | Public-Key Addressable Resource Records — Pubky's signed-DNS-packet discovery layer over Mainline DHT |
 
 Retired pre-v1.4 identifiers (e.g., REPAIR-01 v1.3 forensics tags, v1.0
 PRIV-* numbering, Phase 8 STREAM-* IDs) live in

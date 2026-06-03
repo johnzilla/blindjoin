@@ -9,14 +9,14 @@
 [![Signed by cosign + SLSA](https://img.shields.io/badge/signed-cosign%20%2B%20SLSA-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#supply-chain-status)
 [![Reproducible build](https://img.shields.io/badge/reproducible-byte--equal-success)](docs/REPRODUCIBLE-BUILD.md)
 
-A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via PKARR DHT and all production traffic flows over Tor hidden services.
+A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via [PKARR](https://github.com/pubky/pkarr) DHT and all production traffic flows over Tor hidden services.
 
 MIT licensed. No fees. No company. No terms of service.
 
 ## What This Does
 
 1. Coordinator announces a fixed-denomination CoinJoin round (default: 0.01 BTC) and the input script types it accepts (P2WPKH, P2TR, P2SH-P2WPKH)
-2. Participants discover the coordinator via PKARR DHT and reject mismatched coordinators **before** opening a Tor circuit
+2. Participants discover the coordinator via [PKARR](https://github.com/pubky/pkarr) DHT and reject mismatched coordinators **before** opening a Tor circuit
 3. Participants register inputs with BIP-322 ownership proofs (one of the three supported script types) and receive blind-signed tokens
 4. Participants register outputs using unblinded tokens (on a fresh Tor circuit)
 5. Coordinator builds the transaction, participants verify and sign
@@ -53,7 +53,7 @@ cp .env.example .env
 docker compose -f docker/docker-compose.yml up
 ```
 
-The coordinator will start, publish its address to the PKARR DHT, and wait for participants. The liquidity bot joins rounds automatically to fill the anonymity set.
+The coordinator will start, publish its address to the [PKARR](https://github.com/pubky/pkarr) DHT, and wait for participants. The liquidity bot joins rounds automatically to fill the anonymity set.
 
 **Back up the `coordinator-keys` volume** (or `coordinator_pkarr.key` if you're not using Docker). Losing it creates a new DHT identity; participants holding your old `pk:...` will no longer discover you. See the volume note in [`docker/docker-compose.yml`](docker/docker-compose.yml).
 
@@ -106,7 +106,7 @@ BLINDJOIN_COORDINATOR_TOR_MODE=true cargo run -p coordinator
 BLINDJOIN_ALLOW_CLEARNET=1 ./target/release/coordinator   # only if you know what you're doing
 ```
 
-When `tor_mode` is enabled, the coordinator runs as a Tor v3 hidden service via arti-client. No clearnet listener is created. The .onion address is published to the PKARR DHT automatically.
+When `tor_mode` is enabled, the coordinator runs as a Tor v3 hidden service via arti-client. No clearnet listener is created. The .onion address is published to the [PKARR](https://github.com/pubky/pkarr) DHT automatically.
 
 When `tor_mode` is disabled (default), the coordinator listens on `0.0.0.0:8080` for development and testing. **Release builds (`cargo build --release`) refuse to start in clearnet mode** unless `BLINDJOIN_ALLOW_CLEARNET=1` is set — this is a deliberate guardrail against accidentally exposing a production-built coordinator on the open internet without Tor. Debug builds (`cargo run`, `cargo test`) emit a warning and continue.
 
@@ -129,7 +129,7 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | `coordinator.request_timeout_secs` | 30 | Uniform per-request handler deadline; clients see HTTP 408 on stall | ✓ |
 | `coordinator.max_concurrent_connections` | 256 | Cap on simultaneous Tor hidden-service streams; excess connections park | ✓ |
 | `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |  |
-| `discovery.heartbeat_interval_secs` | 300 | PKARR re-publish interval |  |
+| `discovery.heartbeat_interval_secs` | 300 | [PKARR](https://github.com/pubky/pkarr) re-publish interval |  |
 | `bip.allow_p2wpkh` | true | Accept BIP-84 P2WPKH inputs (env: `BLINDJOIN__BIP__ALLOW_P2WPKH`) | ✓ |
 | `bip.allow_p2tr` | true | Accept BIP-86 P2TR inputs (env: `BLINDJOIN__BIP__ALLOW_P2TR`) | ✓ |
 | `bip.allow_p2sh_p2wpkh` | true | Accept BIP-49 P2SH-P2WPKH inputs (env: `BLINDJOIN__BIP__ALLOW_P2SH_P2WPKH`) | ✓ |
@@ -147,7 +147,7 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | GET | `/round/tx` | Retrieve unsigned PSBT for verification |
 | POST | `/round/sign` | Submit partial signature |
 
-**Script-type advertisement.** `/info` includes `supported_script_types` (a JSON array such as `["p2sh-p2wpkh","p2tr","p2wpkh"]`) and `output_script_type` (a single kebab-case string) so clients can fail-fast on a mismatch before opening a Tor circuit. The same data is published in compact form (`sst`/`ost` fields) in the coordinator's PKARR record (`v0.2.0`) so even DHT-discovery callers can skip mismatched coordinators without ever connecting. Both `supported_script_types` and `output_script_type` are `#[serde(default)]` on the wire — pre-v1.4 coordinators with no advertised set are interpreted as `["p2wpkh"]` and v1.4 clients fall back to the legacy witness-only `OwnershipProof` envelope when they detect one.
+**Script-type advertisement.** `/info` includes `supported_script_types` (a JSON array such as `["p2sh-p2wpkh","p2tr","p2wpkh"]`) and `output_script_type` (a single kebab-case string) so clients can fail-fast on a mismatch before opening a Tor circuit. The same data is published in compact form (`sst`/`ost` fields) in the coordinator's [PKARR](https://github.com/pubky/pkarr) record (`v0.2.0`) so even DHT-discovery callers can skip mismatched coordinators without ever connecting. Both `supported_script_types` and `output_script_type` are `#[serde(default)]` on the wire — pre-v1.4 coordinators with no advertised set are interpreted as `["p2wpkh"]` and v1.4 clients fall back to the legacy witness-only `OwnershipProof` envelope when they detect one.
 
 Errors return a structured JSON envelope:
 
@@ -194,7 +194,7 @@ cargo run -p client -- --coordinator-url http://127.0.0.1:8080 \
   --type p2tr \
   --output-address <destination-address>
 
-# Via Tor (production) — coordinator discovery via PKARR DHT
+# Via Tor (production) — coordinator discovery via [PKARR](https://github.com/pubky/pkarr) DHT
 cargo run -p client -- --pkarr-pubkey <coordinator-public-key> \
   --descriptor descriptors.txt \
   --type p2tr \
@@ -247,7 +247,7 @@ blindjoin/
       bitcoin/       # RPC client, UTXO validation, BIP-322, PSBT builder, fee estimation
       blind/         # RSA blind signature engine
       round/         # State machine, input/output reg, signing, blame
-      discovery/     # PKARR DHT publisher
+      discovery/     # [PKARR](https://github.com/pubky/pkarr) DHT publisher
       network/       # Tor hidden service (arti-client)
       config.rs      # TOML + env var configuration
       main.rs        # Startup, health checks, server
@@ -257,7 +257,7 @@ blindjoin/
       wallet.rs      # bdk_wallet key management, BIP-322 proofs, PSBT signing
       http.rs        # Coordinator HTTP client (clearnet + Tor)
       tor.rs         # Per-phase Tor circuit isolation (alice/bob)
-      discover.rs    # PKARR DHT coordinator discovery
+      discover.rs    # [PKARR](https://github.com/pubky/pkarr) DHT coordinator discovery
       config.rs      # CLI argument parsing (clap)
   shared/            # Protocol types shared between coordinator and client
     src/
