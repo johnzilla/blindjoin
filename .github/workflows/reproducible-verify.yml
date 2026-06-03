@@ -1,0 +1,93 @@
+name: Reproducible build verifier
+
+# Monthly re-verification that blindjoin-linux-amd64.tar.gz is byte-equal across
+# rebuilds on the pinned ubuntu-24.04 runner image (Phase 25 REPRO-03). The
+# verifier downloads the latest GitHub Release tarball, re-verifies the cosign
+# signature against the release.yml issuer identity, checks out the source at
+# the release tag, rebuilds via the REPRO-01 Recipe (the SAME deterministic
+# env + tar/gzip pipeline as release.yml's build job), and compares sha256sum.
+#
+# Opens an issue (NOT a PR) on mismatch, per .planning/research/PITFALLS.md
+# §11: auto-merging a reproducibility regression would defeat the entire
+# supply-chain assurance Phase 25 closes. The maintainer's manual triage of
+# every regression is the whole point. Mirrors Phase 22's
+# digest-drift-check.yml issue-not-PR contract verbatim.
+#
+# Idempotency (per .planning/research/PITFALLS.md §9): before opening an
+# issue the workflow greps existing open `reproducibility-regression`-labeled
+# issues by exact title match. Match → skip create (but still exit 1 — the
+# green-only contract per RESEARCH Open Question #3; D-14 registry submission
+# requires ≥1 green monthly cycle). Title encodes the ImageVersion so the
+# same ImageVersion-class regression dedups across monthly runs. Phase 22
+# idempotency-by-title-match inheritance.
+#
+# Two-title scheme (Phase 25 D-12) distinguishes a benign GitHub runner-image
+# rotation (low-severity) from a real sha256 divergence on the SAME pinned
+# image (HIGH-severity supply-chain signal):
+#   - "[reproducibility-regression] runner image drift: ImageVersion <OLD> → <NEW>"
+#   - "[reproducibility-regression] sha256 mismatch on ImageVersion <V>"
+# Drift-vs-divergence classification reads the pinned ImageVersion from
+# docs/REPRODUCIBLE-BUILD.expected-sha256.txt (single awk -F: pass per D-18 +
+# BLOCKER 2 fix; the verifier never parses markdown).
+#
+# Tool choice: re-uses Phase 23/24 cosign-installer SHA pin verbatim
+# (sigstore/cosign-installer@7e8b541... # v3.10.1, cosign-release v2.6.3).
+# Phase 23's sigstore-pin-check gate at ci.yml:292-326 greps every workflow
+# under .github/workflows/ — covers this new sigstore use automatically with
+# no new CI gate.
+#
+# Rehearsal: workflow_dispatch is wired so the workflow can be fired manually
+# from any branch before the first scheduled run, matching the precedent in
+# .planning/quick/260531-ubf-*/SUMMARY.md Task D. Plan 25-05's v1.6.0-rc.0
+# rehearsal procedure (docs/RELEASING.md §Reproducibility verification
+# rehearsal) cites this dispatch entry point to capture the real sha256 +
+# ImageVersion that replace the placeholders in
+# docs/REPRODUCIBLE-BUILD.expected-sha256.txt.
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    # 07:00 UTC on the 1st of each month. Verified 2026-06-02 to not collide
+    # with digest-drift-check.yml's `0 9 * * *` daily schedule — different
+    # hour AND monthly vs daily cadence (RESEARCH Pattern 3 cron-stagger).
+    - cron: '0 7 1 * *'
+  workflow_dispatch:
+
+# Minimum privileges:
+#   - contents: read   — checkout source at the release tag for the rebuild
+#   - issues:   write  — `gh issue create` / `gh issue list` / `gh label create`
+#                        on a reproducibility-regression mismatch
+# Deliberately omitted scopes (auditor-grepable per Plan 22-04 paraphrasing
+# discipline: these tokens MUST NOT appear anywhere in this file with a
+# trailing colon at any indentation): id-token (verifier neither signs nor
+# pushes attestations — it only re-verifies the cosign sig on the downloaded
+# tarball, a read-only operation), attestations (no SLSA provenance is
+# minted here), packages (no ghcr.io push), PR-write (Pitfall 11 — mismatches
+# open issues only, never PRs; auto-merging a reproducibility regression
+# would defeat the supply-chain assurance Phase 25 closes), pages, deployments.
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  verify:
+    name: Re-verify reproducibility of latest release
+    # D-08 + Pitfall 7: pin the runner image to a specific Ubuntu release
+    # rather than the rolling-release runner alias. release.yml's build job
+    # runs on the SAME pinned image; if the verifier rode the rolling-release
+    # alias, it would false-positive every ~month when GitHub rotated the
+    # underlying SHA. The two-title classification (drift vs divergence)
+    # depends on this pin being byte-identical to release.yml's build job.
+    runs-on: ubuntu-24.04
+    steps:
+      # Pitfall B: capture ${ImageVersion} env var EARLY with a defensive
+      # guard. The variable is exposed only by GitHub-hosted runners; a
+      # self-hosted runner exposes nothing and the verifier must fail loud
+      # rather than silently report "ImageVersion: " in issue titles.
+      - name: Capture runner ImageVersion
+        run: |
+          [[ -n "${ImageVersion:-}" ]] || { echo "ImageVersion env var not set — verifier requires a GitHub-hosted ubuntu-24.04 runner"; exit 1; }
+          echo "VERIFIER_IMAGE_VERSION=${ImageVersion}" >> $GITHUB_ENV
+          echo "Verifier image: ${ImageVersion}"
