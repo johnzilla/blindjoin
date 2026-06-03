@@ -54,10 +54,15 @@ pub(crate) fn verify(
 ///   `sign_for_tests` rebuilt the outer P2SH SPK from the key (silent
 ///   footgun: ignored `_spk` argument).
 ///
-/// Determinism: ECDSA via `sign_ecdsa` is RFC 6979 deterministic — the
+/// Determinism: ECDSA signing uses `super::sign_ecdsa_compat_bip322_length`,
+/// which is RFC 6979 deterministic on the common path (signature naturally
+/// 71 or 72 bytes long, no retry triggered) and falls back to a counter-
+/// driven retry only when the natural RFC 6979 output would be 70 or 73
+/// bytes — lengths the upstream `bip322 = "=0.0.10"` verifier rejects. For
+/// the fixed test vectors used by the
 /// `client/tests/wallet_sign_roundtrip.rs::p2sh_p2wpkh_shared_sign_matches_bdk_sign_byte_for_byte`
-/// parity test (Phase 19 Plan 19-01 D-119) asserts byte-equality with
-/// `bdk_wallet` 2.3's BIP-322 sign path.
+/// parity test (Phase 19 Plan 19-01 D-119), the natural length is 71/72
+/// and byte-equality with `bdk_wallet` 2.3's BIP-322 sign path holds.
 ///
 /// Sighash is computed against the UNWRAPPED P2WPKH redeem (not the outer
 /// P2SH SPK) — this is structural per BIP-143; the bip322 crate's
@@ -125,7 +130,7 @@ pub(crate) fn sign(
         .expect("sighash on well-formed to_sign");
 
     let secp_msg = Message::from_digest(sighash.to_byte_array());
-    let sig = secp.sign_ecdsa(&secp_msg, key);
+    let sig = super::sign_ecdsa_compat_bip322_length(&secp, &secp_msg, key);
     let mut sig_bytes = sig.serialize_der().to_vec();
     sig_bytes.push(0x01); // SIGHASH_ALL
 

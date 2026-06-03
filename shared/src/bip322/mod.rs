@@ -327,6 +327,43 @@ pub fn p2sh_p2wpkh_final_script_sig(pubkey: &bitcoin::secp256k1::PublicKey) -> S
 // the underlying `bip322::error::Error` via `#[source]` (no string collapse).
 // ---------------------------------------------------------------------------
 
+/// Sign an ECDSA digest, retrying with deterministic counter-derived entropy
+/// until the resulting DER signature + SIGHASH_ALL byte is 71 or 72 bytes.
+///
+/// `bip322 = "=0.0.10"` (see verify.rs:138-153) hardcodes
+/// `match signature_length { 71 | 72 => ... else SignatureLength }` for the
+/// witness sig length, but valid Bitcoin ECDSA DER signatures can be 70
+/// bytes (S naturally 31 bytes) or 73 bytes (both R and S padded with a
+/// leading 0x00) too. Without this retry loop, ~5% of RFC 6979 deterministic
+/// signatures fall outside 71/72 and the upstream verifier rejects them as
+/// malformed even though they're cryptographically valid — surfacing as
+/// intermittent CI failures in any test that signs random keys.
+///
+/// The retry uses a u32 counter as the noncedata seed so the helper is itself
+/// deterministic: same (key, message) always converges to the same final
+/// signature. Strict RFC 6979 determinism is broken, but BIP-322 doesn't
+/// require it — only verifiability and key binding, both of which hold.
+pub(crate) fn sign_ecdsa_compat_bip322_length(
+    secp: &bitcoin::secp256k1::Secp256k1<bitcoin::secp256k1::All>,
+    msg: &bitcoin::secp256k1::Message,
+    key: &bitcoin::secp256k1::SecretKey,
+) -> bitcoin::secp256k1::ecdsa::Signature {
+    let mut sig = secp.sign_ecdsa(msg, key);
+    for counter in 1u32..=256 {
+        let total_len = sig.serialize_der().len() + 1; // + SIGHASH_ALL byte
+        if total_len == 71 || total_len == 72 {
+            return sig;
+        }
+        let mut entropy = [0u8; 32];
+        entropy[..4].copy_from_slice(&counter.to_le_bytes());
+        sig = secp.sign_ecdsa_with_noncedata(msg, key, &entropy);
+    }
+    // 256 deterministic retries failing is statistically impossible (~1e-617);
+    // returning the last sig keeps the cryptographic binding so the caller
+    // surfaces a real verifier error rather than panicking inside the signer.
+    sig
+}
+
 pub(crate) fn verify_via_bip322_crate(
     spk: &Script,
     witness: &Witness,

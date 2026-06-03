@@ -61,7 +61,7 @@ pub(crate) fn sign(
         .map_err(|e| super::Bip322Error::DecodeError(format!("p2wpkh sighash: {e}")))?;
 
     let secp_msg = Message::from_digest(sighash.to_byte_array());
-    let sig = secp.sign_ecdsa(&secp_msg, key);
+    let sig = super::sign_ecdsa_compat_bip322_length(&secp, &secp_msg, key);
     let mut sig_bytes = sig.serialize_der().to_vec();
     sig_bytes.push(0x01); // SIGHASH_ALL
 
