@@ -46,7 +46,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write       # softprops uploads to the Releases API
-      id-token: write       # OIDC for cosign Fulcio cert exchange
+      id-token: write       # OIDC for Sigstore/Fulcio cert exchange (attest-build-provenance)
       attestations: write   # actions/attest-build-provenance writes to the attestations API
 
     steps:
@@ -69,19 +69,6 @@ jobs:
           tar czf blindjoin-linux-amd64.tar.gz -C dist .
           sha256sum blindjoin-linux-amd64.tar.gz > blindjoin-linux-amd64.tar.gz.sha256
 
-      # cosign-installer v3.10.1 is the last v3.x; v4.x mandates cosign 3.x which
-      # breaks the documented cosign >= 2.6.3, < 3.0.0 verify range. Hold on v3.x
-      # until the docs and operator instructions are migrated.
-      - name: Install cosign
-        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5  # v3.10.1
-        with:
-          cosign-release: 'v2.6.3'
-
-      # Keyless OIDC blob signing → blindjoin-linux-amd64.tar.gz.bundle
-      # (sig + cert + Rekor inclusion proof in one JSON).
-      - name: Sign tarball with cosign
-        run: cosign sign-blob --yes --bundle blindjoin-linux-amd64.tar.gz.bundle blindjoin-linux-amd64.tar.gz
-
       # SLSA v1.0 build provenance. The action's bundle-path output points at a
       # tempfile; we rename it to .sigstore so softprops can upload it as an
       # operator-discoverable asset.
@@ -100,7 +87,6 @@ jobs:
           files: |
             blindjoin-linux-amd64.tar.gz
             blindjoin-linux-amd64.tar.gz.sha256
-            blindjoin-linux-amd64.tar.gz.bundle
             blindjoin-linux-amd64.tar.gz.sigstore
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

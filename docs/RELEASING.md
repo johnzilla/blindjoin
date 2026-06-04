@@ -6,12 +6,7 @@ This file documents the post-CI portion of the release cycle: pre-flight verifyi
 
 ## Prerequisites
 
-- **gh 2.50+** on the maintainer's machine. Install via [cli.github.com](https://cli.github.com).
-- **cosign 2.6.3+** for the pre-flight verify gate (see [Pre-flight check](#pre-flight-check-after-ci-completes)). Install:
-  ```bash
-  brew install cosign          # macOS
-  # or download from https://github.com/sigstore/cosign/releases
-  ```
+- **gh 2.50+** on the maintainer's machine. Install via [cli.github.com](https://cli.github.com). The `gh attestation verify` pre-flight subcommand requires gh 2.49+; 2.50+ is the safe floor.
 
 ## Per-release procedure
 
@@ -24,7 +19,7 @@ CI handles the signing + attestation; the maintainer drives the tag cut and the 
    git push --tags
    ```
 
-2. **Watch `release.yml` until green.** Open [`release.yml`](../.github/workflows/release.yml) in the Actions tab. CI creates a published GitHub Release with 4 assets: `blindjoin-linux-amd64.tar.gz`, `blindjoin-linux-amd64.tar.gz.sha256`, `blindjoin-linux-amd64.tar.gz.bundle` (cosign signature), and `blindjoin-linux-amd64.tar.gz.sigstore` (SLSA provenance). If the workflow fails, fix the underlying issue and re-cut the tag — do NOT proceed.
+2. **Watch `release.yml` until green.** Open [`release.yml`](../.github/workflows/release.yml) in the Actions tab. CI creates a published GitHub Release with 3 assets: `blindjoin-linux-amd64.tar.gz`, `blindjoin-linux-amd64.tar.gz.sha256`, and `blindjoin-linux-amd64.tar.gz.sigstore` (SLSA provenance bundle). If the workflow fails, fix the underlying issue and re-cut the tag — do NOT proceed.
 
 3. **Run the [Pre-flight check](#pre-flight-check-after-ci-completes) below.** If any verify fails, recover via `gh release delete vX.Y.Z` and re-cut the tag after the fix.
 
@@ -34,15 +29,11 @@ CI handles the signing + attestation; the maintainer drives the tag cut and the 
 
 ```bash
 mkdir -p /tmp/blindjoin-release && cd /tmp/blindjoin-release
-gh release download vX.Y.Z --dir .
-cosign verify-blob \
-  --bundle blindjoin-linux-amd64.tar.gz.bundle \
-  --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  blindjoin-linux-amd64.tar.gz
+gh release download vX.Y.Z --dir . --pattern blindjoin-linux-amd64.tar.gz
+gh attestation verify blindjoin-linux-amd64.tar.gz --owner <owner>
 ```
 
-Must return `Verified OK`. If not, `gh release delete vX.Y.Z`, fix, re-tag.
+Must return a green checkmark / `Loaded ... attestations` + `verified` line. If not, `gh release delete vX.Y.Z`, fix, re-tag.
 
 ## Base-image digest check (before a release)
 

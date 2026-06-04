@@ -41,6 +41,25 @@ threat-model treatment of v1.4 / v1.5 invariants see
   the now-empty `require_code_owner_review: true` setting can be toggled
   off in the GitHub UI at the maintainer's leisure.
 
+- Cosign blob/image signing (`sigstore/cosign-installer` step, `cosign sign-blob`
+  + `cosign sign` steps, `blindjoin-linux-amd64.tar.gz.bundle` Release asset, the
+  `ghcr.io/.../blindjoin-<image>@sha256-<HEX>.sig` legacy referrer) and SPDX SBOM
+  attestation (`anchore/sbom-action` + `actions/attest-sbom`). For a solo project
+  with no operator base, two artifact families bound to the same workflow
+  identity by the same OIDC chain were one too many — the SLSA build provenance
+  attestation produced by `actions/attest-build-provenance` strictly dominates
+  the bare cosign signature (same signer, same Rekor entry, plus a verifiable
+  build claim), and SBOM attestations exist for downstream scanners that don't
+  exist here. Operator verify switches from `cosign verify` / `cosign verify-blob`
+  (which required the `cosign >= 2.6.3, < 3.0.0` install + the pin-range docs)
+  to `gh attestation verify` (no extra install on the operator's box). Also
+  removed: the `sigstore-pin-check` CI job (it watched four actions; only one
+  remains and a normal SHA-pin review covers it), the `cosign 2.6.3+`
+  prerequisite in `docs/RELEASING.md`, and the `cosign verify-blob` pre-flight
+  recipe (replaced with `gh attestation verify`). The SLSA provenance bundles
+  already published to Rekor for v1.0–v1.6 stay there forever; the strip only
+  changes what `vX.Y.Z` going forward will produce.
+
 - Byte-equal reproducible build pipeline (`reproducible-verify.yml`,
   `docs/REPRODUCIBLE-BUILD.md`, `EXPECTED_SHA256` env, `SOURCE_DATE_EPOCH`
   derivation, `RUSTFLAGS=--remap-path-prefix=...`, `CARGO_INCREMENTAL=0`,

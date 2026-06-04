@@ -184,19 +184,3 @@ jobs:
             echo "       The bip322 crate is pre-1.0; minor changes can break the adapter at shared/src/bip322/mod.rs." >&2
             exit 1
           fi
-
-  sigstore-pin-check:
-    name: sigstore + sbom action SHA-pin check
-    runs-on: ubuntu-latest
-    # Catches a floating tag (@v3, @main) on the sigstore/sbom actions, which
-    # would let upstream silently substitute the action behind a tag move.
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Enforce SHA pin on sigstore + sbom actions
-        run: |
-          set -eu
-          PATTERN='uses:\s*(sigstore/cosign-installer|actions/attest-build-provenance|actions/attest-sbom|anchore/sbom-action)@(?![a-f0-9]{40})'
-          if grep -rnPE "${PATTERN}" .github/workflows/; then
-            echo "ERROR: sigstore/sbom action(s) above lack a 40-hex SHA pin." >&2
-            exit 1
-          fi

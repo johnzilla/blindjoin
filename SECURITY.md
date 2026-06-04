@@ -14,31 +14,20 @@ v1.5 shipped the [external audit charter](docs/AUDIT-CHARTER.md) — in-scope mo
 
 ## Supply-chain status
 
-### Image signatures + attestations
+### Build provenance
 
-Every `ghcr.io/<owner>/blindjoin-{coordinator,client,liquidity-bot}:X.Y.Z` push from a `vX.Y.Z` tag is cosign-signed (keyless OIDC, no maintainer key custody), SLSA v1.0 provenance-attested, and SBOM-attested (SPDX via Syft). Verify against the workflow identity:
-
-```bash
-cosign verify \
-  --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/docker\.yml@refs/tags/v.*' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  ghcr.io/<owner>/blindjoin-<image>:<tag>
-```
-
-cosign pin range: `>= 2.6.3, < 3.0.0`. The "Unverified" badge on the GHCR web UI does not consult Rekor — trust the CLI output, not the badge.
-
-### Release tarball signatures + provenance
-
-Every `blindjoin-linux-amd64.tar.gz` Release archive is cosign-signed (bundle: `blindjoin-linux-amd64.tar.gz.bundle`) and SLSA v1.0 provenance-attested (bundle: `blindjoin-linux-amd64.tar.gz.sigstore`). Verify:
+Every `ghcr.io/<owner>/blindjoin-{coordinator,client,liquidity-bot}:X.Y.Z` image and every `blindjoin-linux-amd64.tar.gz` Release tarball from a `vX.Y.Z` tag carries a SLSA v1.0 build provenance attestation — keyless OIDC via Sigstore (no maintainer key custody), bound to the workflow identity that produced the artifact. Verify with the `gh` CLI; no extra install required:
 
 ```bash
-cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle \
-  --certificate-identity-regexp 'https://github.com/<owner>/blindjoin/\.github/workflows/release\.yml@refs/tags/v.*' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  blindjoin-linux-amd64.tar.gz
+# Image
+gh attestation verify oci://ghcr.io/<owner>/blindjoin-<image>:<tag> --owner <owner>
+
+# Tarball
+gh release download vX.Y.Z --pattern blindjoin-linux-amd64.tar.gz
+gh attestation verify blindjoin-linux-amd64.tar.gz --owner <owner>
 ```
 
-No PGP detached signature; Sigstore reachability is required.
+Sigstore reachability is required at verify time. The "Unverified" badge on the GHCR web UI does not consult Rekor — trust the CLI output, not the badge. No PGP detached signature; no separate cosign signature; no SBOM attestation.
 
 ### Base-image digests
 
