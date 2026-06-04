@@ -14,6 +14,20 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-06-03
+
+### Simplification milestone
+
+Net: -7 GitHub Actions, -1 docs file, -1 docker-compose file, -1 composite
+action, -1 reproducibility recipe and dispatch verifier, -2 CI guard jobs
+replaced by 1 stricter gate. Operator verify shifts from `cosign verify` to
+`gh attestation verify` (no extra install). Release procedure shrinks from
+a separate `docs/RELEASING.md` runbook to a 3-item pre-tag checklist in
+`CONTRIBUTING.md`, with the two prior-silent foot-guns (2-part tags,
+missing CHANGELOG entry) now hard-failing in CI before any build runs.
+SLSA build provenance via `actions/attest-build-provenance` is the sole
+supply-chain artifact going forward.
+
 ### Added
 
 - `release-gate` job in `release.yml` and `docker.yml`. Runs first on
@@ -29,6 +43,22 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 - `docker.yml` metadata-action publishes `:latest` on every tagged
   release (in addition to `:X.Y.Z` and `:X.Y`).
+- README badge row: "Signed by cosign + SLSA" → "Build provenance: SLSA
+  v1.0" to match the cosign + SBOM strip. The "Reproducible (byte-equal)"
+  badge was already removed alongside the reproducible pipeline.
+- Docs hygiene: PKARR mentions link to <https://github.com/pubky/pkarr>;
+  RFC 9474 mentions link to <https://www.rfc-editor.org/rfc/rfc9474>.
+
+### Fixed
+
+- `append_ban_entry` (`coordinator/src/round/blame.rs`) now calls
+  `sync_all()` after each write, so a ban that returned `Ok(())` to the
+  caller survives the power-loss / kernel-panic / OOM-kill window a
+  solo-VPS operator actually hits. The ban file lives in the
+  `coordinator-data` Docker volume — back it up alongside
+  `coordinator-keys` if you want bans to outlive the host. Surfaced in
+  `SECURITY.md` operating notes.
+- Two intermittent flakes in the integration test suite eliminated.
 
 ### Removed
 

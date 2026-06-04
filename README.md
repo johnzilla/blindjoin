@@ -6,7 +6,7 @@
 [![Rust 1.95](https://img.shields.io/badge/rust-1.95.0-CE412B?logo=rust&logoColor=white)](rust-toolchain.toml)
 [![Bitcoin signet](https://img.shields.io/badge/Bitcoin-signet-F7931A?logo=bitcoin&logoColor=white)](#what-this-does)
 [![Tor: arti](https://img.shields.io/badge/Tor-arti--client-7E4798?logo=torproject&logoColor=white)](https://gitlab.torproject.org/tpo/core/arti)
-[![Signed by cosign + SLSA](https://img.shields.io/badge/signed-cosign%20%2B%20SLSA-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#supply-chain-status)
+[![Build provenance: SLSA v1.0](https://img.shields.io/badge/build_provenance-SLSA_v1.0-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#supply-chain-status)
 
 A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via [PKARR](https://github.com/pubky/pkarr) DHT and all production traffic flows over Tor hidden services.
 
