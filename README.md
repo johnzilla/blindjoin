@@ -57,7 +57,26 @@ The coordinator will start, publish its address to the [PKARR](https://github.co
 
 To get a signet UTXO for the bot, use the [signet faucet](https://signet.bc-2.jp/).
 
-**Running just the coordinator** (your own bitcoind / remote RPC, no bot): use [`docker/docker-compose.coordinator-only.yml`](docker/docker-compose.coordinator-only.yml). Edit the two `REQUIRED` lines (RPC URL + your public `.onion`/host), then `docker compose -f docker/docker-compose.coordinator-only.yml up -d`. Pulls the signed `ghcr.io/johnzilla/blindjoin-coordinator:1.6.0` image — no local build.
+**Running just the coordinator** (your own bitcoind / remote RPC, no bot): one `docker run` against the signed `:latest` image.
+
+```bash
+docker run -d \
+  -e BLINDJOIN__NETWORK__BITCOIN_RPC_URL=http://YOUR_BITCOIND_HOST:38332 \
+  -e BLINDJOIN__NETWORK__BITCOIN_RPC_USER=YOUR_RPC_USER \
+  -e BLINDJOIN__NETWORK__BITCOIN_RPC_PASS=YOUR_RPC_PASS \
+  -e BLINDJOIN__NETWORK__BITCOIN_NETWORK=signet \
+  -e BLINDJOIN__DISCOVERY__COORDINATOR_PUBLIC_ADDR=YOUR_ONION_OR_HOST:8080 \
+  -e BLINDJOIN__COORDINATOR__LISTEN_ADDR=0.0.0.0:8080 \
+  -e BLINDJOIN__DISCOVERY__PKARR_KEY_FILE=/app/keys/coordinator_pkarr.key \
+  -e BLINDJOIN__COORDINATOR__BAN_FILE_PATH=/app/data/ban_list.jsonl \
+  -v coordinator-keys:/app/keys \
+  -v coordinator-data:/app/data \
+  -p 8080:8080 \
+  --restart unless-stopped \
+  ghcr.io/johnzilla/blindjoin-coordinator:latest
+```
+
+Pin `:latest` → `:1.6.0` (or whatever shipped) if you want reproducible deploys. Back up the `coordinator-keys` volume.
 
 ## Privacy Considerations
 

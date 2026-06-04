@@ -14,7 +14,21 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+### Changed
+
+- `docker.yml` metadata-action publishes `:latest` on every tagged
+  release (in addition to `:X.Y.Z` and `:X.Y`).
+
 ### Removed
+
+- `docker/docker-compose.coordinator-only.yml`. The file duplicated
+  ~30 lines of the main compose file's coordinator service definition
+  AND hardcoded the release tag in two places (file + the README
+  paragraph that advertised it), so every release would have silently
+  let the prod-launch example point at a stale image unless someone
+  remembered to bump both. Replaced with a single `docker run` example
+  in the README's Quick Start that uses the new `:latest` tag — no
+  duplicate service definition, no per-release update, no new file.
 
 - `.github/actions/read-base-digests/` composite action, `docker/digests.txt`
   canonical manifest, `.github/CODEOWNERS` file. Base-image sha256 digests
