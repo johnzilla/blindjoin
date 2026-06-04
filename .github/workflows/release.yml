@@ -39,9 +39,35 @@ jobs:
       - name: Run audit
         run: cargo audit
 
+  release-gate:
+    name: Release gate (tag format + CHANGELOG entry)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    # Catches the two silent foot-guns: a 2-part tag (docker/metadata-action
+    # produces zero image tags, build-push then fails late with a confusing
+    # error — v1.0, v1.1, v1.3 all silently failed this way), and a release
+    # tag pushed without moving CHANGELOG.md '[Unreleased]' bullets into a
+    # versioned section.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Enforce vMAJOR.MINOR.PATCH tag and CHANGELOG entry
+        run: |
+          set -eu
+          if ! printf '%s' "${GITHUB_REF_NAME}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: Tag '${GITHUB_REF_NAME}' must match vMAJOR.MINOR.PATCH (e.g. v1.7.0)." >&2
+            echo "       docker/metadata-action silently produces zero image tags for 2-part tags." >&2
+            exit 1
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
+            echo "ERROR: CHANGELOG.md has no '## [${VERSION}]' section for tag ${GITHUB_REF_NAME}." >&2
+            echo "       Move bullets from [Unreleased] into '## [${VERSION}] — YYYY-MM-DD' before pushing." >&2
+            exit 1
+          fi
+
   build:
     name: Build linux-amd64
-    needs: check
+    needs: [check, release-gate]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:

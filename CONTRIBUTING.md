@@ -68,18 +68,18 @@ Cargo's test output uses a small set of literal strings. The table below maps th
 
 ## Tagging releases
 
-Milestone tags must follow strict 3-part semver: `vMAJOR.MINOR.PATCH` (e.g. `v1.3.0`, not `v1.3`).
+Milestone tags must follow strict 3-part semver: `vMAJOR.MINOR.PATCH` (e.g. `v1.3.0`, not `v1.3`). The `release-gate` job in [release.yml](.github/workflows/release.yml) and [docker.yml](.github/workflows/docker.yml) hard-fails any tag that doesn't match — the build never runs. (History: `v1.0`, `v1.1`, `v1.3` all silently produced zero image tags via `docker/metadata-action` before the gate existed.)
 
-**Why:** [.github/workflows/docker.yml](.github/workflows/docker.yml) uses `docker/metadata-action` with `type=semver,pattern={{version}}`, which only matches `vX.Y.Z`. A two-part tag like `v1.3` produces zero image tags, and `docker buildx build --push` then fails with `tag is needed when pushing to registry`. The Docker workflow has silently failed on every two-part tag (`v1.0`, `v1.1`, `v1.3`) and only ever succeeded on `v1.0.0`.
+**Pre-tag checklist:**
 
-**Before tagging:** add a new `## [X.Y.Z] — YYYY-MM-DD` section to [CHANGELOG.md](CHANGELOG.md) and move any unreleased bullets into it. The CHANGELOG is the user-facing release-notes surface; commit it as part of the milestone close, not after the tag.
+1. Move all bullets from `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) into a new `## [X.Y.Z] — YYYY-MM-DD` section. `release-gate` hard-fails if the matching section is missing.
+2. (Optional) Run the base-image digest check (see [§Bumping base-image digests](#bumping-base-image-digests)). Bump in a separate one-line PR before the release tag if upstream has drifted and the changelog warrants the rotation.
+3. **Crate versions in `Cargo.toml` stay at `0.1.0`** — see [SECURITY.md § Release versioning policy](SECURITY.md#release-versioning-policy). The git tag is the canonical release identifier; the four workspace crates are unpublished.
 
-**Crate versions in `Cargo.toml` stay at `0.1.0`** by policy — see [SECURITY.md § Release versioning policy](SECURITY.md#release-versioning-policy). The git tag is the canonical release identifier; the four workspace crates are unpublished, so bumping their `version =` lines would be churn with no consumer benefit.
-
-**Tagging a milestone close:**
+**Cut the tag:**
 
 ```bash
-git tag -a v1.X.0 -m "v1.X <Milestone name>
+git tag -s v1.X.0 -m "v1.X <Milestone name>
 
 <one-line delivered summary>
 
@@ -93,7 +93,7 @@ git push origin v1.X.0
 
 The milestone *name* in planning docs (e.g. `v1.3 Test Infrastructure & Operational Hardening`) is independent of the git tag — docs may stay `v1.X` for readability while the tag is `v1.X.0`.
 
-Once `release.yml` finishes, the maintainer-side procedure (pre-flight `cosign verify-blob` against the published assets) lives in [`docs/RELEASING.md`](docs/RELEASING.md). Most contributors don't need it; it's the release-engineering manual for the maintainer.
+After `release.yml` and `docker.yml` complete green in the Actions tab, the release is published. CI's `actions/attest-build-provenance` step IS the supply-chain claim — no local pre-flight verify needed. If something goes wrong after tag push, `gh release delete vX.Y.Z` and re-cut after the fix.
 
 ## Bumping base-image digests
 

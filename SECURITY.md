@@ -31,7 +31,7 @@ Sigstore reachability is required at verify time. The "Unverified" badge on the 
 
 ### Base-image digests
 
-`docker/Dockerfile` pins both base images by sha256 digest in its `FROM` lines: `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. To check for upstream drift before a release, run `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'` against each (see `docs/RELEASING.md`); update the digest in the matching `FROM` line via a one-line PR.
+`docker/Dockerfile` pins both base images by sha256 digest in its `FROM` lines: `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. To check for upstream drift before a release, run `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'` against each (see [CONTRIBUTING.md §Bumping base-image digests](CONTRIBUTING.md#bumping-base-image-digests)); update the digest in the matching `FROM` line via a one-line PR.
 
 For the highest assurance, build from source — `Cargo.lock`, `rust-toolchain.toml`, and `docker/Dockerfile` are all committed; see [README § Build from Source](README.md#build-from-source).
 

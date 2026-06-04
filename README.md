@@ -248,7 +248,7 @@ The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare 
 
 Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
 
-**Base-image digest pinning:** `docker/Dockerfile` pins both base images (`debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`) by sha256 digest directly in the `FROM` lines. To check for upstream drift, run the two `docker buildx imagetools inspect` commands documented in [docs/RELEASING.md](docs/RELEASING.md); bumps land via a one-line PR (see [CONTRIBUTING.md §Bumping base-image digests](CONTRIBUTING.md#bumping-base-image-digests)).
+**Base-image digest pinning:** `docker/Dockerfile` pins both base images (`debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`) by sha256 digest directly in the `FROM` lines. To check for upstream drift and bump via a one-line PR, see [CONTRIBUTING.md §Bumping base-image digests](CONTRIBUTING.md#bumping-base-image-digests).
 
 For branch protection setup, see [docs/branch-protection.md](docs/branch-protection.md).
 

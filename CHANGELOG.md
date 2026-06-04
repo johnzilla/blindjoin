@@ -14,6 +14,17 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+### Added
+
+- `release-gate` job in `release.yml` and `docker.yml`. Runs first on
+  any `push: tags: ['v*']` and hard-fails the build with a readable
+  error message if (a) the tag isn't `vMAJOR.MINOR.PATCH` 3-part semver
+  — `docker/metadata-action` silently produces zero image tags for
+  2-part tags, so `v1.0`/`v1.1`/`v1.3` all silently failed before this
+  gate existed — or (b) `CHANGELOG.md` has no `## [X.Y.Z]` section for
+  the tag being pushed. Converts two prose foot-guns into runtime
+  failures at the point of the mistake.
+
 ### Changed
 
 - `docker.yml` metadata-action publishes `:latest` on every tagged
@@ -40,6 +51,22 @@ threat-model treatment of v1.4 / v1.5 invariants see
   `required_approving_review_count: 1` (see docs/branch-protection.md);
   the now-empty `require_code_owner_review: true` setting can be toggled
   off in the GitHub UI at the maintainer's leisure.
+
+- `docs/RELEASING.md`. After the cosign + SBOM strip, the file had four
+  remaining items: a `gh 2.50+` prereq, "watch release.yml until green,"
+  a local `gh attestation verify` pre-flight, and a manual base-image
+  digest inspect. The pre-flight re-confirmed what CI's
+  `attest-build-provenance` step had already attested (same Rekor entry,
+  same signer); the digest inspect already lives in CONTRIBUTING.md's
+  `§Bumping base-image digests`; "watch CI" doesn't need a paragraph.
+  The "remember to do X" prose was the same shape as the `[CONTRIBUTING.md:96]`
+  cosign-verify-blob reference that survived the cosign strip — a
+  load-bearing markdown sentence is a future drift opportunity.
+  Surviving items folded into CONTRIBUTING.md `§Tagging releases` as a
+  3-item pre-tag checklist; README.md and SECURITY.md base-image refs
+  re-pointed at CONTRIBUTING.md (the actual home of that procedure).
+  The tag-format and CHANGELOG-entry foot-guns the prose tried to
+  prevent now hard-fail in CI via the `release-gate` job.
 
 - Cosign blob/image signing (`sigstore/cosign-installer` step, `cosign sign-blob`
   + `cosign sign` steps, `blindjoin-linux-amd64.tar.gz.bundle` Release asset, the
