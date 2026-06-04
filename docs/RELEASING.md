@@ -2,7 +2,7 @@
 
 Maintainer-side procedure for cutting a release. Contributors don't need this — see [CONTRIBUTING.md](../CONTRIBUTING.md) for the contributor manual.
 
-This file documents the post-CI portion of the release cycle: pre-flight verifying the CI-built artifacts, and capturing the reproducibility baseline before the first tag in a new toolchain/runner generation.
+This file documents the post-CI portion of the release cycle: pre-flight verifying the CI-built artifacts.
 
 ## Prerequisites
 
@@ -55,11 +55,3 @@ docker buildx imagetools inspect lukemathwalker/cargo-chef:latest-rust-1 --forma
 
 If either differs from the corresponding `@sha256:...` in `docker/digests.txt`, decide whether to bump (security backport → yes; arbitrary metadata churn → no), then update the manifest in a single-line PR (CODEOWNERS-gated; do not auto-merge).
 
-## Reproducibility baseline (first release after a Rust/runner bump)
-
-Before tagging, dispatch `.github/workflows/reproducible-verify.yml` from the Actions tab. The first run will fail because the workflow's `EXPECTED_SHA256` env still holds `<TBD-v1.6.0-cut>`. Copy the `Rebuilt locally:` sha256 from the log into:
-
-1. The `EXPECTED_SHA256:` env in `.github/workflows/reproducible-verify.yml`.
-2. The `v1.6.0` row in `docs/REPRODUCIBLE-BUILD.md` §Expected sha256sum.
-
-Commit, then tag.

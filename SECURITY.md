@@ -40,17 +40,13 @@ cosign verify-blob --bundle blindjoin-linux-amd64.tar.gz.bundle \
 
 No PGP detached signature; Sigstore reachability is required.
 
-### Reproducibility
-
-Release tarballs rebuild byte-for-byte from source on `ubuntu-24.04`. Native recipe (exact byte match) and a Docker recipe (verify from any host — macOS, NixOS, Windows-WSL, whatever) + expected sha256 per tag: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
-
 ### Base-image digests
 
 `docker/Dockerfile` derives from `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. Both are digest-pinned in [`docker/digests.txt`](docker/digests.txt) and threaded into `docker buildx --build-arg` via [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/). Bumps go through PR review — `docker/digests.txt` is CODEOWNERS-gated.
 
 To check upstream drift before a release, run `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'` against each entry in `docker/digests.txt` (see `docs/RELEASING.md`).
 
-For the highest assurance, build from source per [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md) and compare your sha256sum against the per-tag table.
+For the highest assurance, build from source — `Cargo.lock`, `rust-toolchain.toml`, and `docker/Dockerfile` are all committed; see [README § Build from Source](README.md#build-from-source).
 
 ## Operating notes
 

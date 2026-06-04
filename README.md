@@ -7,7 +7,6 @@
 [![Bitcoin signet](https://img.shields.io/badge/Bitcoin-signet-F7931A?logo=bitcoin&logoColor=white)](#what-this-does)
 [![Tor: arti](https://img.shields.io/badge/Tor-arti--client-7E4798?logo=torproject&logoColor=white)](https://gitlab.torproject.org/tpo/core/arti)
 [![Signed by cosign + SLSA](https://img.shields.io/badge/signed-cosign%20%2B%20SLSA-2E7D32?logo=sigstore&logoColor=white)](SECURITY.md#supply-chain-status)
-[![Reproducible build](https://img.shields.io/badge/reproducible-byte--equal-success)](docs/REPRODUCIBLE-BUILD.md)
 
 A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind signatures ([RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)) so the coordinator cryptographically cannot link transaction inputs to outputs. Coordinators are discoverable via [PKARR](https://github.com/pubky/pkarr) DHT and all production traffic flows over Tor hidden services.
 
@@ -29,8 +28,7 @@ As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of
 
 ## Documentation
 
-- **[Security policy](SECURITY.md)** — how to report a vulnerability (`johnturner@gmail.com`), audit-readiness status, and the v1.6 supply-chain posture: cosign keyless signing + SLSA provenance + SPDX SBOM on every image and release tarball, base-image digest pinning, and byte-equal reproducible builds.
-- **[Reproducible builds](docs/REPRODUCIBLE-BUILD.md)** — recipe to rebuild `blindjoin-linux-amd64.tar.gz` byte-for-byte from source on `ubuntu-24.04`.
+- **[Security policy](SECURITY.md)** — how to report a vulnerability (`johnturner@gmail.com`), audit-readiness status, and the v1.6 supply-chain posture: cosign keyless signing + SLSA provenance + SPDX SBOM on every image and release tarball, base-image digest pinning.
 - **[Changelog](CHANGELOG.md)** — release notes per milestone, Keep-a-Changelog format.
 - **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.
 - **[Protocol specification (draft)](docs/PROTOCOL.md)** — BIP-style normative spec of the coordinator–client wire protocol. Work-in-progress; review and issue feedback welcome.
@@ -212,7 +210,7 @@ When `--tor` is enabled, the client uses per-phase Tor circuit isolation: input 
 
 Download pre-built binaries from [GitHub Releases](https://github.com/johnzilla/blindjoin/releases) (Linux x86_64). Other platforms: build from source with `cargo build --release`.
 
-Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `ghcr.io/johnzilla/blindjoin-client`, and `ghcr.io/johnzilla/blindjoin-bot`. Every tagged image push (v1.6+) carries a cosign keyless signature, a SLSA v1.0 provenance attestation, and an SPDX SBOM attestation. Release tarballs ship the cosign `.bundle` + SLSA `.sigstore` companion assets and rebuild byte-for-byte from source. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status). Reproducibility recipe: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
+Docker images are also published to `ghcr.io/johnzilla/blindjoin-coordinator`, `ghcr.io/johnzilla/blindjoin-client`, and `ghcr.io/johnzilla/blindjoin-bot`. Every tagged image push (v1.6+) carries a cosign keyless signature, a SLSA v1.0 provenance attestation, and an SPDX SBOM attestation. Release tarballs ship the cosign `.bundle` + SLSA `.sigstore` companion assets. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status).
 
 ## CI/CD
 
@@ -232,8 +230,6 @@ The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare 
 Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
 
 **Base-image digest pinning (v1.6):** Both `release.yml` and `docker.yml` read the canonical digest manifest at [`docker/digests.txt`](docker/digests.txt) automatically via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action — no manual `--build-arg` invocation; a malformed manifest fails the build at the composite-action regex gate. Pre-release drift check is two `docker buildx imagetools inspect` commands documented in [docs/RELEASING.md](docs/RELEASING.md). Bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
-
-**Reproducible builds (v1.6):** `blindjoin-linux-amd64.tar.gz` rebuilds byte-for-byte from source on the pinned `ubuntu-24.04` runner. Recipe + per-tag expected sha256: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md). Verify any release by dispatching [`reproducible-verify.yml`](.github/workflows/reproducible-verify.yml) from the Actions tab.
 
 For branch protection setup, see [docs/branch-protection.md](docs/branch-protection.md).
 
@@ -300,7 +296,6 @@ blindjoin/
       ci.yml                 # PR-triggered test, clippy --all-targets, audit gates + pinned-bitcoind install
       release.yml            # Cross-compiled binary releases (gated on test+clippy; reads docker/digests.txt)
       docker.yml             # Multi-arch Docker image publishing (gated on test+clippy; reads docker/digests.txt)
-      reproducible-verify.yml # On-demand byte-equal rebuild verifier (v1.6)
   .bitcoind-version  # Pinned Bitcoin Core version used by CI's integration test job
   CONTRIBUTING.md    # Local prerequisites + how to run integration tests
   TODO.md            # Open and recently-resolved tech-debt items
@@ -327,7 +322,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 60/min, writes 30/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. All four knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP), so the coordinator deliberately uses `GlobalKeyExtractor`; sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
 
-**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. `cargo audit` blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. `cargo clippy --all-targets` blocks merge on any lint, including in integration-test code. CI's `bitcoind` install (v1.3+) verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, from a SHA-pinned `guix.sigs` commit). v1.6 adds: base-image digest pinning ([`docker/digests.txt`](docker/digests.txt)) threaded into builds via a composite action; cosign keyless OIDC signing + SLSA v1.0 provenance + SPDX SBOM on every ghcr.io image push and on every release tarball; pinned cosign-installer at v3.10.1 (cosign 2.6.3); a `sigstore-pin-check` CI gate that fails the build on a floating sigstore-action tag; and byte-equal reproducible builds for `blindjoin-linux-amd64.tar.gz` on `ubuntu-24.04`. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status). Reproducibility recipe: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md).
+**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. `cargo audit` blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. `cargo clippy --all-targets` blocks merge on any lint, including in integration-test code. CI's `bitcoind` install (v1.3+) verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, from a SHA-pinned `guix.sigs` commit). v1.6 adds: base-image digest pinning ([`docker/digests.txt`](docker/digests.txt)) threaded into builds via a composite action; cosign keyless OIDC signing + SLSA v1.0 provenance + SPDX SBOM on every ghcr.io image push and on every release tarball; pinned cosign-installer at v3.10.1 (cosign 2.6.3); a `sigstore-pin-check` CI gate that fails the build on a floating sigstore-action tag. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status).
 
 **External audit charter (v1.5):** [docs/AUDIT-CHARTER.md](docs/AUDIT-CHARTER.md) enumerates in-scope modules with file:symbol refs, threat models per module, the 9 cross-shape rejection properties locked at v1.4, the v=2 OwnershipProof PSBT handling boundary, the RSA SecretKey zeroization window (RoundSecretKey + bounded lifetime per AUDIT-03), out-of-scope dependencies, residual risks accepted with rationale, and a glossary mapping project terms to plain audit language.
 

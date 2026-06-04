@@ -42,20 +42,12 @@ jobs:
   build:
     name: Build linux-amd64
     needs: check
-    # Pinned runner image (not the rolling alias) so reproducible-verify.yml on
-    # the same pin doesn't false-positive on runner-image rotation.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write       # softprops uploads to the Releases API
       id-token: write       # OIDC for cosign Fulcio cert exchange
       attestations: write   # actions/attest-build-provenance writes to the attestations API
-
-    # Determinism env. SOURCE_DATE_EPOCH is computed at a step below (from the
-    # tagged commit time) — not declared here because YAML-parse is too early.
-    env:
-      RUSTFLAGS: "--remap-path-prefix=${{ github.workspace }}=/build --remap-path-prefix=/home/runner/.cargo=/cargo"
-      CARGO_INCREMENTAL: "0"
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -71,29 +63,15 @@ jobs:
         id: digests
         uses: ./.github/actions/read-base-digests
 
-      # SOURCE_DATE_EPOCH = the tagged commit's committer time. $GITHUB_SHA on a
-      # tag-push IS the tag SHA, so external rebuilders can re-derive this with
-      # `git log -1 --format=%ct v1.6.0` on a fresh clone.
-      - name: Compute SOURCE_DATE_EPOCH
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct $GITHUB_SHA)" >> $GITHUB_ENV
-
       # --locked fails the run on a stale Cargo.lock instead of silently regenerating.
       - name: Build coordinator and client
         run: cargo build --release --locked --bin coordinator --bin client --bin liquidity-bot
 
-      # Deterministic tar+gzip. The five tar flags + `gzip -n` (which strips the
-      # original filename and mtime from the gzip header) are all load-bearing
-      # for byte-equality.
-      - name: Package (deterministic tar + gzip)
+      - name: Package
         run: |
           mkdir -p dist
-          cp target/release/coordinator dist/
-          cp target/release/client dist/
-          cp target/release/liquidity-bot dist/
-          tar --sort=name --owner=0 --group=0 --numeric-owner \
-              --mtime="@${SOURCE_DATE_EPOCH}" \
-              -cf - -C dist . \
-            | gzip -n > blindjoin-linux-amd64.tar.gz
+          cp target/release/coordinator target/release/client target/release/liquidity-bot dist/
+          tar czf blindjoin-linux-amd64.tar.gz -C dist .
           sha256sum blindjoin-linux-amd64.tar.gz > blindjoin-linux-amd64.tar.gz.sha256
 
       # cosign-installer v3.10.1 is the last v3.x; v4.x mandates cosign 3.x which

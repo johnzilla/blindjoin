@@ -14,6 +14,24 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+### Removed
+
+- Byte-equal reproducible build pipeline (`reproducible-verify.yml`,
+  `docs/REPRODUCIBLE-BUILD.md`, `EXPECTED_SHA256` env, `SOURCE_DATE_EPOCH`
+  derivation, `RUSTFLAGS=--remap-path-prefix=...`, `CARGO_INCREMENTAL=0`,
+  deterministic 5-flag tar + `gzip -n`, `ubuntu-24.04` build-job pin). For
+  a solo MIT project the cosign + SLSA provenance + committed
+  `Cargo.lock` / `rust-toolchain.toml` / `Dockerfile` already cover the
+  "this binary came from the official tagged workflow" question; byte-
+  equality only catches a Sigstore-compromise scenario that isn't worth
+  the ongoing fragility cost (every base-image rotation, Rust bump, or
+  runner change is a potential divergence to debug). Anyone who wants to
+  rebuild can still do so from source — see README §Build from Source.
+  `cargo build --release --locked` (catches a stale `Cargo.lock`),
+  `[profile.release] strip = "symbols"` (binary size), and
+  `rust-toolchain.toml` (dev convenience) all stay. release.yml build
+  job switched from `ubuntu-24.04` → `ubuntu-latest`.
+
 ## [1.6.0] — 2026-06-03
 
 ### Supply-chain attestation
