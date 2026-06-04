@@ -229,7 +229,7 @@ The `cargo audit` step uses [`.cargo/audit.toml`](.cargo/audit.toml) to declare 
 
 Release and Docker workflows also run test+clippy as a prerequisite before building. All GitHub Actions are pinned to immutable commit SHAs. Release archives include SHA-256 checksums.
 
-**Base-image digest pinning (v1.6):** Both `release.yml` and `docker.yml` read the canonical digest manifest at [`docker/digests.txt`](docker/digests.txt) automatically via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action — no manual `--build-arg` invocation; a malformed manifest fails the build at the composite-action regex gate. Pre-release drift check is two `docker buildx imagetools inspect` commands documented in [docs/RELEASING.md](docs/RELEASING.md). Bumps land via a human-reviewed PR gated by [`.github/CODEOWNERS`](.github/CODEOWNERS).
+**Base-image digest pinning:** `docker/Dockerfile` pins both base images (`debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`) by sha256 digest directly in the `FROM` lines. To check for upstream drift, run the two `docker buildx imagetools inspect` commands documented in [docs/RELEASING.md](docs/RELEASING.md); bumps land via a one-line PR (see [CONTRIBUTING.md §Bumping base-image digests](CONTRIBUTING.md#bumping-base-image-digests)).
 
 For branch protection setup, see [docs/branch-protection.md](docs/branch-protection.md).
 
@@ -288,14 +288,12 @@ blindjoin/
   .cargo/
     audit.toml       # Declared residual risks (each ignore documented inline)
   .github/
-    CODEOWNERS       # Maps docker/digests.txt + .github/actions/read-base-digests/** to maintainer (Phase 22)
     actions/
-      read-base-digests/  # Composite action: parses docker/digests.txt with fail-fast regex contract (Phase 22)
       install-bitcoind/   # Composite action: pinned bitcoind install with PGP verification
     workflows/
       ci.yml                 # PR-triggered test, clippy --all-targets, audit gates + pinned-bitcoind install
-      release.yml            # Cross-compiled binary releases (gated on test+clippy; reads docker/digests.txt)
-      docker.yml             # Multi-arch Docker image publishing (gated on test+clippy; reads docker/digests.txt)
+      release.yml            # Cross-compiled binary releases (gated on test+clippy)
+      docker.yml             # Multi-arch Docker image publishing (gated on test+clippy)
   .bitcoind-version  # Pinned Bitcoin Core version used by CI's integration test job
   CONTRIBUTING.md    # Local prerequisites + how to run integration tests
   TODO.md            # Open and recently-resolved tech-debt items
@@ -322,7 +320,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 60/min, writes 30/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. All four knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP), so the coordinator deliberately uses `GlobalKeyExtractor`; sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
 
-**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. `cargo audit` blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. `cargo clippy --all-targets` blocks merge on any lint, including in integration-test code. CI's `bitcoind` install (v1.3+) verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, from a SHA-pinned `guix.sigs` commit). v1.6 adds: base-image digest pinning ([`docker/digests.txt`](docker/digests.txt)) threaded into builds via a composite action; cosign keyless OIDC signing + SLSA v1.0 provenance + SPDX SBOM on every ghcr.io image push and on every release tarball; pinned cosign-installer at v3.10.1 (cosign 2.6.3); a `sigstore-pin-check` CI gate that fails the build on a floating sigstore-action tag. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status).
+**Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. `cargo audit` blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. `cargo clippy --all-targets` blocks merge on any lint, including in integration-test code. CI's `bitcoind` install (v1.3+) verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, from a SHA-pinned `guix.sigs` commit). v1.6 adds: base-image digest pinning (sha256 digests inlined into `docker/Dockerfile`'s `FROM` lines); cosign keyless OIDC signing + SLSA v1.0 provenance + SPDX SBOM on every ghcr.io image push and on every release tarball; pinned cosign-installer at v3.10.1 (cosign 2.6.3); a `sigstore-pin-check` CI gate that fails the build on a floating sigstore-action tag. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status).
 
 **External audit charter (v1.5):** [docs/AUDIT-CHARTER.md](docs/AUDIT-CHARTER.md) enumerates in-scope modules with file:symbol refs, threat models per module, the 9 cross-shape rejection properties locked at v1.4, the v=2 OwnershipProof PSBT handling boundary, the RSA SecretKey zeroization window (RoundSecretKey + bounded lifetime per AUDIT-03), out-of-scope dependencies, residual risks accepted with rationale, and a glossary mapping project terms to plain audit language.
 

@@ -1,8 +1,0 @@
-# Phase 22 (v1.6) supply-chain gate. Per .planning/research/PITFALLS.md §11
-# and SECURITY.md §Supply-chain status, the canonical base-image digest
-# manifest and the parser that reads it both require maintainer approval
-# on every PR that touches them. Branch protection on `main` enforcing
-# CODEOWNERS approval is the structural mechanism that prevents
-# auto-merge bots from bypassing human review.
-docker/digests.txt                         @johnzilla
-.github/actions/read-base-digests/**       @johnzilla

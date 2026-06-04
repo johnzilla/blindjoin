@@ -58,11 +58,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
-      # Reads docker/digests.txt; exits 1 if missing or malformed.
-      - name: Read canonical base-image digests
-        id: digests
-        uses: ./.github/actions/read-base-digests
-
       # --locked fails the run on a stale Cargo.lock instead of silently regenerating.
       - name: Build coordinator and client
         run: cargo build --release --locked --bin coordinator --bin client --bin liquidity-bot

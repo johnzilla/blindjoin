@@ -1,38 +1,14 @@
 # docker/Dockerfile
 # Single multi-stage build for all binaries using cargo-chef for layer caching.
 #
-# Supply-chain pinning (P0-2/3, v1.5 release-readiness):
-#   The two base image references below are ARG-overridable so a release build
-#   can pin to a digest without editing the Dockerfile. The defaults are
-#   floating tags for developer ergonomics; tagged-release CI MUST override
-#   both ARGs with a digest-form reference.
-#
-#   Release procedure (until cosign attestations land in v1.6):
-#     1. On a clean runner, run:
-#          docker pull debian:bookworm-slim
-#          docker inspect --format='{{index .RepoDigests 0}}' debian:bookworm-slim
-#          docker pull lukemathwalker/cargo-chef:latest-rust-1
-#          docker inspect --format='{{index .RepoDigests 0}}' lukemathwalker/cargo-chef:latest-rust-1
-#     2. Record the resulting `image@sha256:HEX` strings.
-#     3. Pass them to `docker build`:
-#          docker build \
-#            --build-arg DEBIAN_REF=debian@sha256:<HEX> \
-#            --build-arg CARGO_CHEF_REF=lukemathwalker/cargo-chef@sha256:<HEX> \
-#            -f docker/Dockerfile -t blindjoin-coordinator:1.5.0 .
-#     4. The published image digest is then a function of the build inputs +
-#        the pinned base digests; an independent rebuilder using the same
-#        ARGs on a clean toolchain produces byte-identical layers down to
-#        the cargo-chef stage.
-#
-#   The v1.6 supply-chain milestone (see SECURITY.md § Supply-chain status)
-#   will: (a) automate the digest refresh + drift check via CI; (b) emit
-#   cosign attestations on the published image; (c) publish reproducible-
-#   build instructions so anyone can verify the digest matches source.
+# Base images are pinned by sha256 digest below. To bump:
+#   docker buildx imagetools inspect debian:bookworm-slim                    --format '{{.Manifest.Digest}}'
+#   docker buildx imagetools inspect lukemathwalker/cargo-chef:latest-rust-1 --format '{{.Manifest.Digest}}'
+# Replace the digest portion of the matching FROM line below with the new
+# sha256:HEX value. One bump per PR; see CONTRIBUTING.md §Bumping base-image
+# digests.
 
-ARG CARGO_CHEF_REF=lukemathwalker/cargo-chef:latest-rust-1
-ARG DEBIAN_REF=debian:bookworm-slim
-
-FROM ${CARGO_CHEF_REF} AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1@sha256:e606721f52d95169364bf39cae726a94ed8b397625011ccfaa8340db488b823b AS chef
 WORKDIR /app
 
 FROM chef AS planner
@@ -45,7 +21,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release --bin coordinator --bin client --bin liquidity-bot
 
-FROM ${DEBIAN_REF} AS runtime-base
+FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS runtime-base
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \

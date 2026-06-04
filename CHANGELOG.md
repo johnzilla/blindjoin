@@ -16,6 +16,17 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ### Removed
 
+- `.github/actions/read-base-digests/` composite action, `docker/digests.txt`
+  canonical manifest, `.github/CODEOWNERS` file. Base-image sha256 digests
+  now live inline in `docker/Dockerfile`'s two `FROM` lines (one image per
+  PR to bump). The composite action's strict regex parser, 7-step contract,
+  "Refusing to build without a valid manifest" auditor-pose error strings,
+  and dual-source-of-truth between digests.txt + the Dockerfile ARGs all
+  went with it. Outside-PR review is still gated by the `main` ruleset's
+  `required_approving_review_count: 1` (see docs/branch-protection.md);
+  the now-empty `require_code_owner_review: true` setting can be toggled
+  off in the GitHub UI at the maintainer's leisure.
+
 - Byte-equal reproducible build pipeline (`reproducible-verify.yml`,
   `docs/REPRODUCIBLE-BUILD.md`, `EXPECTED_SHA256` env, `SOURCE_DATE_EPOCH`
   derivation, `RUSTFLAGS=--remap-path-prefix=...`, `CARGO_INCREMENTAL=0`,

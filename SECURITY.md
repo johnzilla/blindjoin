@@ -42,9 +42,7 @@ No PGP detached signature; Sigstore reachability is required.
 
 ### Base-image digests
 
-`docker/Dockerfile` derives from `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. Both are digest-pinned in [`docker/digests.txt`](docker/digests.txt) and threaded into `docker buildx --build-arg` via [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/). Bumps go through PR review — `docker/digests.txt` is CODEOWNERS-gated.
-
-To check upstream drift before a release, run `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'` against each entry in `docker/digests.txt` (see `docs/RELEASING.md`).
+`docker/Dockerfile` pins both base images by sha256 digest in its `FROM` lines: `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. To check for upstream drift before a release, run `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'` against each (see `docs/RELEASING.md`); update the digest in the matching `FROM` line via a one-line PR.
 
 For the highest assurance, build from source — `Cargo.lock`, `rust-toolchain.toml`, and `docker/Dockerfile` are all committed; see [README § Build from Source](README.md#build-from-source).
 

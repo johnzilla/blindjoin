@@ -46,12 +46,12 @@ Must return `Verified OK`. If not, `gh release delete vX.Y.Z`, fix, re-tag.
 
 ## Base-image digest check (before a release)
 
-Before tagging, confirm the digests in `docker/digests.txt` still match upstream. Two commands:
+Before tagging, confirm the digests pinned in `docker/Dockerfile`'s two `FROM` lines still match upstream:
 
 ```bash
 docker buildx imagetools inspect debian:bookworm-slim                    --format '{{.Manifest.Digest}}'
 docker buildx imagetools inspect lukemathwalker/cargo-chef:latest-rust-1 --format '{{.Manifest.Digest}}'
 ```
 
-If either differs from the corresponding `@sha256:...` in `docker/digests.txt`, decide whether to bump (security backport → yes; arbitrary metadata churn → no), then update the manifest in a single-line PR (CODEOWNERS-gated; do not auto-merge).
+If either differs from the matching `@sha256:...` in `docker/Dockerfile`, decide whether to bump (security backport → yes; arbitrary metadata churn → no), then update the digest portion of the relevant `FROM` line in a one-line PR.
 

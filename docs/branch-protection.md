@@ -6,29 +6,20 @@ programmatic ruleset configuration from within a workflow run.
 
 ## Active rulesets
 
-### `main` (id `17136873`) — v1.6 CODEOWNERS gate
+### `main` (id `17136873`) — outside-PR approval gate
 
-The Phase 22 supply-chain gate. Targets `~DEFAULT_BRANCH` only.
+Targets `~DEFAULT_BRANCH` only.
 
 | Rule | Setting |
 |---|---|
-| `pull_request` | `require_code_owner_review: true`, `required_approving_review_count: 1`, `dismiss_stale_reviews_on_push: true`, `require_last_push_approval: true` |
+| `pull_request` | `required_approving_review_count: 1`, `dismiss_stale_reviews_on_push: true`, `require_last_push_approval: true` |
 | `deletion` | restrict deletion of `main` |
 | `non_fast_forward` | block force pushes |
 | Bypass actors | `RepositoryRole admin (id 5), bypass_mode: always` |
 
-When an outside contributor opens a PR touching [`docker/digests.txt`](../docker/digests.txt)
-or [`.github/actions/read-base-digests/`](../.github/actions/read-base-digests/),
-the [`.github/CODEOWNERS`](../.github/CODEOWNERS) rule requires the maintainer to
-approve before merge. There is no way for the contributor to self-approve.
+The `required_approving_review_count: 1` rule means an outside contributor (PR from a fork) cannot merge without the maintainer's approval. The admin bypass lets the solo maintainer push directly to `main` and self-merge without waiting on their own approval. If blindjoin ever gains a second active maintainer, drop the bypass and the gate enforces for everyone.
 
-The admin bypass (`bypass_mode: always`) means the solo maintainer can push
-directly to `main` and self-merge PRs without waiting for code-owner approval.
-This is a deliberate trade-off documented in
-[SECURITY.md §Supply-chain status](../SECURITY.md#supply-chain-status):
-the gate exists to defend against unreviewed outside contributions, not to
-slow the solo maintainer down. If blindjoin gains a second active maintainer,
-the bypass actor should be removed and the gate re-enforced for everyone.
+The previous `require_code_owner_review: true` setting + `CODEOWNERS` file gated specific paths (`docker/digests.txt` + the read-base-digests composite action). Both were removed when base-image digests moved into `docker/Dockerfile`'s `FROM` lines directly. The setting can be toggled off in the GitHub UI; with no `CODEOWNERS` file it has nothing to evaluate and is a no-op either way.
 
 ### `main-default` (id `15456374`) — baseline protection
 

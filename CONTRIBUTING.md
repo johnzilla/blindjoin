@@ -93,31 +93,15 @@ git push origin v1.X.0
 
 The milestone *name* in planning docs (e.g. `v1.3 Test Infrastructure & Operational Hardening`) is independent of the git tag — docs may stay `v1.X` for readability while the tag is `v1.X.0`.
 
-Once `release.yml` finishes, the maintainer-side procedure (pre-flight `cosign verify-blob` against the published assets, plus the reproducibility baseline capture before the first tag in a new toolchain/runner generation) lives in [`docs/RELEASING.md`](docs/RELEASING.md). Most contributors don't need it; it's the release-engineering manual for the maintainer.
+Once `release.yml` finishes, the maintainer-side procedure (pre-flight `cosign verify-blob` against the published assets) lives in [`docs/RELEASING.md`](docs/RELEASING.md). Most contributors don't need it; it's the release-engineering manual for the maintainer.
 
 ## Bumping base-image digests
 
-`docker/Dockerfile` derives from two upstream base images:
-`debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. Both
-are pinned by digest in [`docker/digests.txt`](docker/digests.txt) — the
-canonical manifest — and consumed by the release pipeline via the composite
-action at [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/).
+`docker/Dockerfile` pins both base images (`debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`) by sha256 digest directly in the `FROM` lines. To bump one:
 
-**When you'd bump:** before cutting a release, the two `docker buildx imagetools inspect` commands in [docs/RELEASING.md](docs/RELEASING.md) have shown drift, OR you want to proactively refresh a base image (e.g. picking up a Debian security backport).
+```bash
+docker buildx imagetools inspect debian:bookworm-slim --format '{{.Manifest.Digest}}'
+# → sha256:<HEX>
+```
 
-**How to bump (per PR):**
-
-1. Resolve the new upstream digest for ONE image:
-   ```bash
-   docker buildx imagetools inspect debian:bookworm-slim \
-     --format '{{.Manifest.Digest}}'
-   # → sha256:<HEX>
-   ```
-2. Update the matching line in `docker/digests.txt` to `<image>:<tag>@sha256:<HEX>`. One image per PR — bump-both-at-once is harder to review.
-3. Open a PR. Wait for CODEOWNERS approval — **do not auto-merge**. A compromised upstream base image (xz utils, 2024; event-stream, 2018) would otherwise leak into releases.
-
-**What if the regex check fails?** The composite action validates each
-line of `docker/digests.txt` against
-`^[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+@sha256:[a-f0-9]{64}$` before any build
-step runs. A malformed line fails the gate with an explicit message
-referencing this section. Fix the line shape and push again.
+Replace the digest portion of the matching `FROM` line in `docker/Dockerfile` with the new value. One image per PR; don't combine with unrelated changes. A compromised upstream base image (xz utils, 2024; event-stream, 2018) would otherwise leak into releases — review the upstream changelog before bumping.

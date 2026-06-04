@@ -1,8 +1,0 @@
-# Canonical base-image digest manifest for docker/Dockerfile.
-# Bump only via a PR that has been reviewed by a human (CODEOWNERS-gated).
-# See SECURITY.md §Supply-chain status > Base-image digests.
-# Parsed by .github/actions/read-base-digests/action.yml — exact line shape
-# is contract: <image>:<tag>@sha256:<HEX>, one per line, comments + blanks
-# allowed.
-debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
-lukemathwalker/cargo-chef:latest-rust-1@sha256:e606721f52d95169364bf39cae726a94ed8b397625011ccfaa8340db488b823b
