@@ -65,18 +65,16 @@ pub fn register_output_logic(
         });
     }
 
-    // 2. Replay check (PROTO-04)
-    if redeemed.contains(token_msg) {
-        return Err(ApiError {
-            code: ErrorCode::TokenAlreadyUsed,
-            message: "Token already redeemed".into(),
-            round_id: None,
-        });
-    }
-
-    // 3. RSA signature verification
+    // 2. RSA signature verification (PROTO-05)
     // RSABSSA-SHA384-PSS-Randomized (RFC 9474 §3.3.2): verify requires msg_randomizer.
     // The client provides this from BlindingResult.msg_randomizer in OutputRegRequest.
+    //
+    // MUST run before the replay check below. If replay ran first, an unauthenticated
+    // caller who guesses a candidate token_msg (= SHA-256(prefix || output_script ||
+    // amount)) would get a distinguishable TokenAlreadyUsed vs InvalidToken response,
+    // turning this endpoint into a pre-broadcast "is output X already redeemed in this
+    // round?" oracle. Verifying the signature first means only a caller holding a
+    // genuine coordinator-issued token reaches the replay check.
     let sig = Signature(sig_bytes.to_vec());
     pk.verify(&sig, msg_randomizer, token_msg.as_slice())
         .map_err(|_| ApiError {
@@ -84,6 +82,15 @@ pub fn register_output_logic(
             message: "Token signature verification failed".into(),
             round_id: None,
         })?;
+
+    // 3. Replay check (PROTO-04)
+    if redeemed.contains(token_msg) {
+        return Err(ApiError {
+            code: ErrorCode::TokenAlreadyUsed,
+            message: "Token already redeemed".into(),
+            round_id: None,
+        });
+    }
 
     // 4. Mark token as redeemed
     redeemed.insert(*token_msg);
@@ -178,6 +185,33 @@ mod tests {
         assert!(
             matches!(result.unwrap_err().code, ErrorCode::InvalidToken),
             "Must return INVALID_TOKEN"
+        );
+    }
+
+    /// Redemption-oracle regression: an invalid signature on a token_msg that is
+    /// ALSO already in the redeemed set must return InvalidToken, NOT
+    /// TokenAlreadyUsed. If the replay check ran before signature verification, a
+    /// caller who merely guessed a candidate token_msg (= SHA-256(prefix ||
+    /// output_script || amount)) could distinguish "already redeemed in this round"
+    /// from "not redeemed" without holding a valid token — a pre-broadcast oracle
+    /// over the secret output set. Verifying the signature first closes it: a
+    /// guesser without a coordinator-issued signature always gets InvalidToken,
+    /// learning nothing about redemption state.
+    #[test]
+    fn output_reg_verifies_signature_before_replay_check() {
+        let signer = RsaBlindSigner::generate().unwrap();
+        let denom = 1_000_000u64;
+        let (msg, _, randomizer) = make_valid_token_sig(&signer, denom);
+        // msg is in the redeemed set AND the signature is bogus.
+        let mut redeemed = std::collections::HashSet::from([msg]);
+        let bad_sig = vec![0xde, 0xad, 0xbe, 0xef];
+        let result = register_output_logic(
+            &signer.public_key, &mut redeemed, &msg, &bad_sig, randomizer, denom, denom,
+        );
+        assert!(result.is_err());
+        assert!(
+            matches!(result.unwrap_err().code, ErrorCode::InvalidToken),
+            "Must return INVALID_TOKEN (signature checked first), not leak redemption state",
         );
     }
 }

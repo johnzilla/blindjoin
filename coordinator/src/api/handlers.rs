@@ -105,10 +105,18 @@ pub async fn post_input(
     // Must run before blinded_token size/decode so a banned UTXO with a malformed
     // token still gets a clear UTXO_BANNED response rather than masking the ban.
     // No UTXO identifiers are logged here (PRIV-02).
+    //
+    // Hash the CANONICAL outpoint (`{txid}:{vout}` from the parsed OutPoint), not
+    // the raw request string. Bans are stored under the canonical form (the
+    // registered_inputs key in input_reg.rs), and parse_outpoint accepts
+    // non-canonical variants like `txid:00` that map to the same OutPoint but
+    // hash differently — a banned griefer could otherwise re-register as `:00`
+    // and evade the ban entirely.
+    let canonical_outpoint = format!("{}:{}", utxo.txid, utxo.vout);
     {
         let ban_guard = state.ban_list.read().await;
         let now = crate::round::blame::now_unix_secs();
-        if ban_guard.is_banned(&req.utxo_outpoint, now) {
+        if ban_guard.is_banned(&canonical_outpoint, now) {
             return Err(api_error(
                 StatusCode::FORBIDDEN,
                 "UTXO_BANNED",

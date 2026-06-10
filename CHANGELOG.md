@@ -14,6 +14,40 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ban evasion via non-canonical outpoint (security).** The input-registration
+  ban check hashed the raw request string, but bans are stored under the
+  canonical `{txid}:{vout}` form. Because `parse_outpoint` accepts non-canonical
+  spellings like `txid:00` (vout 0), a banned griefer could re-register the same
+  UTXO as `:00` and slip past the ban, defeating the blame mechanism at zero
+  cost. The check now hashes the canonical form of the parsed `OutPoint`
+  (`coordinator/src/api/handlers.rs`). Regression test:
+  `parse_outpoint_canonicalizes_leading_zero_vout`.
+- **Pre-broadcast redemption oracle at output registration (security).**
+  `register_output_logic` ran the replay check before RSA signature
+  verification, so an unauthenticated caller who guessed a candidate token
+  message (`SHA-256(prefix || output_script || amount)`) could distinguish
+  `TOKEN_ALREADY_USED` from `INVALID_TOKEN` and learn whether a given output was
+  already redeemed in the live round — before broadcast, when the output set is
+  meant to be secret. Signature verification now runs first
+  (`coordinator/src/round/output_reg.rs`); a caller without a coordinator-issued
+  signature always gets `INVALID_TOKEN` and learns nothing. Regression test:
+  `output_reg_verifies_signature_before_replay_check`.
+
+- **Docker stack started a release coordinator that refused to boot.** The
+  release image builds `--release`, where `tor_mode = false` triggers the WR-04
+  clearnet-refusal guardrail unless `BLINDJOIN_ALLOW_CLEARNET=1` is set. Neither
+  the compose stack nor the README `docker run` one-liner set it, so the
+  coordinator exited at startup and `restart: unless-stopped` looped it — the
+  "five minutes to a round" quickstart could not work. Both deploy paths are
+  clearnet-internal by design (the compose healthcheck and bot reach the
+  coordinator over clearnet; `tor_mode` would create a `.onion` with no clearnet
+  listener and break both), so both now set `BLINDJOIN_ALLOW_CLEARNET=1`. The
+  README one-liner additionally binds its published port to loopback
+  (`127.0.0.1:8080:8080`) and documents the `tor_mode=true` alternative for a
+  built-in arti hidden service.
+
 ## [1.7.0] — 2026-06-03
 
 ### Simplification milestone

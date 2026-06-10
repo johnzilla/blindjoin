@@ -60,6 +60,14 @@ services:
       BLINDJOIN__NETWORK__BITCOIN_RPC_PASS: "blindjoin"
       BLINDJOIN__NETWORK__BITCOIN_NETWORK: "signet"
       BLINDJOIN__COORDINATOR__LISTEN_ADDR: "0.0.0.0:8080"
+      # This stack is clearnet-internal by design: the healthcheck curls
+      # http://localhost:8080/info and the bot reaches http://coordinator:8080,
+      # both of which need a clearnet listener (tor_mode would create a .onion
+      # with NO clearnet listener, breaking both). Release images refuse to start
+      # in clearnet mode unless this flag explicitly acknowledges it (WR-04 guardrail).
+      # For a Tor-fronted production coordinator, set BLINDJOIN__COORDINATOR__TOR_MODE
+      # instead and drop this flag — see README "Run the Coordinator".
+      BLINDJOIN_ALLOW_CLEARNET: "1"
       # PKARR keypair is stored in the named volume at /app/keys
       BLINDJOIN__DISCOVERY__PKARR_KEY_FILE: "/app/keys/coordinator_pkarr.key"
       # Ban list (BLAME-05) persists across coordinator restarts via /app/data volume.

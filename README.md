@@ -57,7 +57,7 @@ The coordinator will start, publish its address to the [PKARR](https://github.co
 
 To get a signet UTXO for the bot, use the [signet faucet](https://signet.bc-2.jp/).
 
-**Running just the coordinator** (your own bitcoind / remote RPC, no bot): one `docker run` against the signed `:latest` image.
+**Running just the coordinator** (your own bitcoind / remote RPC, no bot): one `docker run` against the signed `:latest` image. This runs a clearnet listener bound to loopback, intended to sit behind your own Tor hidden service or reverse proxy (the `COORDINATOR_PUBLIC_ADDR` is what clients discover). `BLINDJOIN_ALLOW_CLEARNET=1` acknowledges the WR-04 guardrail — release builds refuse clearnet otherwise. For a built-in arti hidden service with no external Tor to manage, set `BLINDJOIN__COORDINATOR__TOR_MODE=true` instead and drop the `-p`, `LISTEN_ADDR`, and `ALLOW_CLEARNET` lines (arti creates the `.onion` and publishes it to PKARR automatically).
 
 ```bash
 docker run -d \
@@ -69,14 +69,15 @@ docker run -d \
   -e BLINDJOIN__COORDINATOR__LISTEN_ADDR=0.0.0.0:8080 \
   -e BLINDJOIN__DISCOVERY__PKARR_KEY_FILE=/app/keys/coordinator_pkarr.key \
   -e BLINDJOIN__COORDINATOR__BAN_FILE_PATH=/app/data/ban_list.jsonl \
+  -e BLINDJOIN_ALLOW_CLEARNET=1 \
   -v coordinator-keys:/app/keys \
   -v coordinator-data:/app/data \
-  -p 8080:8080 \
+  -p 127.0.0.1:8080:8080 \
   --restart unless-stopped \
   ghcr.io/johnzilla/blindjoin-coordinator:latest
 ```
 
-Pin `:latest` → `:1.6.0` (or whatever shipped) if you want reproducible deploys. Back up the `coordinator-keys` volume.
+Pin `:latest` → `:1.7.0` (or whatever shipped) if you want reproducible deploys. Back up the `coordinator-keys` volume.
 
 ## Privacy Considerations
 

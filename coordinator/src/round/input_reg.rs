@@ -238,4 +238,27 @@ mod tests {
         assert!(parse_outpoint("notvalid").is_none());
         assert!(parse_outpoint("").is_none());
     }
+
+    /// Ban-evasion regression: non-canonical vout spellings (`:00`, `:000`) parse
+    /// to the SAME OutPoint as `:0`, so the canonical `{txid}:{vout}` form the ban
+    /// check hashes is identical. Before the fix, the handler hashed the raw request
+    /// string, letting a banned griefer re-register as `txid:00` and slip past the
+    /// ban (stored under the canonical `txid:0`). The canonical form closes that.
+    #[test]
+    fn parse_outpoint_canonicalizes_leading_zero_vout() {
+        let txid = "0000000000000000000000000000000000000000000000000000000000000001";
+        let canonical = parse_outpoint(&format!("{txid}:0")).expect("canonical parses");
+        for variant in [format!("{txid}:00"), format!("{txid}:000")] {
+            let parsed = parse_outpoint(&variant)
+                .unwrap_or_else(|| panic!("{variant} should parse"));
+            assert_eq!(parsed, canonical, "{variant} must map to the same OutPoint as :0");
+            // The string the ban check actually hashes is the canonical render of
+            // the parsed OutPoint — identical regardless of input spelling.
+            assert_eq!(
+                format!("{}:{}", parsed.txid, parsed.vout),
+                format!("{}:{}", canonical.txid, canonical.vout),
+                "{variant} must canonicalize to the same ban key as :0",
+            );
+        }
+    }
 }
