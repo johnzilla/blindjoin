@@ -14,6 +14,24 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+### Fixed
+
+- **Intermittent BIP-322 ownership-proof rejection on ECDSA descriptor wallets
+  (security/availability).** The pinned `bip322 = "=0.0.10"` verifier only accepts
+  ECDSA witness signatures of length 71/72 bytes, but bdk's deterministic signer
+  emits ~5% at 70/73 bytes (valid, but rejected as malformed). The WIF client path
+  already grinded signatures to 71/72 via `shared::bip322::sign_simple`; the
+  **descriptor** path (`generate` / `from_descriptor`) signed proofs via bdk with
+  no grinding, so any P2SH-P2WPKH or P2WPKH descriptor-wallet client had a ~5%+
+  chance per round of having its ownership proof silently rejected
+  (`register_input` → 400 `INVALID_PROOF`). ECDSA descriptor proofs now route
+  through `sign_simple` (deriving the index-0 leaf key from the descriptor xprv
+  when it controls the registered UTXO; non-index-0 falls back to bdk). P2TR is
+  unaffected (fixed-length Schnorr). New regression test
+  `descriptor_ecdsa_proofs_grind_to_verifiable_length` (64 seeds); root cause and
+  detection notes in `docs/solutions/bip322-ecdsa-signature-length-flake.md`. This
+  was surfacing as the intermittent `mixed_script_e2e` CI flake.
+
 ### Added
 
 - **Per-input partial-signature verification at submission (security, H3).** The

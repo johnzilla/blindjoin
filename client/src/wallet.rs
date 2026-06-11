@@ -61,6 +61,15 @@ pub struct BdkClientWallet {
     /// being freed-but-uncleared (the classic "heap reuse" leak — a later
     /// allocation in the same process could read the WIF off freed pages).
     wif_key: Option<Zeroizing<String>>,
+    /// External-keychain index-0 leaf secret key for descriptor wallets — present
+    /// ONLY when it actually controls the registered UTXO and the type is ECDSA
+    /// (P2WPKH / P2SH-P2WPKH). It lets `sign_bip322` route ECDSA proofs through the
+    /// grinding-aware `shared::bip322::sign_simple` instead of bdk, which is
+    /// required because the pinned `bip322 = "=0.0.10"` verifier rejects the ~5% of
+    /// ECDSA signatures that serialize to 70/73 bytes (see `derive_external_leaf_sk`).
+    /// `None` for WIF wallets (they use `wif_key`), P2TR (Schnorr — immune),
+    /// watch-only descriptors, or a UTXO that is not the wallet's index-0 address.
+    external_leaf_sk: Option<bitcoin::secp256k1::SecretKey>,
     /// The descriptor's outer-wrapper type. Set at construction; single source of
     /// truth for downstream consumers (Phase 17 17-02 sign dispatcher + 17-03
     /// discovery check). Per D-62 the wallet KNOWS its type — never re-detected
@@ -120,6 +129,8 @@ impl BdkClientWallet {
             utxo_script_pubkey,
             // WR-05: zeroize the WIF heap allocation on wallet drop.
             wif_key: Some(Zeroizing::new(wif.to_string())),
+            // WIF wallets sign via wif_key + sign_simple already (grinded path).
+            external_leaf_sk: None,
             // D-61: from_wif is P2WPKH-only — hardcode here so the cross-phase
             // invariant (tests/integration/full_round.rs) stays bit-exact.
             script_type: ScriptType::P2wpkh,
@@ -256,11 +267,17 @@ impl BdkClientWallet {
         let utxo_script_pubkey = addr.script_pubkey();
 
         let outpoint = parse_outpoint(utxo_outpoint_str)?;
+        // Engage the grinded ECDSA proof path only when the index-0 leaf key
+        // actually controls the registered UTXO (the common case — funding the
+        // wallet's first external address). Otherwise fall back to bdk.
+        let external_leaf_sk = derive_external_leaf_sk(external_desc)
+            .filter(|sk| ecdsa_leaf_controls_script(sk, script_type, &utxo_script_pubkey));
         Ok(Self {
             network,
             utxo_outpoint: outpoint,
             utxo_script_pubkey,
             wif_key: None,
+            external_leaf_sk,
             script_type,
             inner,
             #[cfg(test)]
@@ -393,11 +410,16 @@ impl BdkClientWallet {
         let outpoint = parse_outpoint(utxo_outpoint_str)?;
         let utxo_script_pubkey = first_address.script_pubkey();
 
+        // generate() funds index-0 by construction (the banner above says so), so
+        // the leaf key always controls the UTXO; the filter is belt-and-suspenders.
+        let external_leaf_sk = derive_external_leaf_sk(&external_desc)
+            .filter(|sk| ecdsa_leaf_controls_script(sk, script_type, &utxo_script_pubkey));
         Ok(Self {
             network,
             utxo_outpoint: outpoint,
             utxo_script_pubkey,
             wif_key: None,
+            external_leaf_sk,
             script_type,
             inner,
             #[cfg(test)]
@@ -599,6 +621,45 @@ impl BdkClientWallet {
             });
         }
 
+        // ECDSA descriptor wallets (P2WPKH / P2SH-P2WPKH) whose index-0 leaf key
+        // controls the UTXO: sign the proof through shared::bip322::sign_simple,
+        // which grinds the ECDSA signature to the 71/72-byte length the pinned
+        // bip322 = "=0.0.10" verifier accepts. bdk's deterministic signer (the
+        // fallback below) emits ~5% of signatures at 70/73 bytes — cryptographically
+        // valid but rejected by that verifier, a real intermittent registration
+        // failure for ECDSA descriptor wallets. For in-range signatures sign_simple
+        // is byte-identical to bdk (see shared::bip322 *_matches_bdk_sign tests), so
+        // this only changes behaviour for the ~5% bdk would have gotten rejected.
+        // P2TR stays on the bdk path: Schnorr signatures are a fixed 64 bytes, so
+        // the length constraint never bites.
+        if let Some(leaf_sk) = self.external_leaf_sk {
+            debug_assert!(matches!(
+                self.script_type,
+                ScriptType::P2wpkh | ScriptType::P2shP2wpkh
+            ));
+            let witness = shared::bip322::sign_simple(
+                self.script_type,
+                &self.utxo_script_pubkey,
+                &leaf_sk,
+                message.as_bytes(),
+            )
+            .map_err(|e| anyhow!("shared::bip322::sign_simple (descriptor ECDSA proof): {e}"))?;
+            let final_script_sig = if self.script_type == ScriptType::P2shP2wpkh {
+                let secp = bitcoin::secp256k1::Secp256k1::new();
+                let pubkey = bitcoin::secp256k1::PublicKey::from_secret_key(&secp, &leaf_sk);
+                Some(shared::bip322::p2sh_p2wpkh_final_script_sig(&pubkey))
+            } else {
+                None
+            };
+            let witness_stack = witness.iter().map(|s| s.to_vec()).collect::<Vec<_>>();
+            return Ok(Bip322SignedProof {
+                witness_stack,
+                witness,
+                final_script_sig,
+                script_type: self.script_type,
+            });
+        }
+
         // Descriptor branch — uniform bdk PSBT-sign path per CD-24, covering
         // P2WPKH / P2TR / P2SH-P2WPKH. Mirrors sign_psbt_input above:
         // trust_witness_utxo: true is required because the BIP-322 to_spend
@@ -687,6 +748,58 @@ impl BdkClientWallet {
 /// Type alias for backward compatibility. All callers use ClientWallet.
 pub type ClientWallet = BdkClientWallet;
 
+/// Derive the External-keychain index-0 leaf secret key from a descriptor that
+/// embeds an xprv, e.g. `sh(wpkh(xprv.../49'/0'/0'/0/*))`. Returns `None` for a
+/// watch-only (xpub) descriptor or any parse failure — callers fall back to bdk.
+///
+/// Why this exists: ECDSA BIP-322 proofs must be signed through
+/// `shared::bip322::sign_simple`, which grinds the signature to the 71/72-byte
+/// length the pinned `bip322 = "=0.0.10"` verifier accepts. bdk's deterministic
+/// signer emits ~5% of signatures at 70/73 bytes, which that verifier rejects as
+/// malformed — a real intermittent registration failure for ECDSA descriptor
+/// wallets. Routing through `sign_simple` needs the raw leaf key, derived here.
+///
+/// The descriptor templates are validated at construction to the single-keychain
+/// shapes `wpkh(KEY/path/*)` / `tr(KEY/path/*)` / `sh(wpkh(KEY/path/*))` with no
+/// checksum (`#`) and no multipath (`<…>`), so the substring after the innermost
+/// `(` is exactly `KEY/path/*`.
+fn derive_external_leaf_sk(external_desc: &str) -> Option<bitcoin::secp256k1::SecretKey> {
+    let body = external_desc.trim_end_matches(')');
+    let open = body.rfind('(').map(|i| i + 1).unwrap_or(0);
+    let key_and_path = &body[open..];
+    let slash = key_and_path.find('/')?;
+    let key_str = &key_and_path[..slash];
+    // Concretise the External wildcard `*` to index 0.
+    let path_str = key_and_path[slash + 1..].replace('*', "0");
+    let xpriv = bitcoin::bip32::Xpriv::from_str(key_str).ok()?;
+    let path = bitcoin::bip32::DerivationPath::from_str(&path_str).ok()?;
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    Some(xpriv.derive_priv(&secp, &path).ok()?.private_key)
+}
+
+/// True iff `sk` is the ECDSA key controlling `spk` for `script_type` (P2WPKH or
+/// P2SH-P2WPKH). Always false for P2TR — taproot proofs use a fixed-length Schnorr
+/// signature and stay on the bdk path. Gates the grinded ECDSA proof path so it
+/// engages only when the index-0 leaf key actually controls the registered UTXO.
+fn ecdsa_leaf_controls_script(
+    sk: &bitcoin::secp256k1::SecretKey,
+    script_type: ScriptType,
+    spk: &ScriptBuf,
+) -> bool {
+    use bitcoin::CompressedPublicKey;
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let cpk = CompressedPublicKey(bitcoin::secp256k1::PublicKey::from_secret_key(&secp, sk));
+    let derived = match script_type {
+        ScriptType::P2wpkh => ScriptBuf::new_p2wpkh(&cpk.wpubkey_hash()),
+        ScriptType::P2shP2wpkh => {
+            let redeem = ScriptBuf::new_p2wpkh(&cpk.wpubkey_hash());
+            ScriptBuf::new_p2sh(&redeem.script_hash())
+        }
+        ScriptType::P2tr => return false,
+    };
+    &derived == spk
+}
+
 /// Parse a "txid:vout" outpoint string.
 pub fn parse_outpoint(s: &str) -> Result<OutPoint> {
     let mut parts = s.splitn(2, ':');
@@ -715,6 +828,56 @@ mod tests {
 
     const DUMMY_OUTPOINT: &str =
         "0000000000000000000000000000000000000000000000000000000000000000:0";
+
+    /// Regression for the intermittent "BIP-322 crate verification failed" flake:
+    /// the pinned `bip322 = "=0.0.10"` verifier accepts ECDSA witness signatures of
+    /// length 71/72 only, but bdk's deterministic signer emits ~5% at 70/73 bytes.
+    /// ECDSA descriptor wallets must therefore sign their ownership proof through
+    /// the grinding-aware `sign_simple` path. Iterating fixed seeds: without the
+    /// grinding a reversion would (with overwhelming probability across 64 seeds)
+    /// produce at least one 70/73-byte signature that fails verification here.
+    #[test]
+    fn descriptor_ecdsa_proofs_grind_to_verifiable_length() {
+        use bitcoin::secp256k1::{PublicKey, Secp256k1};
+        use bitcoin::{Address, CompressedPublicKey};
+
+        let net = Network::Regtest;
+        let secp = Secp256k1::new();
+        let message =
+            "blindjoin:round:00000000-0000-0000-0000-000000000000:utxo:\
+             0000000000000000000000000000000000000000000000000000000000000000:0";
+
+        for seed_byte in 0u8..64 {
+            let master = bitcoin::bip32::Xpriv::new_master(net, &[seed_byte.max(1); 32])
+                .expect("master xprv");
+            let desc = format!("sh(wpkh({master}/49'/0'/0'/0/*))");
+            let leaf = derive_external_leaf_sk(&desc).expect("leaf key derivable");
+            let cpk = CompressedPublicKey(PublicKey::from_secret_key(&secp, &leaf));
+            let redeem = ScriptBuf::new_p2wpkh(&cpk.wpubkey_hash());
+            let spk = ScriptBuf::new_p2sh(&redeem.script_hash());
+            let addr = Address::from_script(&spk, net).unwrap().to_string();
+
+            let wallet = BdkClientWallet::from_descriptor(
+                &desc, DUMMY_OUTPOINT, &addr, net, ScriptType::P2shP2wpkh,
+            )
+            .expect("from_descriptor P2SH-P2WPKH");
+            assert!(
+                wallet.external_leaf_sk.is_some(),
+                "seed {seed_byte}: grinded path must engage when the leaf controls the UTXO"
+            );
+
+            let proof = wallet.sign_bip322(message).expect("sign_bip322");
+            let sig_len = proof.witness.nth(0).expect("sig element").len();
+            assert!(
+                sig_len == 71 || sig_len == 72,
+                "seed {seed_byte}: ECDSA sig must grind to 71/72 bytes, got {sig_len}"
+            );
+            shared::bip322::verify_simple(
+                ScriptType::P2shP2wpkh, &spk, &proof.witness, message.as_bytes(), net,
+            )
+            .unwrap_or_else(|e| panic!("seed {seed_byte}: proof failed verification: {e}"));
+        }
+    }
 
     #[test]
     fn generate_p2wpkh_produces_bip84_descriptor() {
