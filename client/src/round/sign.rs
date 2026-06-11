@@ -45,10 +45,18 @@ pub async fn verify_and_sign(
     //    (BIP-143 / BIP-341) commits to it, so a coordinator that lies about it
     //    produces a signature bitcoind rejects on broadcast (DoS, not theft) — safe
     //    to trust here for the fee computation.
+    //
+    //    our_received sums every output paying to ONE OF our scripts (coinjoin
+    //    OR change), counting each output once. Single-key / from_wif wallets
+    //    derive the SAME script for both — so the change output and the
+    //    denomination output share a script_pubkey; summing them separately would
+    //    double-count. Membership-filtering avoids that while still capturing both
+    //    distinct-script (BIP32 descriptor) and shared-script (WIF) wallets.
     let our_input_value = own_input_value(&psbt, &wallet.utxo_outpoint)?;
-    let our_change_value = our_change_value(&psbt, &wallet.change_address().script_pubkey());
+    let change_script = wallet.change_address().script_pubkey();
+    let our_received = our_received_value(&psbt, &[&state.output_script, &change_script]);
     let fee_cap = max_fee_sats.unwrap_or(state.denomination_sats / 10);
-    verify_fee_within_cap(our_input_value, state.denomination_sats, our_change_value, fee_cap)?;
+    verify_fee_within_cap(our_input_value, our_received, fee_cap)?;
 
     // 5. Sign our PSBT input (T-05-04: finds input by outpoint, not index)
     let partial_sig = wallet.sign_psbt_input(&mut psbt)?;
@@ -72,14 +80,16 @@ pub async fn verify_and_sign(
 /// SIGHASH_ALL commits to whatever outputs the PSBT carries and bitcoind validates
 /// the result as a perfectly valid transaction.
 pub fn verify_own_denomination_output(psbt: &Psbt, our_script: &ScriptBuf, denomination_sats: u64) -> Result<()> {
-    let our_output = psbt.unsigned_tx.output.iter()
-        .find(|o| &o.script_pubkey == our_script)
-        .ok_or_else(|| anyhow!("Our output not found in PSBT — refusing to sign"))?;
-    let value = our_output.value.to_sat();
-    if value != denomination_sats {
+    // `.any` rather than `.find().value == denomination`: a single-key wallet
+    // receives BOTH its denomination output and its change at the same script, so
+    // we must confirm that AT LEAST ONE output to our script pays exactly the
+    // denomination (a shorted denomination output then fails this).
+    let has_denomination_output = psbt.unsigned_tx.output.iter()
+        .any(|o| &o.script_pubkey == our_script && o.value.to_sat() == denomination_sats);
+    if !has_denomination_output {
         return Err(anyhow!(
-            "Our output is {value} sats but the denomination is {denomination_sats} — \
-             refusing to sign (coordinator shorted our output)"
+            "No output to our address pays the {denomination_sats}-sat denomination — \
+             refusing to sign (coordinator dropped or shorted our output)"
         ));
     }
     Ok(())
@@ -102,23 +112,22 @@ pub fn verify_anonymity_floor(psbt: &Psbt, denomination_sats: u64, min_anonymity
     Ok(())
 }
 
-/// C1: bound the fee WE pay = our_input − our_denomination_output − our_change_output.
-/// All three are read from the PSBT, so the bound holds even against a coordinator
-/// that lies in its `fee_per_participant_sats` field.
+/// C1: bound the fee WE pay = our_input − our_received, where our_received is the
+/// total value of PSBT outputs paying to one of our scripts. Both are read from
+/// the PSBT, so the bound holds even against a coordinator that lies in its
+/// `fee_per_participant_sats` field.
 fn verify_fee_within_cap(
     our_input_value: u64,
-    denomination_sats: u64,
-    our_change_value: u64,
+    our_received: u64,
     max_fee_sats: u64,
 ) -> Result<()> {
-    let returned_to_us = denomination_sats.saturating_add(our_change_value);
-    if returned_to_us > our_input_value {
+    if our_received > our_input_value {
         return Err(anyhow!(
-            "Our outputs ({returned_to_us} sats) exceed our input ({our_input_value} sats) — \
+            "Our outputs ({our_received} sats) exceed our input ({our_input_value} sats) — \
              refusing to sign"
         ));
     }
-    let our_fee = our_input_value - returned_to_us;
+    let our_fee = our_input_value - our_received;
     if our_fee > max_fee_sats {
         return Err(anyhow!(
             "Our fee share is {our_fee} sats but the cap is {max_fee_sats} — refusing to sign \
@@ -140,11 +149,14 @@ fn own_input_value(psbt: &Psbt, our_outpoint: &OutPoint) -> Result<u64> {
     Ok(witness_utxo.value.to_sat())
 }
 
-/// Sum the values of every PSBT output paying to our change script (0 if the
-/// coordinator dropped our change entirely — which the fee bound then catches).
-fn our_change_value(psbt: &Psbt, our_change_script: &ScriptBuf) -> u64 {
+/// Sum the values of every PSBT output paying to ONE OF `our_scripts`, counting
+/// each output at most once. Passing both our coinjoin and change scripts yields
+/// the total value returned to us — correct whether those scripts are distinct
+/// (BIP32 descriptor wallet) or identical (single-key / from_wif wallet), since a
+/// shared script's outputs are each still counted a single time.
+fn our_received_value(psbt: &Psbt, our_scripts: &[&ScriptBuf]) -> u64 {
     psbt.unsigned_tx.output.iter()
-        .filter(|o| &o.script_pubkey == our_change_script)
+        .filter(|o| our_scripts.contains(&&o.script_pubkey))
         .map(|o| o.value.to_sat())
         .sum()
 }
@@ -207,14 +219,22 @@ mod tests {
         // Coordinator gives us dust and routes the difference elsewhere.
         let psbt = make_psbt(vec![(script(1), 1_000), (script(2), DENOM)], outpoint(0), None);
         let err = verify_own_denomination_output(&psbt, &script(1), DENOM).unwrap_err().to_string();
-        assert!(err.contains("shorted"), "got: {err}");
+        assert!(err.contains("denomination"), "got: {err}");
     }
 
     #[test]
     fn own_output_absent_is_rejected() {
         let psbt = make_psbt(vec![(script(2), DENOM)], outpoint(0), None);
         let err = verify_own_denomination_output(&psbt, &script(1), DENOM).unwrap_err().to_string();
-        assert!(err.contains("not found"), "got: {err}");
+        assert!(err.contains("denomination"), "got: {err}");
+    }
+
+    #[test]
+    fn own_output_passes_when_change_shares_our_script() {
+        // Single-key / from_wif wallet: denomination output AND change output both
+        // pay to our one script. The denomination output must still be recognized.
+        let psbt = make_psbt(vec![(script(1), DENOM), (script(1), 49_000)], outpoint(0), None);
+        assert!(verify_own_denomination_output(&psbt, &script(1), DENOM).is_ok());
     }
 
     // ---- H1: anonymity floor (counted from the PSBT) ----
@@ -243,22 +263,22 @@ mod tests {
 
     #[test]
     fn fee_within_cap_passes() {
-        // input 102_000 − denom 100_000 − change 1_500 = 500 fee, cap 1_000.
-        assert!(verify_fee_within_cap(102_000, DENOM, 1_500, 1_000).is_ok());
+        // input 102_000, received 101_500 (denom 100_000 + change 1_500) → 500 fee, cap 1_000.
+        assert!(verify_fee_within_cap(102_000, 101_500, 1_000).is_ok());
     }
 
     #[test]
     fn fee_change_theft_is_rejected() {
         // Coordinator shrinks our change to dust and pockets the rest:
-        // input 1_000_000 − denom 100_000 − change 1_000 = 899_000 fee, cap 10_000.
-        let err = verify_fee_within_cap(1_000_000, DENOM, 1_000, 10_000).unwrap_err().to_string();
+        // input 1_000_000, received 101_000 (denom 100_000 + change 1_000) → 899_000 fee, cap 10_000.
+        let err = verify_fee_within_cap(1_000_000, 101_000, 10_000).unwrap_err().to_string();
         assert!(err.contains("change theft") || err.contains("fee"), "got: {err}");
     }
 
     #[test]
     fn fee_outputs_exceeding_input_is_rejected() {
-        // denom + change > input — impossible in an honest round.
-        let err = verify_fee_within_cap(100_000, DENOM, 50_000, 10_000).unwrap_err().to_string();
+        // received > input — impossible in an honest round.
+        let err = verify_fee_within_cap(100_000, 150_000, 10_000).unwrap_err().to_string();
         assert!(err.contains("exceed"), "got: {err}");
     }
 
@@ -283,13 +303,29 @@ mod tests {
     }
 
     #[test]
-    fn change_value_sums_matching_outputs_else_zero() {
+    fn received_value_distinct_coinjoin_and_change_scripts() {
+        // BIP32 descriptor wallet: coinjoin (1) and change (5) are different scripts.
+        let coinjoin = script(1);
         let change = script(5);
         let psbt = make_psbt(
-            vec![(script(1), DENOM), (change.clone(), 2_000), (change.clone(), 300)],
+            vec![(coinjoin.clone(), DENOM), (change.clone(), 49_000), (script(9), DENOM)],
             outpoint(0), None,
         );
-        assert_eq!(our_change_value(&psbt, &change), 2_300);
-        assert_eq!(our_change_value(&psbt, &script(8)), 0, "no change output → 0");
+        assert_eq!(our_received_value(&psbt, &[&coinjoin, &change]), DENOM + 49_000);
+        assert_eq!(our_received_value(&psbt, &[&script(8)]), 0, "none of ours → 0");
+    }
+
+    #[test]
+    fn received_value_counts_shared_script_outputs_once_each() {
+        // Single-key / from_wif wallet: coinjoin and change collapse to one script.
+        // Both outputs to that script are summed, each exactly once — passing the
+        // same script twice must not double-count (regression for the CI failure
+        // where denom+change to one script falsely "exceeded" the input).
+        let s = script(1);
+        let psbt = make_psbt(
+            vec![(s.clone(), DENOM), (s.clone(), 49_000), (script(9), DENOM)],
+            outpoint(0), None,
+        );
+        assert_eq!(our_received_value(&psbt, &[&s, &s]), DENOM + 49_000);
     }
 }
