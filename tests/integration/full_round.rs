@@ -137,7 +137,7 @@ async fn full_round_three_clients() {
                     .await
                     .expect("poll for signing");
 
-                round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 100)
+                round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 1, None)
                     .await
                     .expect("verify_and_sign");
             })
@@ -434,7 +434,7 @@ async fn blame_non_signer_timeout() {
                     .expect("poll for signing");
 
                 // verify_and_sign may return Err if round times out before all sigs — acceptable
-                let _ = round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 50)
+                let _ = round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 1, None)
                     .await;
             }
             // Client 0 stops here — does not sign, triggering blame on timeout
@@ -938,12 +938,12 @@ async fn adversarial_wrong_denomination() {
     }
 }
 
-/// TEST-11 sub-scenario 4: Tampered PSBT (fewer denomination outputs) rejected.
+/// TEST-11 sub-scenario 4: Tampered PSBT (too few denomination outputs) rejected.
 ///
-/// Pure in-memory test — does NOT require bitcoind.
-/// Calls check_psbt_denomination_outputs directly with a PSBT that has
-/// fewer denomination outputs than participants_registered.
-/// Assert: returns Err containing "output censorship".
+/// Pure in-memory test — does NOT require bitcoind. A coordinator that assembles a
+/// PSBT with fewer denomination outputs than the client's anonymity floor (H1) — e.g.
+/// 1 real victim padded toward deanonymization — must be refused before signing.
+/// The floor is counted from the PSBT, not from any coordinator-reported number.
 #[tokio::test]
 async fn adversarial_tampered_psbt_rejected() {
     use bitcoin::{
@@ -951,18 +951,15 @@ async fn adversarial_tampered_psbt_rejected() {
         Transaction, TxIn, TxOut,
     };
     use bitcoin::psbt::Psbt;
-    use client::round::sign::check_psbt_denomination_outputs;
-    use client::round::InputRegState;
+    use client::round::sign::verify_anonymity_floor;
 
-    // Build a minimal InputRegState with 3 participants and denomination=100_000
-    let participants_registered: u32 = 3;
     let denomination_sats: u64 = 100_000;
+    let min_anonymity_set: u32 = 3;
 
-    // Build a PSBT with only 2 denomination outputs (not 3)
+    // PSBT with only 2 denomination outputs (third has a tampered amount → not counted).
     let outputs: Vec<TxOut> = vec![
         TxOut { value: Amount::from_sat(denomination_sats), script_pubkey: ScriptBuf::new() },
         TxOut { value: Amount::from_sat(denomination_sats), script_pubkey: ScriptBuf::new() },
-        // Third output has WRONG amount (simulating tampering)
         TxOut { value: Amount::from_sat(denomination_sats - 1000), script_pubkey: ScriptBuf::new() },
     ];
     let tx = Transaction {
@@ -973,43 +970,15 @@ async fn adversarial_tampered_psbt_rejected() {
     };
     let tampered_psbt = Psbt::from_unsigned_tx(tx).expect("valid PSBT");
 
-    // Build a minimal InputRegState (we need a valid blind sig — borrow test helper pattern)
-    use blind_rsa_signatures::{Sha384, PSS, Randomized, DefaultRng};
-    type BjKeyPair = blind_rsa_signatures::KeyPair<Sha384, PSS, Randomized>;
-    type BjPublicKey = blind_rsa_signatures::PublicKey<Sha384, PSS, Randomized>;
-    type BjSecretKey = blind_rsa_signatures::SecretKey<Sha384, PSS, Randomized>;
-
-    let kp = BjKeyPair::generate(&mut DefaultRng, 2048).expect("keygen");
-    let pk = BjPublicKey::from_der(&kp.pk.to_der().unwrap()).unwrap();
-    let message_bytes = [0u8; 32];
-    let blinding_result = pk.blind(&mut DefaultRng, message_bytes).expect("blind");
-    let sk_der = kp.sk.to_der().unwrap();
-    let sk = BjSecretKey::from_der(&sk_der).unwrap();
-    let blind_sig = sk.blind_sign(&blinding_result.blind_message).unwrap();
-    let sig = pk.finalize(&blind_sig, &blinding_result, message_bytes).unwrap();
-
-    let state = InputRegState {
-        round_id: uuid::Uuid::new_v4(),
-        session_token: vec![0u8; 32],
-        blinding_secret: blinding_result.secret,
-        msg_randomizer: blinding_result.msg_randomizer,
-        message_bytes,
-        output_script: ScriptBuf::new(),
-        unblinded_sig: sig,
-        pk_hash_at_registration: [0u8; 32],
-        participants_registered,
-        denomination_sats,
-    };
-
-    let result = check_psbt_denomination_outputs(&tampered_psbt, &state);
+    let result = verify_anonymity_floor(&tampered_psbt, denomination_sats, min_anonymity_set);
     assert!(
         result.is_err(),
-        "Tampered PSBT with 2 denom outputs for 3 participants must be rejected; got Ok"
+        "PSBT with 2 denom outputs under an anonymity floor of 3 must be rejected; got Ok"
     );
     let err_msg = result.unwrap_err().to_string();
     assert!(
-        err_msg.contains("output censorship"),
-        "Error must mention 'output censorship'; got: {err_msg}"
+        err_msg.contains("anonymity floor"),
+        "Error must mention 'anonymity floor'; got: {err_msg}"
     );
     eprintln!("adversarial_tampered_psbt_rejected PASSED: tampered PSBT rejected with: {err_msg}");
 }
@@ -1238,7 +1207,7 @@ async fn round_restart_and_completion_after_blame() {
                     .expect("poll for signing");
 
                 // verify_and_sign may error if timeout fires before all sigs — acceptable
-                let _ = round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 50)
+                let _ = round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 1, None)
                     .await;
             }
             // Client 0 stops here — does not sign, triggering blame
@@ -1375,7 +1344,7 @@ async fn round_restart_and_completion_after_blame() {
                 .await
                 .expect("round 2 poll for signing");
 
-            round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 100)
+            round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 1, None)
                 .await
                 .expect("round 2 verify_and_sign");
         })

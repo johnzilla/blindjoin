@@ -141,7 +141,11 @@ pub async fn run(config: BotConfig) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Timeout waiting for signing phase: {e}"))?;
     info!("SIGNING phase detected");
 
-    client::round::sign::verify_and_sign(&http, &wallet, &state, 1000)
+    // Floor of 1 preserves the bot's existing join/complete behavior; the
+    // load-bearing protection for the bot is the C1 output-value + fee-theft
+    // check (max_fee None → denomination/10 backstop). A bot-specific anonymity
+    // floor + "don't join near-empty rounds" lower bound is separate hardening.
+    client::round::sign::verify_and_sign(&http, &wallet, &state, 1, None)
         .await
         .map_err(|e| anyhow::anyhow!("Sign phase failed: {e}"))?;
     info!("Signed successfully");

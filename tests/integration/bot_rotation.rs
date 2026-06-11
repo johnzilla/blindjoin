@@ -179,7 +179,7 @@ async fn bot_rotates_p2wpkh_p2tr_p2sh_p2wpkh_across_three_runs() {
         http.poll_until_phase("signing", 100, Duration::from_secs(600))
             .await
             .expect("peer1: poll for signing");
-        client::round::sign::verify_and_sign(&http, &wallet1, &reg, 100)
+        client::round::sign::verify_and_sign(&http, &wallet1, &reg, 1, None)
             .await
             .expect("peer1: verify_and_sign");
     });
@@ -202,7 +202,7 @@ async fn bot_rotates_p2wpkh_p2tr_p2sh_p2wpkh_across_three_runs() {
         http.poll_until_phase("signing", 100, Duration::from_secs(600))
             .await
             .expect("peer2: poll for signing");
-        client::round::sign::verify_and_sign(&http, &wallet2, &reg, 100)
+        client::round::sign::verify_and_sign(&http, &wallet2, &reg, 1, None)
             .await
             .expect("peer2: verify_and_sign");
     });

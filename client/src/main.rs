@@ -140,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
     client.poll_until_phase("signing", cfg.poll_interval_ms, phase_timeout).await?;
     info!("SIGNING phase detected");
 
-    round::sign::verify_and_sign(&client, &wallet, &reg_result, cfg.poll_interval_ms).await?;
+    round::sign::verify_and_sign(&client, &wallet, &reg_result, cfg.min_anonymity_set, cfg.max_fee_sats).await?;
     info!("Signed successfully — round complete");
 
     Ok(())

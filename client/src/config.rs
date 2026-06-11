@@ -85,6 +85,22 @@ pub struct ClientConfig {
     /// Requires the coordinator to be reachable as a Tor hidden service (.onion URL).
     #[arg(long, env = "BLINDJOIN_USE_TOR", default_value_t = false)]
     pub use_tor: bool,
+
+    /// Anonymity floor (H1): refuse to sign unless the assembled PSBT contains at
+    /// least this many distinct denomination outputs (our own included). Counted
+    /// from the PSBT itself, NEVER from the coordinator-reported participant count —
+    /// a malicious coordinator running one real victim plus its own sybils reports
+    /// any count it likes, so the count must be enforced client-side. Default 3.
+    #[arg(long, env = "BLINDJOIN_MIN_ANONYMITY_SET", default_value_t = 3)]
+    pub min_anonymity_set: u32,
+
+    /// Maximum fee (sats) we will pay as our share of the CoinJoin (C1). Computed
+    /// from the PSBT itself — our input value minus our denomination output minus
+    /// our change output — never from a coordinator-reported number. Unset → backstop
+    /// of denomination / 10. Catches a coordinator that shrinks/drops our change and
+    /// pockets the difference, or shifts fees onto us.
+    #[arg(long, env = "BLINDJOIN_MAX_FEE_SATS")]
+    pub max_fee_sats: Option<u64>,
 }
 
 #[cfg(test)]

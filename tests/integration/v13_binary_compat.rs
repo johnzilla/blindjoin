@@ -256,7 +256,7 @@ async fn v13_client_p2wpkh_against_v14_coordinator() {
                 .await
                 .unwrap_or_else(|e| panic!("v1.4 client {i}: poll signing: {e}"));
 
-            round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 100)
+            round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 1, None)
                 .await
                 .unwrap_or_else(|e| panic!("v1.4 client {i}: verify_and_sign: {e}"));
         });

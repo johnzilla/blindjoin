@@ -251,7 +251,7 @@ async fn mixed_script_e2e_three_clients_broadcast() {
             .await
             .expect("client0: poll for signing");
 
-        round::sign::verify_and_sign(&coordinator_client, &wallet0, &reg, 100)
+        round::sign::verify_and_sign(&coordinator_client, &wallet0, &reg, 1, None)
             .await
             .expect("client0: verify_and_sign");
     });
@@ -288,7 +288,7 @@ async fn mixed_script_e2e_three_clients_broadcast() {
             .await
             .expect("client1: poll for signing");
 
-        round::sign::verify_and_sign(&coordinator_client, &wallet1, &reg, 100)
+        round::sign::verify_and_sign(&coordinator_client, &wallet1, &reg, 1, None)
             .await
             .expect("client1: verify_and_sign");
     });
@@ -325,7 +325,7 @@ async fn mixed_script_e2e_three_clients_broadcast() {
             .await
             .expect("client2: poll for signing");
 
-        round::sign::verify_and_sign(&coordinator_client, &wallet2, &reg, 100)
+        round::sign::verify_and_sign(&coordinator_client, &wallet2, &reg, 1, None)
             .await
             .expect("client2: verify_and_sign");
     });

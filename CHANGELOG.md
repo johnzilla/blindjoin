@@ -14,6 +14,35 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+### Added
+
+- **Client-side fund-safety validation before signing (security, C1/H1).** The
+  client now binds its own economic outcome to the PSBT it is about to sign,
+  instead of trusting coordinator-reported numbers. `verify_and_sign`
+  (`client/src/round/sign.rs`) refuses to sign unless: (a) our coinjoin output
+  is present **and valued at exactly the denomination** — previously only its
+  presence was checked, so a coordinator could short it to dust and pocket the
+  difference (SIGHASH_ALL commits to whatever outputs the PSBT carries, and
+  bitcoind accepts the result as valid); (b) the fee **we** pay, computed from
+  the PSBT itself (`our input − our denomination output − our change output`),
+  is within a cap — previously the bound used the coordinator's self-reported
+  `fee_per_participant_sats` against the already-shortable output value, so it
+  was unenforceable; (c) the PSBT carries at least `min_anonymity_set` distinct
+  denomination outputs, counted **from the PSBT** rather than the
+  coordinator-reported participant count (which a coordinator running one victim
+  plus its own sybils sets to anything it likes). Two new client config knobs:
+  `--min-anonymity-set` / `BLINDJOIN_MIN_ANONYMITY_SET` (default 3) and
+  `--max-fee-sats` / `BLINDJOIN_MAX_FEE_SATS` (default: denomination / 10). 12
+  new unit tests cover the shorted-output, fee-theft, floor, and PSBT-reader
+  paths.
+
+### Changed
+
+- **`InputRegState.participants_registered` removed.** It carried the
+  coordinator-reported participant count, used only by the old denomination-count
+  check, which was defeated (a first registrant sees `0`, making the check
+  vacuous). Superseded by the PSBT-derived anonymity floor above.
+
 ### Fixed
 
 - **Ban evasion via non-canonical outpoint (security).** The input-registration

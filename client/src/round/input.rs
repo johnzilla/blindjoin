@@ -183,7 +183,6 @@ pub async fn register_input(
         output_script,
         unblinded_sig: sig,
         pk_hash_at_registration: pk_hash_actual,
-        participants_registered: info.participants_registered,
         denomination_sats: info.denomination_sats,
     })
 }
