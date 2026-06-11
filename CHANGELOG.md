@@ -16,6 +16,26 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ### Added
 
+- **Per-input partial-signature verification at submission (security, H3).** The
+  coordinator now cryptographically verifies each partial signature against the
+  canonical CoinJoin transaction's sighash *before* recording it
+  (`coordinator/src/bitcoin/sig_verify.rs`, wired into
+  `coordinator/src/round/signing.rs::process_sign`). Previously the witness bytes
+  were stored unchecked and only an aggregate `testmempoolaccept` caught a bad
+  signature at broadcast — by which point every participant had "signed", so the
+  blame path banned nobody and the round aborted. A single participant could
+  therefore destroy every round at zero cost and escape blame entirely. An
+  invalid submission is now rejected with `INVALID_SIGNATURE` and not recorded,
+  so the sender remains a bannable non-signer at the signing deadline. Covers
+  P2WPKH, P2SH-P2WPKH (BIP-143), and P2TR key-spend (BIP-341), and enforces
+  SIGHASH_ALL / SIGHASH_DEFAULT (a non-ALL flag is refused). The verified
+  transaction is built by the same `build_canonical_psbt` that
+  `assemble_and_broadcast` broadcasts, so the sighash signed is exactly the
+  sighash spent. New `INVALID_SIGNATURE` error code. 9 new unit tests (valid +
+  tampered + wrong-key + non-SIGHASH_ALL + wrong-dispatch across all three script
+  types, plus a real-signature happy path through `process_sign`).
+
+
 - **Client-side fund-safety validation before signing (security, C1/H1).** The
   client now binds its own economic outcome to the PSBT it is about to sign,
   instead of trusting coordinator-reported numbers. `verify_and_sign`

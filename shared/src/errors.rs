@@ -24,6 +24,10 @@ pub enum ErrorCode {
     SessionInvalid,
     DustOutput,
     UtxoBanned,
+    /// A submitted partial signature failed cryptographic verification against
+    /// the canonical CoinJoin transaction's sighash for that input. Rejected at
+    /// submission so the sender does not silently destroy the round at broadcast.
+    InvalidSignature,
 }
 
 /// API error returned by all coordinator endpoints on failure.

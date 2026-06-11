@@ -1,9 +1,11 @@
 use bitcoin::OutPoint;
+use bitcoin::psbt::Psbt;
 use shared::errors::{ApiError, ErrorCode};
-use crate::round::state::RoundState;
+use crate::round::state::{RoundState, RoundStateInner};
 use crate::round::manager::verify_session_token;
 use crate::round::input_reg::parse_outpoint;
 use crate::bitcoin::rpc::BitcoinRpc;
+use crate::bitcoin::sig_verify::verify_input_signature;
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
 use crate::config::CoordinatorConfig;
 use bitcoin::ScriptBuf;
@@ -66,6 +68,46 @@ pub async fn process_sign(
         });
     }
 
+    // H3: cryptographically verify the partial signature against the canonical
+    // CoinJoin transaction's sighash BEFORE recording it. Previously the bytes
+    // were stored unchecked and only an aggregate testmempoolaccept caught a bad
+    // signature — by which point everyone had "signed", so the blame path banned
+    // nobody and the round aborted. A single participant could thus destroy every
+    // round at zero cost and escape blame. Rejecting here (without recording)
+    // leaves the sender unsigned, so the signing-deadline blame treats them as a
+    // bannable non-signer.
+    //
+    // The PSBT built here is the SAME one assemble_and_broadcast will broadcast
+    // (same build_canonical_psbt, same `inner`, registration closed) — so the
+    // sighash verified is exactly the sighash that will be spent.
+    let script_type = inner
+        .registered_inputs
+        .get(&utxo_str)
+        .map(|reg| reg.script_type)
+        .ok_or_else(|| ApiError {
+            code: ErrorCode::SessionInvalid,
+            message: "UTXO not registered in this round".into(),
+            round_id: Some(round_id_str.to_string()),
+        })?;
+    let canonical = build_canonical_psbt(inner, config, round_id_str)?;
+    let input_index = canonical
+        .unsigned_tx
+        .input
+        .iter()
+        .position(|i| i.previous_output == *utxo)
+        .ok_or_else(|| ApiError {
+            code: ErrorCode::BroadcastRejected,
+            message: "Registered input absent from canonical transaction".into(),
+            round_id: Some(round_id_str.to_string()),
+        })?;
+    verify_input_signature(&canonical, input_index, script_type, partial_signature).map_err(|e| {
+        ApiError {
+            code: ErrorCode::InvalidSignature,
+            message: format!("Partial signature rejected: {e}"),
+            round_id: Some(round_id_str.to_string()),
+        }
+    })?;
+
     // Record partial signature (keyed by utxo_outpoint)
     inner.partial_sigs.insert(utxo_str, partial_signature.to_vec());
 
@@ -82,32 +124,22 @@ pub async fn process_sign(
     Ok(SignResult::Recorded)
 }
 
-/// Assemble the CoinJoin TX from registered inputs/outputs and broadcast.
-async fn assemble_and_broadcast(
-    state: &mut RoundState,
-    rpc: &BitcoinRpc,
+/// Build the canonical CoinJoin PSBT from the round's registered inputs/outputs.
+///
+/// This is the SINGLE source of the transaction that gets both (a) verified
+/// against at partial-signature submission (H3) and (b) broadcast once all
+/// signatures are collected. Both call sites MUST use this function on the same
+/// `inner` so the sighash a participant signs is exactly the sighash that is
+/// spent — a divergence would make signature verification meaningless. Inputs
+/// carry `witness_utxo` (value + on-chain script_pubkey from validate_utxo's
+/// gettxout), required for sighash computation.
+fn build_canonical_psbt(
+    inner: &RoundStateInner,
     config: &CoordinatorConfig,
     round_id_str: &str,
-) -> Result<String, ApiError> {
-    use bitcoin::consensus::encode::serialize_hex;
-    use crate::round::state::Phase;
-
-    let inner = state.inner.as_ref().ok_or_else(|| ApiError {
-        code: ErrorCode::WrongPhase,
-        message: "No round state".into(),
-        round_id: Some(round_id_str.to_string()),
-    })?;
-
+) -> Result<Psbt, ApiError> {
     let bitcoin_network = parse_bitcoin_network(&config.network.bitcoin_network);
 
-    // Build participant inputs for PSBT construction.
-    //
-    // Use the REAL on-chain script_pubkey and value_sats captured by validate_utxo
-    // at registration time (sourced from Bitcoin Core's gettxout). The previous
-    // implementation synthesized script_pubkey from the change address and
-    // value_sats from denomination + fee_share — both wrong values for a witness_utxo
-    // input. Clients had to overwrite witness_utxo locally to make signatures valid,
-    // forcing them to trust their own unverified --utxo-value-sats CLI arg.
     let mut participant_inputs: Vec<ParticipantInput> = Vec::new();
     for reg in inner.registered_inputs.values() {
         let outpoint = parse_outpoint(&reg.utxo_str).ok_or_else(|| ApiError {
@@ -130,7 +162,6 @@ async fn assemble_and_broadcast(
         });
     }
 
-    // Build participant outputs
     let mut participant_outputs: Vec<ParticipantOutput> = Vec::new();
     for out in inner.registered_outputs.iter() {
         let script = parse_address_to_script(&out.address, bitcoin_network)
@@ -142,11 +173,10 @@ async fn assemble_and_broadcast(
         participant_outputs.push(ParticipantOutput { script_pubkey: script });
     }
 
-    // Build PSBT. WR-04 invariant: `output_script_type` MUST come from the
-    // SAME source as the get_tx call site (`config.bip.output_script_type`)
-    // so the broadcast PSBT is byte-identical to the one clients signed
-    // against in display path.
-    let mut psbt = build_coinjoin_psbt(
+    // WR-04 invariant: `output_script_type` MUST come from the SAME source as the
+    // get_tx call site (`config.bip.output_script_type`) so the broadcast PSBT is
+    // byte-identical to the one clients signed against in the display path.
+    build_coinjoin_psbt(
         &participant_inputs,
         &participant_outputs,
         config.coordinator.denomination_sats,
@@ -156,7 +186,26 @@ async fn assemble_and_broadcast(
         code: ErrorCode::BroadcastRejected,
         message: format!("PSBT construction failed: {e}"),
         round_id: Some(round_id_str.to_string()),
+    })
+}
+
+/// Assemble the CoinJoin TX from registered inputs/outputs and broadcast.
+async fn assemble_and_broadcast(
+    state: &mut RoundState,
+    rpc: &BitcoinRpc,
+    config: &CoordinatorConfig,
+    round_id_str: &str,
+) -> Result<String, ApiError> {
+    use bitcoin::consensus::encode::serialize_hex;
+    use crate::round::state::Phase;
+
+    let inner = state.inner.as_ref().ok_or_else(|| ApiError {
+        code: ErrorCode::WrongPhase,
+        message: "No round state".into(),
+        round_id: Some(round_id_str.to_string()),
     })?;
+
+    let mut psbt = build_canonical_psbt(inner, config, round_id_str)?;
 
     // Apply partial signatures as witness data to each input.
     // Each participant submitted their signature + pubkey as serialized witness bytes.
@@ -310,12 +359,15 @@ fn parse_bitcoin_network(network_str: &str) -> bitcoin::Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round::state::{Phase, RoundState, RoundStateInner, RegisteredInput};
+    use crate::round::state::{Phase, RoundState, RoundStateInner, RegisteredInput, RegisteredOutput};
     use crate::round::manager::generate_session_token;
     use crate::bitcoin::rpc::BitcoinRpc;
     use crate::config::CoordinatorConfig;
     use crate::blind::rsa::RsaBlindSigner;
-    use bitcoin::{OutPoint, Txid};
+    use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+    use bitcoin::sighash::{EcdsaSighashType, SighashCache};
+    use bitcoin::hashes::Hash;
+    use bitcoin::{Address, Amount, CompressedPublicKey, Network, OutPoint, Txid, Witness};
     use std::collections::{HashMap, HashSet};
     use std::str::FromStr;
 
@@ -323,6 +375,31 @@ mod tests {
         Txid::from_str(
             "0000000000000000000000000000000000000000000000000000000000000001"
         ).unwrap()
+    }
+
+    /// Fixed fixture key controlling the registered P2WPKH input. Used both to
+    /// build the input's script_pubkey/address in `make_signing_state` and to
+    /// produce a valid signature in the happy-path test.
+    fn fixture_sk() -> SecretKey {
+        SecretKey::from_slice(&[0x77u8; 32]).expect("valid key")
+    }
+
+    fn fixture_input_spk() -> (ScriptBuf, CompressedPublicKey) {
+        let secp = Secp256k1::new();
+        let cpk = CompressedPublicKey(PublicKey::from_secret_key(&secp, &fixture_sk()));
+        (ScriptBuf::new_p2wpkh(&cpk.wpubkey_hash()), cpk)
+    }
+
+    /// A valid signet address string derived from an arbitrary key (for change /
+    /// output fields that `build_canonical_psbt` must parse).
+    fn signet_addr(fill: u8) -> String {
+        let secp = Secp256k1::new();
+        let cpk = CompressedPublicKey(PublicKey::from_secret_key(
+            &secp,
+            &SecretKey::from_slice(&[fill; 32]).unwrap(),
+        ));
+        let spk = ScriptBuf::new_p2wpkh(&cpk.wpubkey_hash());
+        Address::from_script(&spk, Network::Signet).unwrap().to_string()
     }
 
     /// Build a state in Signing phase via production transitions:
@@ -333,17 +410,24 @@ mod tests {
     fn make_signing_state(utxo_str: &str) -> (RoundState, [u8; 32]) {
         let mut state = RoundState::new_idle();
         crate::round::manager::start_round(&mut state).expect("start_round");
-        // Insert one registered input + bump participant_count to mirror what
-        // a real input_reg flow would have produced before advancing phases.
+        // Insert one registered input + one registered output so the fixture is
+        // rich enough for build_canonical_psbt to succeed (H3 verification runs
+        // against that canonical tx). Real on-chain script_pubkey from the fixture
+        // key; value > denomination (1_000_000) + fee so the PSBT builds.
+        let (input_spk, _cpk) = fixture_input_spk();
         {
             let inner = state.inner.as_mut().expect("inner populated by start_round");
             inner.registered_inputs.insert(utxo_str.to_string(), RegisteredInput {
                 utxo_str: utxo_str.to_string(),
-                change_address: "tb1qtest".to_string(),
+                change_address: signet_addr(0x78),
                 blind_sig_hash: [0u8; 32],
-                script_pubkey: bitcoin::ScriptBuf::new(),
-                value_sats: 150_000,
+                script_pubkey: input_spk,
+                value_sats: 1_100_000,
                 script_type: shared::bip322::ScriptType::P2wpkh,
+            });
+            inner.registered_outputs.push(RegisteredOutput {
+                address: signet_addr(0x79),
+                amount_sats: 1_000_000,
             });
         }
         state.participant_count = 1;
@@ -408,9 +492,12 @@ mod tests {
         assert_eq!(result.unwrap_err().code, shared::errors::ErrorCode::SessionInvalid);
     }
 
-    /// TEST-06: Valid partial sig recorded — participant_count=2, 1 sig → SignResult::Recorded
+    /// H3: a structurally-valid-looking but cryptographically invalid partial
+    /// signature is rejected at submission (InvalidSignature) and NOT recorded, so
+    /// the sender stays a bannable non-signer rather than silently poisoning the
+    /// round until broadcast.
     #[tokio::test]
-    async fn test_process_sign_records_partial_sig() {
+    async fn test_process_sign_rejects_invalid_signature() {
         let txid = test_txid();
         let utxo = OutPoint::new(txid, 0);
         let utxo_str = format!("{}:0", txid);
@@ -421,19 +508,68 @@ mod tests {
         );
         let config = CoordinatorConfig::with_defaults();
         let token = generate_session_token(&secret, &utxo);
-
-        // With participant_count=2, submitting 1 sig just records — no broadcast attempt
         state.participant_count = 2;
 
+        // A well-formed 2-element witness whose signature is garbage.
+        let mut bogus = Witness::new();
+        bogus.push(vec![0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01]); // junk DER + ALL flag
+        bogus.push(fixture_input_spk().1.to_bytes());
+        let bogus_bytes = bitcoin::consensus::serialize(&bogus);
+
         let result = process_sign(
-            &mut state, &rpc, &config, &utxo,
-            &[0xde, 0xad, 0xbe, 0xef], &token, "test-round"
+            &mut state, &rpc, &config, &utxo, &bogus_bytes, &token, "test-round",
         ).await;
 
-        // participant_count=2 but only 1 sig collected → Recorded
-        assert!(matches!(result, Ok(SignResult::Recorded)));
-        let partial_sigs = &state.inner.as_ref().unwrap().partial_sigs;
-        assert!(partial_sigs.contains_key(&utxo_str));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, shared::errors::ErrorCode::InvalidSignature);
+        assert!(
+            !state.inner.as_ref().unwrap().partial_sigs.contains_key(&utxo_str),
+            "rejected signature must NOT be recorded",
+        );
+    }
+
+    /// H3 happy path: a valid signature over the canonical CoinJoin tx is accepted
+    /// and recorded. participant_count=2 with 1 sig collected → Recorded (no
+    /// broadcast attempt, so no bitcoind needed).
+    #[tokio::test]
+    async fn test_process_sign_records_valid_signature() {
+        let txid = test_txid();
+        let utxo = OutPoint::new(txid, 0);
+        let utxo_str = format!("{}:0", txid);
+        let (mut state, secret) = make_signing_state(&utxo_str);
+
+        let rpc = BitcoinRpc::new(
+            "http://127.0.0.1:38332".into(), "user".into(), "pass".into()
+        );
+        let config = CoordinatorConfig::with_defaults();
+        let token = generate_session_token(&secret, &utxo);
+        state.participant_count = 2;
+
+        // Sign input 0 of the SAME canonical tx process_sign will rebuild.
+        let (input_spk, cpk) = fixture_input_spk();
+        let canonical = build_canonical_psbt(
+            state.inner.as_ref().unwrap(), &config, "test-round",
+        ).expect("canonical psbt");
+        let idx = canonical.unsigned_tx.input.iter()
+            .position(|i| i.previous_output == utxo).expect("our input present");
+        let secp = Secp256k1::new();
+        let sighash = SighashCache::new(&canonical.unsigned_tx)
+            .p2wpkh_signature_hash(idx, &input_spk, Amount::from_sat(1_100_000), EcdsaSighashType::All)
+            .unwrap();
+        let sig = secp.sign_ecdsa(&Message::from_digest(sighash.to_byte_array()), &fixture_sk());
+        let mut sig_ser = sig.serialize_der().to_vec();
+        sig_ser.push(EcdsaSighashType::All as u8);
+        let mut witness = Witness::new();
+        witness.push(sig_ser);
+        witness.push(cpk.to_bytes());
+        let witness_bytes = bitcoin::consensus::serialize(&witness);
+
+        let result = process_sign(
+            &mut state, &rpc, &config, &utxo, &witness_bytes, &token, "test-round",
+        ).await;
+
+        assert!(matches!(result, Ok(SignResult::Recorded)), "got: {result:?}");
+        assert!(state.inner.as_ref().unwrap().partial_sigs.contains_key(&utxo_str));
     }
 
     // TEST-07 blame unit tests — on_signing_timeout and BlameOutcome from crate::round::blame
