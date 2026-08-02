@@ -16,6 +16,28 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ### Fixed
 
+- **BIP-322 ownership-proof bypass for P2WPKH / P2SH-P2WPKH (security).** The pinned
+  `bip322 = "=0.0.10"` verifier checks a witness signature against the public key
+  carried *in the witness* but never checks that key is the one the address /
+  scriptPubKey commits to (its "key-mismatch" check compares the witness key with
+  itself). An attacker could therefore sign the BIP-322 challenge with **their own
+  unrelated key** and have it accepted as ownership of a **victim's** UTXO. This does
+  not let them spend the coin (they still lack its real key), but it defeats the
+  ownership *gate* — letting them register UTXOs they do not control, disrupt CoinJoin
+  rounds, and degrade availability/privacy. Affected: P2WPKH `0.0.6`–`0.0.10`,
+  P2SH-P2WPKH `0.0.7`–`0.0.10`; P2TR unaffected. blindjoin now enforces a key-binding
+  guard in `shared/src/bip322/mod.rs::verify_via_bip322_crate` before delegating to
+  the crate: for non-P2TR scripts it requires a 2-item witness, parses `witness[1]` as
+  a compressed `bitcoin::PublicKey`, and rejects unless
+  `address.is_related_to_pubkey(&pubkey)` (new `Bip322Error::WitnessKeyMismatch`).
+  Both OwnershipProof envelopes (v1 legacy and v2 PSBT) funnel through this one point.
+  The guard is permanent and stays even after the crate is patched. New regression
+  tests reject unrelated-key witnesses for both P2WPKH and P2SH-P2WPKH and confirm
+  honest proofs still verify. Corrected the `p2wpkh.rs` / `p2sh_p2wpkh.rs` /
+  `detect_script_type` doc comments that wrongly asserted the crate performed the
+  HASH160 cross-check internally. Reported via private disclosure by an anonymous
+  security researcher; upstream maintainer contacted for a patched release.
+
 External security-review pass (no criticals; high- and medium-severity findings):
 
 - **Registration fee estimate under-charged, wedging rounds and mass-banning honest

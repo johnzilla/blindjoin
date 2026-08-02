@@ -57,7 +57,12 @@ pub struct UtxoDetails {
 ///    invariant — see inline comments in each version arm of the match) and
 ///    check the `BipConfig` allowlist before calling
 ///    `shared::bip322::verify_simple`. v=2 additionally cross-checks
-///    `declared == derived` BEFORE verify.
+///    `declared == derived` BEFORE verify. Inside `verify_simple`, a key-binding
+///    guard rebinds the witness pubkey to the on-chain `script_pubkey` for
+///    P2WPKH / P2SH-P2WPKH (`Address::is_related_to_pubkey`) — the pinned
+///    `bip322 = "=0.0.10"` crate verifies the signature but NOT that the key
+///    matches the address's HASH160, so this guard is what makes the ownership
+///    proof sound (a witness signed by an unrelated key is rejected).
 ///
 /// `bip_config` carries the operator-configured allowlist (D-51 / CD-14).
 /// `network` is threaded from `CoordinatorConfig::network::bitcoin_network`

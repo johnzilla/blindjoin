@@ -18,11 +18,13 @@ use bitcoin::{Network, Script, Witness};
 ///
 /// Arity pre-flight: P2SH-P2WPKH witnesses are `[sig, pubkey]` (2 items),
 /// identical shape to P2WPKH because the unwrapped redeem IS a P2WPKH SPK.
-/// The `bip322 = "=0.0.10"` crate's `verify_simple` (`verify.rs:62-99` ->
-/// `verify_full_p2wpkh(is_p2sh=true)` at `verify.rs:167-169`) reconstructs
-/// the unwrapped P2WPKH from `witness[1].wpubkey_hash()` and HASH160-cross-
-/// checks against the P2SH SPK, so non-P2WPKH-wrapped P2SH scripts reject
-/// at verify time.
+/// The `bip322 = "=0.0.10"` crate handles the BIP-143 sighash and signature check,
+/// but it does NOT bind the witness pubkey to the outer P2SH SPK (it does not verify
+/// `HASH160(P2WPKH(HASH160(witness[1]))) == p2sh_hash`). That key-to-address binding
+/// is enforced by the guard in [`super::verify_via_bip322_crate`], which rejects a
+/// witness whose key is unrelated to the address with
+/// [`super::Bip322Error::WitnessKeyMismatch`] — without it, a signature by any key
+/// would verify against any P2SH-P2WPKH address.
 pub(crate) fn verify(
     spk: &Script,
     witness: &Witness,

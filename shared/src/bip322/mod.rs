@@ -208,6 +208,16 @@ pub enum Bip322Error {
         #[source]
         source: Box<bip322::Error>,
     },
+    /// The witness public key is not the one committed by the scriptPubKey being
+    /// proven (SECURITY — BIP-322 key-binding guard). `bip322 = "=0.0.10"` verifies
+    /// that the witness signature is valid for the key carried IN the witness, but
+    /// for P2WPKH / P2SH-P2WPKH it does not verify that key is the one the address's
+    /// HASH160 commits to — so a valid signature by ANY key would otherwise "prove"
+    /// ownership of anyone's UTXO. We reject a witness whose pubkey is not related to
+    /// the address. Distinct from `CrateVerifyFailed` so the guard is independently
+    /// observable in tests and logs. PII-safe: no key/address bytes in Display.
+    #[error("witness public key does not match the proven scriptPubKey")]
+    WitnessKeyMismatch,
     #[error("network mismatch: address decoded for {decoded:?}, configured for {configured:?}")]
     NetworkMismatch {
         decoded: Network,
@@ -231,10 +241,12 @@ pub enum Bip322Error {
 /// NOTE: `is_p2sh()` alone cannot distinguish P2SH-P2WPKH from raw
 /// P2SH-multisig — the on-chain SPK is only the HASH160 of the redeem.
 /// `detect_script_type` optimistically returns [`ScriptType::P2shP2wpkh`]
-/// for any P2SH SPK; the per-script verifier in `p2sh_p2wpkh.rs` delegates
-/// to the bip322 crate which performs the HASH160 cross-check internally
-/// (`verify.rs:167-169`), so non-P2WPKH-wrapped P2SH scripts reject at
-/// verify time with [`Bip322Error::CrateVerifyFailed`].
+/// for any P2SH SPK. The witness pubkey is bound to the address by the
+/// key-binding guard in [`verify_via_bip322_crate`] (via
+/// `Address::is_related_to_pubkey`), NOT by the `bip322 = "=0.0.10"` crate —
+/// which does not perform that HASH160 cross-check (the exact soundness gap the
+/// guard closes). A witness whose key is unrelated to the P2SH SPK is rejected
+/// there with [`Bip322Error::WitnessKeyMismatch`].
 pub fn detect_script_type(spk: &Script) -> Result<ScriptType, Bip322Error> {
     if spk.is_p2wpkh() {
         Ok(ScriptType::P2wpkh)
@@ -372,6 +384,44 @@ pub(crate) fn verify_via_bip322_crate(
 ) -> Result<(), Bip322Error> {
     let address = bitcoin::Address::from_script(spk, network)
         .map_err(|source| Bip322Error::UnrecognisedScriptPubkey { source })?;
+
+    // SECURITY — BIP-322 key-binding guard. KEEP THIS EVEN AFTER THE UPSTREAM CRATE
+    // IS PATCHED. `bip322` verifies the witness signature against the key carried IN
+    // the witness, but for P2WPKH / P2SH-P2WPKH it does NOT verify that key is the one
+    // the scriptPubKey's HASH160 commits to (its "key-mismatch" check compares the
+    // witness key with itself). Affected: P2WPKH 0.0.6–0.0.10, P2SH-P2WPKH
+    // 0.0.7–0.0.10 (we pin =0.0.10); P2TR unaffected. Reported upstream via private
+    // disclosure; no patched crates.io release yet.
+    //
+    // Impact without this guard: an attacker signs the BIP-322 challenge with THEIR
+    // OWN key and has it accepted as ownership of a victim's UTXO. It does NOT let
+    // them spend the coin (they still lack its real key), but it defeats the
+    // ownership GATE — letting them register UTXOs they do not control, disrupt
+    // CoinJoin rounds, and degrade availability/privacy. We re-bind the witness pubkey
+    // to the address here so proof soundness does not depend on the crate. Both
+    // OwnershipProof envelopes (v1 and v2) funnel through this one point.
+    //
+    // Gated `!is_p2tr`: P2TR key-spend commits the output key in the scriptPubKey
+    // itself and the witness carries only a Schnorr signature (no pubkey to bind), so
+    // BIP-341 verification is already key-bound.
+    if !spk.is_p2tr() {
+        if witness.len() != 2 {
+            return Err(Bip322Error::InvalidWitnessLength {
+                expected: 2,
+                got: witness.len(),
+            });
+        }
+        let pk_bytes = witness.nth(1).ok_or(Bip322Error::WitnessKeyMismatch)?;
+        let pubkey =
+            bitcoin::PublicKey::from_slice(pk_bytes).map_err(|_| Bip322Error::WitnessKeyMismatch)?;
+        // Compressed-only: P2WPKH / P2SH-P2WPKH commit to a compressed-key HASH160;
+        // an uncompressed key hashes differently and would not be `is_related`, but
+        // we reject it explicitly so the intent is unambiguous.
+        if !pubkey.compressed || !address.is_related_to_pubkey(&pubkey) {
+            return Err(Bip322Error::WitnessKeyMismatch);
+        }
+    }
+
     bip322::verify_simple(&address, message, witness.clone())
         .map_err(|source| Bip322Error::CrateVerifyFailed { source: Box::new(source) })
 }
@@ -412,6 +462,95 @@ mod tests {
 
         let witness_stack = vec![sig_bytes, pubkey.serialize().to_vec()];
         (script_pubkey, witness_stack)
+    }
+
+    // --- SECURITY: BIP-322 key-binding guard regression tests ---
+    //
+    // The pinned `bip322 = "=0.0.10"` crate verifies a witness signature against the
+    // key carried in the witness but does NOT bind that key to the address's HASH160
+    // for P2WPKH / P2SH-P2WPKH. The guard in `verify_via_bip322_crate` re-binds it.
+    // These tests assert the guard rejects an unrelated key (the forgery) and still
+    // accepts the honest key — for both single-key script types.
+
+    fn p2wpkh_spk_for(pk: &PublicKey) -> ScriptBuf {
+        ScriptBuf::new_p2wpkh(&pk.wpubkey_hash().unwrap())
+    }
+    fn p2sh_p2wpkh_spk_for(pk: &PublicKey) -> ScriptBuf {
+        let redeem = ScriptBuf::new_p2wpkh(&pk.wpubkey_hash().unwrap());
+        ScriptBuf::new_p2sh(&redeem.script_hash())
+    }
+
+    #[test]
+    fn p2wpkh_unrelated_witness_key_is_rejected() {
+        use bitcoin::secp256k1::PublicKey as SecpPublicKey;
+        let secp = Secp256k1::new();
+        let victim = SecpSecretKey::from_slice(&[0x11u8; 32]).unwrap();
+        let attacker = SecpSecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let victim_pk = PublicKey::new(SecpPublicKey::from_secret_key(&secp, &victim));
+        let victim_spk = p2wpkh_spk_for(&victim_pk);
+        let msg = b"blindjoin:round:1:utxo:abc:0";
+        // Forgery: p2wpkh::sign uses the passed spk for the sighash and the passed key
+        // for signing, so signing the VICTIM's spk with the ATTACKER's key yields a
+        // witness [attacker_sig, attacker_pubkey] — a valid BIP-322 signature that the
+        // vulnerable crate would accept against the victim's address.
+        let attack = super::p2wpkh::sign(&victim_spk, &attacker, msg).unwrap();
+        let res = verify_via_bip322_crate(&victim_spk, &attack, msg, Network::Signet);
+        assert!(
+            matches!(res, Err(Bip322Error::WitnessKeyMismatch)),
+            "unrelated-key P2WPKH witness must be rejected by the guard; got {res:?}",
+        );
+    }
+
+    #[test]
+    fn p2wpkh_related_witness_key_verifies() {
+        use bitcoin::secp256k1::PublicKey as SecpPublicKey;
+        let secp = Secp256k1::new();
+        let victim = SecpSecretKey::from_slice(&[0x11u8; 32]).unwrap();
+        let victim_pk = PublicKey::new(SecpPublicKey::from_secret_key(&secp, &victim));
+        let victim_spk = p2wpkh_spk_for(&victim_pk);
+        let msg = b"blindjoin:round:1:utxo:abc:0";
+        let honest = super::p2wpkh::sign(&victim_spk, &victim, msg).unwrap();
+        let res = verify_via_bip322_crate(&victim_spk, &honest, msg, Network::Signet);
+        assert!(res.is_ok(), "honest P2WPKH proof must still verify: {res:?}");
+    }
+
+    #[test]
+    fn p2sh_p2wpkh_unrelated_witness_key_is_rejected() {
+        use bitcoin::secp256k1::PublicKey as SecpPublicKey;
+        let secp = Secp256k1::new();
+        let victim = SecpSecretKey::from_slice(&[0x33u8; 32]).unwrap();
+        let attacker = SecpSecretKey::from_slice(&[0x44u8; 32]).unwrap();
+        let victim_pk = PublicKey::new(SecpPublicKey::from_secret_key(&secp, &victim));
+        let attacker_pk = PublicKey::new(SecpPublicKey::from_secret_key(&secp, &attacker));
+        let victim_spk = p2sh_p2wpkh_spk_for(&victim_pk);
+        let msg = b"blindjoin:round:1:utxo:def:0";
+        // p2sh_p2wpkh::sign has a spk↔key cross-check, so build the attack witness by
+        // hand: [dummy sig, attacker pubkey]. The guard runs before the crate verify,
+        // so the signature bytes are irrelevant — the unrelated key alone must trigger
+        // rejection.
+        let mut attack = Witness::new();
+        attack.push(vec![0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01]);
+        attack.push(attacker_pk.to_bytes());
+        let res = verify_via_bip322_crate(&victim_spk, &attack, msg, Network::Signet);
+        assert!(
+            matches!(res, Err(Bip322Error::WitnessKeyMismatch)),
+            "unrelated-key P2SH-P2WPKH witness must be rejected by the guard; got {res:?}",
+        );
+    }
+
+    #[test]
+    fn p2sh_p2wpkh_related_witness_key_verifies() {
+        use bitcoin::secp256k1::PublicKey as SecpPublicKey;
+        let secp = Secp256k1::new();
+        let victim = SecpSecretKey::from_slice(&[0x33u8; 32]).unwrap();
+        let victim_pk = PublicKey::new(SecpPublicKey::from_secret_key(&secp, &victim));
+        let victim_spk = p2sh_p2wpkh_spk_for(&victim_pk);
+        let msg = b"blindjoin:round:1:utxo:def:0";
+        let honest = super::p2sh_p2wpkh::sign(&victim_spk, &victim, msg).unwrap();
+        // Also confirms `Address::is_related_to_pubkey` accepts a P2SH-P2WPKH address
+        // + its key (the guard must not reject honest wrapped-segwit proofs).
+        let res = verify_via_bip322_crate(&victim_spk, &honest, msg, Network::Signet);
+        assert!(res.is_ok(), "honest P2SH-P2WPKH proof must still verify: {res:?}");
     }
 
     #[test]

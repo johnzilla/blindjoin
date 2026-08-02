@@ -106,11 +106,12 @@ fn reject_p2wpkh_spk_with_p2sh_p2wpkh_witness() {
     let spk = make_known_p2wpkh_spk();
     let witness = make_p2sh_p2wpkh_shaped_witness(); // 2 elements — arity matches
     let result = verify_simple(ScriptType::P2wpkh, &spk, &witness, b"test", Network::Regtest);
-    // Arity passes (2 == 2); the bip322 crate's verify_full_p2wpkh fails on
-    // the dummy signature/pubkey, surfacing as CrateVerifyFailed.
+    // Arity passes (2 == 2); the key-binding guard then rejects the witness before
+    // the crate runs — the dummy `witness[1]` ([0u8; 33]) is not a valid compressed
+    // key related to the P2WPKH address — surfacing as WitnessKeyMismatch.
     assert!(
-        matches!(result, Err(Bip322Error::CrateVerifyFailed { .. })),
-        "expected CrateVerifyFailed, got {result:?}",
+        matches!(result, Err(Bip322Error::WitnessKeyMismatch)),
+        "expected WitnessKeyMismatch, got {result:?}",
     );
 }
 
@@ -155,13 +156,14 @@ fn reject_p2sh_p2wpkh_spk_with_p2wpkh_witness() {
         b"test",
         Network::Regtest,
     );
-    // Arity passes (2 == 2); the bip322 crate's verify_full_p2wpkh(is_p2sh=true)
-    // fails on the HASH160 cross-check at verify.rs:167-169 (the dummy pubkey
-    // does not hash to the on-chain P2SH SPK's script-hash). Surfaces as
-    // CrateVerifyFailed.
+    // Arity passes (2 == 2); the key-binding guard rejects the witness before the
+    // crate runs. (NB: the pinned bip322 0.0.10 does NOT perform a HASH160 cross-check
+    // here — that was the reported soundness gap; the guard is what binds the witness
+    // key to the P2SH SPK.) The dummy `witness[1]` ([0u8; 33]) is not a valid
+    // compressed key related to the address, so this surfaces as WitnessKeyMismatch.
     assert!(
-        matches!(result, Err(Bip322Error::CrateVerifyFailed { .. })),
-        "expected CrateVerifyFailed (HASH160 cross-check fails), got {result:?}",
+        matches!(result, Err(Bip322Error::WitnessKeyMismatch)),
+        "expected WitnessKeyMismatch (key-binding guard), got {result:?}",
     );
 }
 

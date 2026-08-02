@@ -17,8 +17,12 @@ use bitcoin::{Amount, Network, Script, Witness};
 /// Verify a P2WPKH BIP-322 Simple proof.
 ///
 /// Arity pre-flight: P2WPKH witnesses are `[sig, pubkey]` (2 items). The
-/// `bip322 = "=0.0.10"` crate's `verify_full_p2wpkh` (`verify.rs:101-185`)
-/// handles BIP-143 sighash + the HASH160 redeem cross-check internally.
+/// `bip322 = "=0.0.10"` crate's `verify_full_p2wpkh` handles the BIP-143 sighash
+/// and signature check — but it does NOT verify that the witness pubkey hashes to
+/// the address's HASH160, so the key-to-address binding is enforced separately by
+/// the guard in [`super::verify_via_bip322_crate`] (rejecting an unrelated key with
+/// [`super::Bip322Error::WitnessKeyMismatch`]). Without that guard a signature by
+/// any key would verify against any P2WPKH address.
 pub(crate) fn verify(
     spk: &Script,
     witness: &Witness,
