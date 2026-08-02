@@ -288,7 +288,6 @@ mod tests {
         inputs.insert("tx1:0".to_string(), RegisteredInput {
             utxo_str: "tx1:0".to_string(),
             change_address: "addr1".to_string(),
-            blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(),
             value_sats: 150_000,
             script_type: shared::bip322::ScriptType::P2wpkh,
@@ -296,7 +295,6 @@ mod tests {
         inputs.insert("tx2:0".to_string(), RegisteredInput {
             utxo_str: "tx2:0".to_string(),
             change_address: "addr2".to_string(),
-            blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(),
             value_sats: 150_000,
             script_type: shared::bip322::ScriptType::P2wpkh,
@@ -315,7 +313,6 @@ mod tests {
         inputs.insert("tx1:0".to_string(), RegisteredInput {
             utxo_str: "tx1:0".to_string(),
             change_address: "addr1".to_string(),
-            blind_sig_hash: [0u8; 32],
             script_pubkey: bitcoin::ScriptBuf::new(),
             value_sats: 150_000,
             script_type: shared::bip322::ScriptType::P2wpkh,

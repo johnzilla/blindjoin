@@ -327,20 +327,30 @@ signature. An auditor reading the type signature can answer "when does
 this secret die?" with a single grep: the secret dies when the Option is
 set to `None`.
 
-**The trigger.** `RoundState::transition_to(Phase::Idle)` (declared at
-`coordinator/src/round/state.rs:193`) is the SOLE site that sets
-`self.inner = None` — the assignment lives at `state.rs:202` inside the
-validated-transition block 201-207. This is verified by grep of the entire
-`coordinator/src/` tree — no other code path assigns `inner = None`. The
-FSM has 4 valid edges to `Phase::Idle`: Broadcast → Idle (success path,
-`coordinator/src/round/signing.rs:280`), Blame → Idle (signing timeout,
-`coordinator/src/round/blame.rs:220`), Blame → Idle (missing output,
-`coordinator/src/round/output_reg.rs:31`), and InputReg → Idle (quorum
-fail, `coordinator/src/run.rs:195`). All 4 routes through
-`transition_to(Phase::Idle)`; none bypass the chokepoint. The coordinator
-holds a single `Arc<RwLock<RoundState>>` per process — there is no
-`HashMap<RoundId, RoundState>` map, so no drop-on-map-removal pattern
-exists to be analyzed separately.
+**The trigger.** `RoundState::transition_to(Phase::Idle)` is the SOLE site that
+sets `self.inner = None` (the assignment lives inside the validated-transition
+block of `transition_to`). This is verified by grep of the entire
+`coordinator/src/` tree — no other code path assigns `inner = None`. The FSM has
+three valid edges to `Phase::Idle` — Broadcast → Idle, Blame → Idle, and
+InputReg → Idle — reached from the following trigger sites (referenced by
+function, since line numbers drift):
+
+- **Broadcast → Idle** on broadcast success — `signing::finalize_broadcast`.
+- **Broadcast → Idle** when the broadcast watchdog fires —
+  `run::broadcast_watchdog_force_idle` (M5b backstop).
+- **Broadcast → Blame → Idle** on broadcast failure —
+  `signing::apply_broadcast_failure_blame` (M5b: the round now moves to
+  `Broadcast` before the broadcast RPC, so a failed broadcast ends via Blame).
+- **Blame → Idle** on signing timeout — `blame::on_signing_timeout`.
+- **Blame → Idle** on missing output — `round::output_reg::on_output_reg_timeout`.
+- **InputReg → Idle** on quorum failure — the run.rs phase monitor.
+
+All route through `transition_to(Phase::Idle)`; none bypass the chokepoint. The
+coordinator holds a single `Arc<RwLock<RoundState>>` per process — there is no
+`HashMap<RoundId, RoundState>` map, so no drop-on-map-removal pattern exists to be
+analyzed separately. (M5b note: the broadcast RPC now runs off the lock in a
+detached finalize task, but every `→ Idle`/`→ Blame` transition still happens under
+the re-acquired write lock, guarded by a `round_id` + `phase == Broadcast` check.)
 
 **The cryptographic work.** The wrapped `BjSecretKey` holds
 `inner: rsa::RsaPrivateKey` (verified at the installed registry source
@@ -499,31 +509,35 @@ prose below is the threat-model treatment.
   Requirements.
 
 - **AUDIT-03 chokepoint result-discard pattern (`let _ =` on FSM
-  transitions).** The 3 success-path FSM trigger sites that ultimately
-  route through `transition_to(Phase::Idle)` use the pattern
-  `let _ = state.transition_to(Phase::{Broadcast,Idle})` at
-  `coordinator/src/round/signing.rs:279-280` (Broadcast → Idle on success),
-  `coordinator/src/round/blame.rs:219-220` (Blame → Idle on signing
-  timeout), and `coordinator/src/round/output_reg.rs:30-31` (Blame → Idle
-  on missing output). The discarded `Result<(), TransitionError>` would
-  signal a failed FSM edge, but in the current concurrency model the
-  preceding transitions guarantee a valid edge: the round-state
-  `Arc<RwLock<RoundState>>` is held for the duration of each handler,
-  no other writer can interleave a phase change, and the preceding
-  transition (e.g., `Signing → Broadcast` in signing.rs:271) has already
-  established a phase from which `→ Idle` is a valid edge per
-  `Phase::can_transition_to`. If a future refactor introduces concurrent
-  writers, a different middle phase, or a stricter FSM validator, a
-  failed transition would silently leave `RoundStateInner.inner` (and
-  hence `Option<RsaBlindSigner>`) live in memory until the next
-  successful `→ Idle` transition, violating the AUDIT-03 bounded-window
-  claim's spirit. **Disposition: ACCEPTED** as defense-in-depth gap
-  with the explicit invariant that **any change to the FSM concurrency
-  model or the set of `Phase::can_transition_to` edges MUST audit these
-  3 sites first**; closure (replacing `let _ =` with explicit
-  `.expect()` or `.unwrap_or_else(|e| { /* fallback drop */ })`)
-  deferred to v1.6+. Surfaced by the v1.5 internal code review (Phase
-  21 REVIEW.md CR-01).
+  transitions).** The FSM trigger sites that route through
+  `transition_to(Phase::Idle)` discard the returned `Result` with `let _ =`.
+  As of M5b these are (by function, since line numbers drift):
+  `signing::finalize_broadcast` (`Broadcast → Idle` on broadcast success),
+  `run::broadcast_watchdog_force_idle` (`Broadcast → Idle` when the watchdog
+  fires), `signing::apply_broadcast_failure_blame` (`Broadcast → Blame → Idle`
+  on broadcast failure), `blame::on_signing_timeout` (`Signing → Blame → Idle`
+  on signing timeout), and `round::output_reg::on_output_reg_timeout`
+  (`OutputReg → Blame → Idle` on missing output). (Two related transitions are
+  NOT discarded and so are not in this set: `Signing → Broadcast` in
+  `signing::process_sign` propagates via `?`, and the `InputReg → Idle`
+  quorum-fail transition in the run.rs monitor is an explicit
+  `if let Err(e) = … { warn }`.) The discarded `Result<(), TransitionError>`
+  would signal a failed FSM edge, but the edge is guaranteed valid at each site:
+  every discarded transition runs while holding the `Arc<RwLock<RoundState>>`
+  write lock, and the M5b off-lock sites (`finalize_broadcast`,
+  `broadcast_watchdog_force_idle`) additionally re-check `round_id` +
+  `phase == Broadcast` under that re-acquired lock before transitioning, so the
+  `→ Idle`/`→ Blame` edge is always valid per `Phase::can_transition_to` when it
+  fires. If a future refactor introduces concurrent writers, a different middle
+  phase, or a stricter FSM validator, a failed transition would silently leave
+  `RoundStateInner.inner` (and hence `Option<RsaBlindSigner>`) live in memory
+  until the next successful `→ Idle`, violating the AUDIT-03 bounded-window
+  claim's spirit. **Disposition: ACCEPTED** as a defense-in-depth gap with the
+  explicit invariant that **any change to the FSM concurrency model or the set
+  of `Phase::can_transition_to` edges MUST audit these sites first**; closure
+  (replacing `let _ =` with explicit `.expect()` or a fallback drop) deferred to
+  v1.6+. Surfaced by the v1.5 internal code review (Phase 21 REVIEW.md CR-01);
+  site list refreshed for M5b.
 
 ### Residual Risks: Operational
 

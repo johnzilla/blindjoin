@@ -174,6 +174,11 @@ pub fn process_sign(
 /// Bounded against a hung bitcoind (M5a ~10s per call): two consecutive RPC errors
 /// mean the node is unreachable, so stop early — nobody is banned on RPC uncertainty
 /// anyway, and this caps the failure path at ~2×10s.
+///
+/// WATCHDOG MATH INVARIANT: this loop is `max_participants` SERIAL RPCs — it sets the
+/// worst-case honest finalize that `CoordinatorConfig::broadcast_watchdog_secs` must
+/// exceed. Adding RPCs here (or making each call costlier) MUST re-derive that
+/// formula (see the invariant comment at `finalize_broadcast`).
 async fn revalidate_spent_inputs(
     rpc: &BitcoinRpc,
     outpoints: &[String],
@@ -449,6 +454,12 @@ fn assemble_final_tx_hex(
 /// The `round_id` guard on every re-acquire ensures a slow finalize that lost a race
 /// with the watchdog (which force-Idles and mints a new round_id) does not touch the
 /// wrong round — the tx may still be out, which is benign (the round already reset).
+///
+/// WATCHDOG MATH INVARIANT: any change to the number of serial RPCs in the
+/// broadcast / failure path MUST re-derive `CoordinatorConfig::broadcast_watchdog_secs`
+/// (`10 + max_participants × per-input-RPC-time` is its floor). The derivation comment
+/// in `config.rs::broadcast_watchdog_secs` names this path — update both together or
+/// the watchdog can preempt a live finalize and skip attributing a proven griefer.
 #[allow(clippy::too_many_arguments)]
 pub async fn finalize_broadcast(
     round: std::sync::Arc<tokio::sync::RwLock<RoundState>>,
@@ -614,7 +625,6 @@ mod tests {
             inner.registered_inputs.insert(utxo_str.to_string(), RegisteredInput {
                 utxo_str: utxo_str.to_string(),
                 change_address: signet_addr(0x78),
-                blind_sig_hash: [0u8; 32],
                 script_pubkey: input_spk,
                 value_sats: 1_100_000,
                 script_type: shared::bip322::ScriptType::P2wpkh,
@@ -884,7 +894,6 @@ mod tests {
                 m.insert("txabc:0".to_string(), RegisteredInput {
                     utxo_str: "txabc:0".to_string(),
                     change_address: "addr".to_string(),
-                    blind_sig_hash: [0u8; 32],
                     script_pubkey: bitcoin::ScriptBuf::new(),
                     value_sats: 150_000,
                     script_type: shared::bip322::ScriptType::P2wpkh,
@@ -894,7 +903,6 @@ mod tests {
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: HashMap::new(), // No partial sig for txabc:0 → non-signer
-            change_addresses: HashMap::new(),
         };
         state.participant_count = 1;
         state.inner = Some(inner);
@@ -929,7 +937,6 @@ mod tests {
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: HashMap::new(),
-            change_addresses: HashMap::new(),
         });
         let mut ban_list = BanList::new();
 
@@ -954,16 +961,15 @@ mod tests {
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: HashMap::new(),
-            change_addresses: HashMap::new(),
         };
         // 2 inputs, 1 output → missing output
         inner.registered_inputs.insert("tx1:0".to_string(), RegisteredInput {
-            utxo_str: "tx1:0".to_string(), change_address: "a".into(), blind_sig_hash: [0u8; 32],
+            utxo_str: "tx1:0".to_string(), change_address: "a".into(),
             script_pubkey: bitcoin::ScriptBuf::new(), value_sats: 150_000,
             script_type: shared::bip322::ScriptType::P2wpkh,
         });
         inner.registered_inputs.insert("tx2:0".to_string(), RegisteredInput {
-            utxo_str: "tx2:0".to_string(), change_address: "b".into(), blind_sig_hash: [0u8; 32],
+            utxo_str: "tx2:0".to_string(), change_address: "b".into(),
             script_pubkey: bitcoin::ScriptBuf::new(), value_sats: 150_000,
             script_type: shared::bip322::ScriptType::P2wpkh,
         });
@@ -993,7 +999,6 @@ mod tests {
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: HashMap::new(),
-            change_addresses: HashMap::new(),
         });
         let mut ban_list = BanList::new();
         on_signing_timeout(&mut state, &mut ban_list, "/dev/null", 3600, 0);

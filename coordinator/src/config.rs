@@ -406,6 +406,16 @@ impl CoordinatorConfig {
             c.min_participants, c.max_participants,
         );
         anyhow::ensure!(
+            c.max_participants <= 100,
+            "coordinator.max_participants ({}) must be <= 100. Beyond this a CoinJoin \
+             is impractically large, and — more importantly — it keeps the derived \
+             Broadcast watchdog structurally ahead of the worst-case finalize \
+             (whose failure path re-validates up to max_participants inputs serially): \
+             the watchdog's 3600s cap only exceeds `10 + max_participants·10`s while \
+             max_participants stays well bounded.",
+            c.max_participants,
+        );
+        anyhow::ensure!(
             c.denomination_sats >= 546,
             "coordinator.denomination_sats must be >= 546 (dust threshold); got {} — \
              a 0/dust denomination guarantees perpetual round failure.",
@@ -468,6 +478,11 @@ impl CoordinatorConfig {
     /// world that needs it. So the watchdog is DERIVED from `max_participants` (not a
     /// fixed const) with generous per-participant headroom over the RPC timeout,
     /// bounded to a sane ceiling.
+    ///
+    /// WATCHDOG MATH INVARIANT: this formula tracks the serial-RPC count in the
+    /// broadcast/failure path (`signing::finalize_broadcast` +
+    /// `signing::revalidate_spent_inputs` — both carry the matching invariant comment).
+    /// Any change to that path's RPC count or per-call cost MUST re-derive this formula.
     pub fn broadcast_watchdog_secs(&self) -> u64 {
         const BASE_SECS: u64 = 30; // testmempoolaccept + sendrawtransaction + slack
         const PER_PARTICIPANT_SECS: u64 = 15; // > the 10s RPC request timeout, w/ headroom
@@ -556,6 +571,13 @@ mod tests {
         c.coordinator.min_participants = 5;
         c.coordinator.max_participants = 3;
         assert!(c.validate().is_err(), "max < min lets rounds run below the advertised minimum");
+    }
+
+    #[test]
+    fn validate_rejects_max_participants_above_cap() {
+        let mut c = CoordinatorConfig::with_defaults();
+        c.coordinator.max_participants = 101; // above the 100 cap (A1)
+        assert!(c.validate().is_err(), "max_participants > 100 must be rejected");
     }
 
     #[test]

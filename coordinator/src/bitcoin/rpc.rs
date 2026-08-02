@@ -143,8 +143,4 @@ impl BitcoinRpc {
         let result = self.call("getblockcount", json!([])).await?;
         result.as_u64().ok_or_else(|| RpcError::Parse("expected u64".into()))
     }
-
-    pub async fn getrawtransaction(&self, txid: &Txid, verbose: bool) -> Result<Value, RpcError> {
-        self.call("getrawtransaction", json!([txid.to_string(), verbose])).await
-    }
 }

@@ -2,7 +2,6 @@ use bitcoin::{OutPoint, ScriptBuf};
 use shared::errors::{ApiError, ErrorCode};
 use crate::round::state::{RegisteredInput, RoundState};
 use crate::round::manager::generate_session_token;
-use sha2::{Sha256, Digest};
 use blind_rsa_signatures::BlindMessage;
 
 /// Result of a successful input registration.
@@ -77,21 +76,15 @@ pub fn register_input(
     // Generate session token for this (round_secret, utxo) pair
     let session_token = generate_session_token(&inner.round_secret, utxo);
 
-    // Compute blind_sig_hash for double-registration detection
-    let blind_sig_hash: [u8; 32] = Sha256::digest(
-        <blind_rsa_signatures::BlindSignature as AsRef<[u8]>>::as_ref(&blind_sig)
-    ).into();
-
-    // Register the input
+    // Register the input. Double-registration is prevented by the `registered_inputs`
+    // map key (utxo_str) — UTXO-03 — not by any per-signature hash.
     inner.registered_inputs.insert(utxo_str.clone(), RegisteredInput {
         utxo_str: utxo_str.clone(),
         change_address: change_address.to_string(),
-        blind_sig_hash,
         script_pubkey: utxo_script_pubkey,
         value_sats: utxo_value_sats,
         script_type: utxo_script_type,
     });
-    inner.change_addresses.insert(utxo_str, change_address.to_string());
     state.participant_count += 1;
 
     Ok(InputRegResult {
@@ -198,7 +191,6 @@ mod tests {
             RegisteredInput {
                 utxo_str: utxo_str.clone(),
                 change_address: "tb1qother".to_string(),
-                blind_sig_hash: [0u8; 32],
                 script_pubkey: bitcoin::ScriptBuf::new(),
                 value_sats: 150_000,
                 script_type: shared::bip322::ScriptType::P2wpkh,

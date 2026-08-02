@@ -104,7 +104,6 @@ pub fn install_round(state: &mut RoundState, material: RoundMaterial) -> Result<
         redeemed_tokens: HashSet::new(),
         registered_outputs: Vec::new(),
         partial_sigs: HashMap::new(),
-        change_addresses: HashMap::new(),
     });
 
     state.transition_to(Phase::InputReg)?;

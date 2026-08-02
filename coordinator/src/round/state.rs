@@ -61,8 +61,6 @@ pub struct RegisteredInput {
     /// String representation of the UTXO outpoint ("txid:vout")
     pub utxo_str: String,
     pub change_address: String,
-    /// SHA-256 of the blind signature token hash (for double-registration prevention)
-    pub blind_sig_hash: [u8; 32],
     /// On-chain script_pubkey of this UTXO, as returned by Bitcoin Core gettxout
     /// during validate_utxo. Used by signing.rs to populate the correct witness_utxo
     /// in the PSBT — clients no longer need to overwrite it locally with unverified values.
@@ -126,8 +124,6 @@ pub struct RoundStateInner {
     pub registered_outputs: Vec<RegisteredOutput>,
     /// Partial signatures keyed by UTXO outpoint string.
     pub partial_sigs: HashMap<String, Vec<u8>>,
-    /// Change addresses keyed by UTXO outpoint string.
-    pub change_addresses: HashMap<String, String>,
 }
 
 impl Drop for RoundStateInner {
@@ -156,8 +152,6 @@ impl Drop for RoundStateInner {
             v.zeroize();
         }
         self.partial_sigs.clear();
-        // Clear change addresses (strings; best-effort — String doesn't impl Zeroize)
-        self.change_addresses.clear();
     }
 }
 
@@ -287,7 +281,6 @@ mod tests {
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: Default::default(),
-            change_addresses: Default::default(),
         });
         // Transition to Broadcast then to Idle
         state.transition_to(Phase::Broadcast).unwrap();
@@ -324,7 +317,6 @@ mod tests {
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: Default::default(),
-            change_addresses: Default::default(),
         });
         // Pre-transition: rsa_signer is Some, so the Drop chain has a target.
         assert!(
@@ -375,7 +367,6 @@ mod tests {
             redeemed_tokens: HashSet::new(),
             registered_outputs: vec![],
             partial_sigs: Default::default(),
-            change_addresses: Default::default(),
         };
 
         // The cached signer's public key hash must match what was generated
