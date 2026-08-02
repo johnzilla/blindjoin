@@ -81,6 +81,39 @@ mod tests {
         assert_eq!(estimate_fee_share(&bip, 0, 2), 0);
     }
 
+    /// H1 regression: the per-participant share is monotonically NON-INCREASING in
+    /// n, so the estimate at `min_participants` is an upper bound for every larger
+    /// finalizing round. The INPUT_REG gate MUST use this bound; using
+    /// `max_participants` under-charges and lets a marginally-funded UTXO pass
+    /// registration then fail `build_coinjoin_psbt` at signing (round wedge +
+    /// mass wrongful ban). If this ever fails, the registration gate at
+    /// handlers.rs is no longer pessimistic and H1 has regressed.
+    #[test]
+    fn share_is_monotonic_non_increasing_in_n() {
+        let bip = make_bip_config(true, true, true, ScriptType::P2wpkh);
+        let min = 3u32;
+        let at_min = estimate_fee_share(&bip, min, 2);
+        for n in min..=64 {
+            assert!(
+                estimate_fee_share(&bip, n, 2) <= at_min,
+                "share at n={n} exceeded the min_participants={min} bound — \
+                 registration gate would under-charge and wedge the round",
+            );
+        }
+    }
+
+    /// H1 concrete boundary (defaults: P2WPKH-only, rate=2). The v1.4 build baseline
+    /// charges 266 sats/participant at n=3 (see tx.rs
+    /// `fee_share_p2wpkh_only_matches_v14_baseline`). The registration estimate at
+    /// min=3 must equal that, and the OLD max=20 estimate (261) must be strictly
+    /// lower — i.e. the exact ~5-sat gap the fix closes.
+    #[test]
+    fn min_participants_estimate_covers_build_baseline() {
+        let bip = make_bip_config(true, false, false, ScriptType::P2wpkh);
+        assert_eq!(estimate_fee_share(&bip, 3, 2), 266, "registration gate @ min=3");
+        assert_eq!(estimate_fee_share(&bip, 20, 2), 261, "old buggy gate @ max=20");
+    }
+
     /// P2WPKH-only allowed set with output=P2WPKH at n=3, fee_rate=2:
     ///   worst_input_vb = 68; output_vb = 31; vsize = 10 + 68*3 + 31*6 = 400
     ///   fee_share = 800 / 3 = 266 sats/participant

@@ -5,7 +5,7 @@
 //! path as the production binary — there is no separate test bootstrap.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 use anyhow::Context;
 use tokio::sync::RwLock;
@@ -16,7 +16,6 @@ use crate::bitcoin::rpc::BitcoinRpc;
 use crate::config::CoordinatorConfig;
 use crate::network::tor::serve_onion_service;
 use crate::round::blame::{BanList, BlameOutcome};
-use crate::round::manager::start_round;
 use crate::round::state::{Phase, RoundState};
 use crate::{api, discovery};
 
@@ -91,6 +90,12 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
     // blame_round_count tracks consecutive blame rounds for the cap (T-02-07).
     let blame_round_count: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 
+    // H3: Unix-seconds timestamp before which the Idle re-armer must not start a new
+    // round. The signing-timeout handler sets this on a FullAbort so the cap has a
+    // visible effect (a backoff) instead of being inert. Shared with AppState so the
+    // sign handler and monitor operate on the same clock.
+    let round_paused_until: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+
     // Spawn a phase monitor that:
     //   1. On Idle (including initial boot) → call start_round() to begin a new round.
     //   2. On InputReg → arm a timeout that advances to OutputReg if quorum met,
@@ -106,8 +111,10 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let round_clone = Arc::clone(&round_state);
         let ban_list_clone = Arc::clone(&ban_list);
         let blame_count_clone = Arc::clone(&blame_round_count);
+        let paused_until_clone = Arc::clone(&round_paused_until);
         let ban_file = cfg.coordinator.ban_file_path.clone();
         let ban_duration = cfg.coordinator.blame_ban_duration_secs;
+        let full_abort_backoff = cfg.coordinator.blame_full_abort_backoff_secs;
         let min_participants = cfg.coordinator.min_participants;
         let input_reg_timeout = Duration::from_secs(cfg.coordinator.round_timeout_input_reg_secs);
         let signing_timeout = Duration::from_secs(cfg.coordinator.round_timeout_signing_secs);
@@ -133,17 +140,46 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
 
                 match phase {
                     Phase::Idle if last_idle_start_round != Some(round_id) => {
+                        // H3: honor a FullAbort backoff. While paused, do NOT mark this
+                        // round_id as handled — leave `last_idle_start_round` unchanged
+                        // so the branch re-fires on a later tick once the backoff lapses.
+                        let paused_until = paused_until_clone.load(Ordering::Relaxed);
+                        if crate::round::blame::now_unix_secs() < paused_until {
+                            continue;
+                        }
                         // First time we've seen this Idle round_id — start a round.
                         // `transition_to(Phase::Idle)` always assigns a fresh round_id,
                         // so this branch fires exactly once per Idle cycle.
                         last_idle_start_round = Some(round_id);
+
+                        // M2: generate the RSA keypair OFF the round write lock and
+                        // OFF the async worker, via spawn_blocking. Holding the write
+                        // lock across the tens-to-hundreds-of-ms keygen stalled every
+                        // /info read and handler once per round cycle.
+                        let material = match tokio::task::spawn_blocking(
+                            crate::round::manager::generate_round_material,
+                        ).await {
+                            Ok(Ok(m)) => m,
+                            Ok(Err(e)) => {
+                                error!(error = %e, "round keygen failed — will retry next tick");
+                                last_idle_start_round = None;
+                                continue;
+                            }
+                            Err(e) => {
+                                error!(error = %e, "keygen task panicked — will retry next tick");
+                                last_idle_start_round = None;
+                                continue;
+                            }
+                        };
+
                         let mut guard = round_clone.write().await;
-                        // Re-check under write lock — concurrent handler may have
-                        // moved the FSM forward while we waited for the lock.
+                        // Re-check under write lock — concurrent handler may have moved
+                        // the FSM forward (or a fresh Idle cycle began) while we were
+                        // generating; if so, discard the just-generated material.
                         if guard.phase != Phase::Idle || guard.round_id != round_id {
                             continue;
                         }
-                        match start_round(&mut guard) {
+                        match crate::round::manager::install_round(&mut guard, material) {
                             Ok(()) => {
                                 info!(
                                     round_id = %guard.round_id,
@@ -151,8 +187,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                                 );
                             }
                             Err(e) => {
-                                error!(error = %e, "start_round failed — will retry next tick");
-                                // Allow retry on the next tick.
+                                error!(error = %e, "install_round failed — will retry next tick");
                                 last_idle_start_round = None;
                             }
                         }
@@ -218,6 +253,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                         let round_c = Arc::clone(&round_clone);
                         let ban_list_c = Arc::clone(&ban_list_clone);
                         let blame_count_c = Arc::clone(&blame_count_clone);
+                        let paused_until_c = Arc::clone(&paused_until_clone);
                         let ban_file_c = ban_file.clone();
                         tracing::debug!(%round_id, "Arming signing timeout timer");
                         tokio::spawn(async move {
@@ -234,6 +270,18 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                             match outcome {
                                 BlameOutcome::FullAbort => {
                                     blame_count_c.store(0, Ordering::Relaxed);
+                                    // H3: make FullAbort observable — pause the Idle
+                                    // re-armer for the operator-set backoff instead of
+                                    // letting it restart a fresh round on the next tick.
+                                    if full_abort_backoff > 0 {
+                                        let resume_at = crate::round::blame::now_unix_secs()
+                                            + full_abort_backoff;
+                                        paused_until_c.store(resume_at, Ordering::Relaxed);
+                                        tracing::warn!(
+                                            %round_id, backoff_secs = full_abort_backoff,
+                                            "FullAbort — pausing round re-armer"
+                                        );
+                                    }
                                 }
                                 BlameOutcome::RestartWithout { .. } => {
                                     blame_count_c.fetch_add(1, Ordering::Relaxed);
@@ -259,6 +307,8 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
             Arc::new(rpc),
             Arc::new(cfg.clone()),
             ban_list,
+            Arc::clone(&blame_round_count),
+            Arc::clone(&round_paused_until),
         );
 
         // T-08-03-01: thread the connection-cap value through to the accept loop.
@@ -313,6 +363,8 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
             Arc::new(rpc),
             Arc::new(cfg.clone()),
             ban_list,
+            Arc::clone(&blame_round_count),
+            Arc::clone(&round_paused_until),
         );
         let addr = cfg.coordinator.listen_addr.clone();
         let listener = tokio::net::TcpListener::bind(&addr).await?;

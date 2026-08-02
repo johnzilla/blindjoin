@@ -173,6 +173,13 @@ pub fn now_unix_secs() -> u64 {
         .as_secs()
 }
 
+/// Cap on consecutive *unproductive* blame rounds before a FullAbort backoff
+/// kicks in (Pitfall 3 / T-02-07). Shared by the signing-timeout path
+/// (`on_signing_timeout`) and the broadcast-failure path
+/// (`signing::blame_broadcast_failure`) so both agree on when the round re-armer
+/// should be paused instead of instantly restarting into the same wedge.
+pub const CONSECUTIVE_BLAME_CAP: u32 = 2;
+
 /// Outcome returned by on_signing_timeout, consumed by the caller in main.rs.
 pub enum BlameOutcome {
     /// Round aborted — coordinator returns to Idle without restart.
@@ -223,8 +230,8 @@ pub fn on_signing_timeout(
     let _ = state.transition_to(Phase::Blame);
     let _ = state.transition_to(Phase::Idle);
 
-    // Per Pitfall 3 in PITFALLS.md: cap consecutive blame rounds at 2 (T-02-07)
-    if blame_round_count >= 2 {
+    // Per Pitfall 3 in PITFALLS.md: cap consecutive blame rounds (T-02-07)
+    if blame_round_count >= CONSECUTIVE_BLAME_CAP {
         tracing::warn!("blame round cap reached — full round abort");
         return BlameOutcome::FullAbort;
     }

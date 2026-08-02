@@ -134,16 +134,19 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 
 | Setting | Default | Description | Startup-validated |
 |---------|---------|-------------|:-:|
-| `network.bitcoin_network` | signet | signet, testnet4, regtest, mainnet |  |
+| `network.bitcoin_network` | signet | signet, testnet4, regtest, mainnet — an unrecognized value is rejected at startup (no silent fallback to signet) | ✓ |
 | `network.bitcoin_rpc_url` | 127.0.0.1:38332 | Bitcoin Core RPC endpoint |  |
-| `coordinator.denomination_sats` | 1,000,000 | Fixed output amount (0.01 BTC) |  |
-| `coordinator.min_participants` | 3 | Minimum to start a round |  |
-| `coordinator.max_participants` | 20 | Maximum per round |  |
+| `coordinator.denomination_sats` | 1,000,000 | Fixed output amount (0.01 BTC); must be ≥ 546 (dust) | ✓ |
+| `coordinator.min_participants` | 3 | Minimum to start a round; must be ≥ 2 and ≤ `max_participants` | ✓ |
+| `coordinator.max_participants` | 20 | Maximum per round; must be ≥ `min_participants` | ✓ |
+| `coordinator.fee_rate_sat_per_vbyte` | 2 | Fee rate for the CoinJoin tx; must be ≥ 1 | ✓ |
+| `coordinator.round_timeout_input_reg_secs` / `_output_reg_secs` / `_signing_secs` | 60 / 60 / 30 | Phase deadlines; each must be ≥ 1 | ✓ |
 | `coordinator.listen_addr` | 0.0.0.0:8080 | HTTP listen address (clearnet mode) |  |
 | `coordinator.tor_mode` | false | Run as Tor hidden service |  |
 | `coordinator.blame_ban_duration_secs` | 3600 | Ban duration for misbehaving UTXOs |  |
-| `coordinator.rate_limit_info_per_min` | 60 | Per-route limit for read endpoints (`/info`, `/round/tx`); 1..=60_000 | ✓ |
-| `coordinator.rate_limit_writes_per_min` | 30 | Per-route limit for write endpoints (`/round/input`, `/round/output`, `/round/sign`); 1..=60_000 | ✓ |
+| `coordinator.blame_full_abort_backoff_secs` | 300 | After the consecutive-blame cap trips (round repeatedly failing to complete), pause the round re-armer this long instead of instantly restarting into the same wedge; 0 restarts immediately |  |
+| `coordinator.rate_limit_info_per_min` | 600 | Per-route limit for read endpoints (`/info`, `/round/tx`); 1..=60_000. Global bucket (Tor forces `GlobalKeyExtractor`); sized so honest polling doesn't self-throttle — clients tolerate 429 with `Retry-After` backoff | ✓ |
+| `coordinator.rate_limit_writes_per_min` | 120 | Per-route limit for write endpoints (`/round/input`, `/round/output`, `/round/sign`); 1..=60_000. Sized to cover one full `max_participants` round's write load | ✓ |
 | `coordinator.request_timeout_secs` | 30 | Uniform per-request handler deadline; clients see HTTP 408 on stall | ✓ |
 | `coordinator.max_concurrent_connections` | 256 | Cap on simultaneous Tor hidden-service streams; excess connections park | ✓ |
 | `discovery.pkarr_key_file` | coordinator_pkarr.key | Ed25519 keypair for DHT identity |  |
@@ -153,7 +156,7 @@ See `blindjoin.toml.example` for all options. All settings can be overridden wit
 | `bip.allow_p2sh_p2wpkh` | true | Accept BIP-49 P2SH-P2WPKH inputs (env: `BLINDJOIN__BIP__ALLOW_P2SH_P2WPKH`) | ✓ |
 | `bip.output_script_type` | p2wpkh | Script type of round outputs; one of `p2wpkh` / `p2tr` / `p2sh-p2wpkh`. MUST match an enabled `allow_*` flag (env: `BLINDJOIN__BIP__OUTPUT_SCRIPT_TYPE`) | ✓ |
 
-**✓ Startup-validated** entries are checked by `CoordinatorConfig::validate()` at boot — out-of-range values (e.g. `request_timeout_secs: 0`, or `max_concurrent_connections` above the OS file-descriptor cap) cause the coordinator to refuse to start with an actionable error, rather than panicking later under load. The unmarked entries get type-level validation only (TOML/serde parses an integer as an integer, but no semantic bounds are enforced). The four `coordinator.*` marked entries are the v1.2 Phase 8 DoS-hardening knobs; the four `bip.*` entries are the v1.4 multi-script allowlist (an all-`false` `bip.*` combination, or an `output_script_type` whose matching `allow_*` flag is `false`, refuses to start).
+**✓ Startup-validated** entries are checked by `CoordinatorConfig::validate()` at boot — out-of-range or nonsensical values (e.g. `min_participants: 1`, `max_participants` below `min_participants`, a dust `denomination_sats`, a `fee_rate` of 0, a zero phase timeout, `request_timeout_secs: 0`, an unrecognized `bitcoin_network`, or `max_concurrent_connections` above the OS file-descriptor cap) cause the coordinator to refuse to start with an actionable error, rather than silently booting hardcoded defaults or panicking later under load. **A config that fails to load or validate is a fatal startup error — the coordinator never falls back to defaults**, so a mainnet-intended daemon can't accidentally boot as signet. The unmarked entries get type-level validation only (TOML/serde parses an integer as an integer, but no semantic bounds are enforced). Marked `coordinator.*` entries cover the round-parameter sanity checks plus the v1.2 Phase 8 DoS-hardening knobs; the four `bip.*` entries are the v1.4 multi-script allowlist (an all-`false` `bip.*` combination, or an `output_script_type` whose matching `allow_*` flag is `false`, refuses to start).
 
 ### API Endpoints
 
@@ -179,7 +182,7 @@ Errors return a structured JSON envelope:
 }
 ```
 
-**Rate limiting and timeouts.** All endpoints are rate-limited per route — reads default to 60 req/min, writes to 30 req/min. When a route is flooded, the coordinator returns **HTTP 429** with a `Retry-After` header and the same JSON envelope, with `code: "RATE_LIMITED"`:
+**Rate limiting and timeouts.** All endpoints are rate-limited per route — reads default to 600 req/min, writes to 120 req/min. These are **global** buckets (under Tor the coordinator cannot key on peer identity), sized so ordinary protocol load stays off the limiter; the client treats a 429 as retryable and backs off per `Retry-After` rather than aborting the round. When a route is flooded, the coordinator returns **HTTP 429** with a `Retry-After` header and the same JSON envelope, with `code: "RATE_LIMITED"`:
 
 ```json
 {
@@ -338,7 +341,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 
 **Availability hardening (v1.1):** Async RPC calls execute before the write lock so slow bitcoind cannot serialize participants. RSA keys are parsed once per round (not per request). Blinded tokens are size-bounded to the RSA modulus. Addresses are validated at registration time (not at PSBT build). Duplicate partial signatures are rejected.
 
-**Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 60/min, writes 30/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. All four knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP), so the coordinator deliberately uses `GlobalKeyExtractor`; sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
+**Public-endpoint hardening (v1.2 Phase 8):** Per-route rate limits via `tower_governor` (reads 600/min, writes 120/min by default) return HTTP 429 with `Retry-After` and a `RATE_LIMITED` JSON envelope. These are **global** buckets — under Tor the coordinator cannot key on peer identity (`GlobalKeyExtractor`), so no finite limit can single out an abuser; the defaults are sized so ordinary protocol load stays off the limiter, and the reference client treats a 429 as retryable (honoring `Retry-After`, bounded retries) on **every** read and write call rather than aborting the round — so bucket contention degrades gracefully instead of starving a mid-round client into a non-signer ban. A uniform request timeout (default 30s) caps handler runtime — slow clients see HTTP 408 rather than tying up worker slots. Concurrent Tor hidden-service streams are bounded by a `tokio::sync::Semaphore` (default 256) wrapping the accept loop. These knobs are operator-tunable in `coordinator.toml` and validated at startup so a misconfigured value fails fast rather than panicking under load. Per-peer throttling is impossible on Tor by design (all streams share an effective IP); sybil resistance lives in BIP-322 proofs and the per-round denomination, not the rate limiter.
 
 **Supply-chain hygiene:** TLS is pure-Rust [rustls](https://github.com/rustls/rustls) across the entire dependency tree; the openssl crate chain is not pulled in. `cargo audit` blocks merge on any advisory not declared in [`.cargo/audit.toml`](.cargo/audit.toml), where each accepted residual risk carries a written rationale. `cargo clippy --all-targets` blocks merge on any lint, including in integration-test code. CI's `bitcoind` install (v1.3+) verifies the Bitcoin Core tarball against achow101's PGP signature (key fingerprint `152812300785C96444D3334D17565732E08E5E41`, from a SHA-pinned `guix.sigs` commit). v1.6 adds: base-image digest pinning (sha256 digests inlined into `docker/Dockerfile`'s `FROM` lines); cosign keyless OIDC signing + SLSA v1.0 provenance + SPDX SBOM on every ghcr.io image push and on every release tarball; pinned cosign-installer at v3.10.1 (cosign 2.6.3); a `sigstore-pin-check` CI gate that fails the build on a floating sigstore-action tag. Verify recipes: [SECURITY.md § Supply-chain status](SECURITY.md#supply-chain-status).
 

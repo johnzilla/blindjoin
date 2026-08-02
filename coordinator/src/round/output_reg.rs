@@ -1,6 +1,8 @@
 use shared::errors::{ApiError, ErrorCode};
+use shared::token::compute_blind_token_message;
 use crate::blind::rsa::BjPublicKey;
 use crate::round::state::RoundState;
+use bitcoin::Script;
 use blind_rsa_signatures::{MessageRandomizer, Signature};
 
 /// Outcome returned by on_output_reg_timeout.
@@ -47,6 +49,8 @@ pub fn on_output_reg_timeout(state: &mut RoundState) -> OutputRegOutcome {
 ///   msg_randomizer — the 32-byte MessageRandomizer from BlindingResult (required for Randomized mode)
 ///   denomination   — configured denomination_sats
 ///   amount_sats    — amount_sats from the request
+///   output_script  — script_pubkey of the requested output_address (for the M3 binding check)
+#[allow(clippy::too_many_arguments)]
 pub fn register_output_logic(
     pk: &BjPublicKey,
     redeemed: &mut std::collections::HashSet<[u8; 32]>,
@@ -55,6 +59,7 @@ pub fn register_output_logic(
     msg_randomizer: Option<MessageRandomizer>,
     denomination: u64,
     amount_sats: u64,
+    output_script: &Script,
 ) -> Result<(), ApiError> {
     // 1. Check denomination match (PROTO-03)
     if amount_sats != denomination {
@@ -83,6 +88,23 @@ pub fn register_output_logic(
             round_id: None,
         })?;
 
+    // 2b. Output binding (M3 / PROTOCOL.md Output-Registration MUST #2): the signed
+    // token message M MUST reconstruct from the output actually being registered —
+    // token_msg == SHA-256("blindjoin-v1" || output_script || amount). Without this,
+    // a valid coordinator-signed token is a transferable BEARER asset redeemable to
+    // ANY address, decoupling the output from the script committed at input time and
+    // contradicting the protocol. Runs AFTER sig verify (same anti-oracle discipline)
+    // so only a holder of a genuine token reaches it. `compute_blind_token_message`
+    // is the single source of truth shared with the client's token construction.
+    let expected_msg = compute_blind_token_message(output_script, amount_sats);
+    if &expected_msg != token_msg {
+        return Err(ApiError {
+            code: ErrorCode::InvalidToken,
+            message: "Token does not bind to the requested output address and amount".into(),
+            round_id: None,
+        });
+    }
+
     // 3. Replay check (PROTO-04)
     if redeemed.contains(token_msg) {
         return Err(ApiError {
@@ -104,15 +126,29 @@ mod tests {
     use shared::token::compute_blind_token_message;
     use bitcoin::ScriptBuf;
 
+    /// The canonical dummy P2WPKH output script (OP_0 <20 bytes>) that
+    /// `make_valid_token_sig` binds tokens to. Callers pass `&test_output_script()`
+    /// to `register_output_logic` so the M3 binding check sees the matching script.
+    fn test_output_script() -> ScriptBuf {
+        let mut script_bytes = vec![0x00u8, 0x14];
+        script_bytes.extend([0xab_u8; 20]);
+        ScriptBuf::from_bytes(script_bytes)
+    }
+
+    /// A DIFFERENT valid P2WPKH script, for the binding-mismatch test.
+    fn other_output_script() -> ScriptBuf {
+        let mut script_bytes = vec![0x00u8, 0x14];
+        script_bytes.extend([0xcd_u8; 20]);
+        ScriptBuf::from_bytes(script_bytes)
+    }
+
     /// Create a valid (token_msg, unblinded_sig_bytes, msg_randomizer) triple.
     /// Simulates the client blinding M, coordinator blind-signing, client unblinding.
+    /// The token is bound to `test_output_script()`.
     fn make_valid_token_sig(signer: &RsaBlindSigner, amount: u64) -> ([u8; 32], Vec<u8>, Option<MessageRandomizer>) {
         use blind_rsa_signatures::DefaultRng;
 
-        // Build a dummy P2WPKH output script: OP_0 <20 bytes>
-        let mut script_bytes = vec![0x00u8, 0x14];
-        script_bytes.extend([0xab_u8; 20]);
-        let script = ScriptBuf::from_bytes(script_bytes);
+        let script = test_output_script();
         let msg = compute_blind_token_message(&script, amount);
 
         // Client blinds msg using DefaultRng (from blind-rsa-signatures crate)
@@ -137,8 +173,29 @@ mod tests {
         let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
         let result = register_output_logic(
             &signer.public_key, &mut std::collections::HashSet::new(), &msg, &sig, randomizer, denom, denom,
+            &test_output_script(),
         );
         assert!(result.is_ok(), "Valid token must be accepted: {:?}", result);
+    }
+
+    /// M3 regression: a token validly signed for output script A must be REJECTED
+    /// when redeemed against a different output script B — otherwise the token is a
+    /// transferable bearer asset, contradicting PROTOCOL.md's binding MUST.
+    #[test]
+    fn output_reg_rejects_wrong_output_binding() {
+        let signer = RsaBlindSigner::generate().unwrap();
+        let denom = 1_000_000u64;
+        // Token is bound to test_output_script(); redeem against other_output_script().
+        let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
+        let result = register_output_logic(
+            &signer.public_key, &mut std::collections::HashSet::new(), &msg, &sig, randomizer, denom, denom,
+            &other_output_script(),
+        );
+        assert!(result.is_err());
+        assert!(
+            matches!(result.unwrap_err().code, ErrorCode::InvalidToken),
+            "token bound to a different output must be rejected as InvalidToken",
+        );
     }
 
     #[test]
@@ -149,6 +206,7 @@ mod tests {
         let mut redeemed = std::collections::HashSet::from([msg]);
         let result = register_output_logic(
             &signer.public_key, &mut redeemed, &msg, &sig, randomizer, denom, denom,
+            &test_output_script(),
         );
         assert!(result.is_err());
         assert!(
@@ -164,6 +222,7 @@ mod tests {
         let (msg, sig, randomizer) = make_valid_token_sig(&signer, denom);
         let result = register_output_logic(
             &signer.public_key, &mut std::collections::HashSet::new(), &msg, &sig, randomizer, denom, 500_000,
+            &test_output_script(),
         );
         assert!(result.is_err());
         assert!(
@@ -180,6 +239,7 @@ mod tests {
         let bad_sig = vec![0xde, 0xad, 0xbe, 0xef];
         let result = register_output_logic(
             &signer.public_key, &mut std::collections::HashSet::new(), &msg, &bad_sig, randomizer, denom, denom,
+            &test_output_script(),
         );
         assert!(result.is_err());
         assert!(
@@ -207,6 +267,7 @@ mod tests {
         let bad_sig = vec![0xde, 0xad, 0xbe, 0xef];
         let result = register_output_logic(
             &signer.public_key, &mut redeemed, &msg, &bad_sig, randomizer, denom, denom,
+            &test_output_script(),
         );
         assert!(result.is_err());
         assert!(

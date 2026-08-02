@@ -156,7 +156,7 @@ pub async fn post_input(
     // Build snapshot of registered UTXOs and round config under read lock.
     // This snapshot may be stale by the time we mutate state — the TOCTOU re-check
     // inside register_input (under write lock) is the authoritative guard (D-02).
-    let (registered_snapshot, denomination_sats_snap, fee_rate_snap, max_participants_snap, snap_round_id) = {
+    let (registered_snapshot, denomination_sats_snap, fee_rate_snap, min_participants_snap, snap_round_id) = {
         let guard = state.round.read().await;
         let rid = guard.round_id.to_string();
         let snap: std::collections::HashSet<bitcoin::OutPoint> = guard.inner.as_ref()
@@ -165,14 +165,26 @@ pub async fn post_input(
         (snap,
          state.config.coordinator.denomination_sats,
          state.config.coordinator.fee_rate_sat_per_vbyte,
-         state.config.coordinator.max_participants,
+         state.config.coordinator.min_participants,
          rid)
     };
 
-    // Compute fee share for UTXO value check — use max_participants (pessimistic, WR-06).
+    // Compute fee share for UTXO value check — use min_participants (H1 fix).
+    //
+    // `estimate_fee_share` is monotonically DECREASING in n: the only n-dependent
+    // term is the fixed tx overhead (10 vB) amortized as `10*fee_rate/n`, so the
+    // per-participant share is LARGEST at the smallest n. The registration gate
+    // must require what the worst (smallest) finalizing round will actually charge
+    // at `build_coinjoin_psbt` time; a round can finalize with as few as
+    // `min_participants` inputs, so min is the pessimistic bound. Passing
+    // max_participants here under-charged (e.g. defaults: est=261 @ n=20 vs
+    // actual=266 @ n=3), letting a UTXO in [denom+261, denom+265] pass
+    // registration then fail InsufficientFunds at signing — wedging the round and
+    // mass-banning every honest participant for the coordinator's own arithmetic.
+    //
     // Phase 20 FEE-02: BipConfig threaded through so the worst-case-across-allowed-set
     // formula in fee.rs correctly accounts for P2SH-P2WPKH (91 vB) when allowed.
-    let fee_share_pre_lock = estimate_fee_share(&state.config.bip, max_participants_snap, fee_rate_snap);
+    let fee_share_pre_lock = estimate_fee_share(&state.config.bip, min_participants_snap, fee_rate_snap);
 
     // Validate UTXO before acquiring write lock (AVAIL-01: RPC outside write lock).
     // On failure, return immediately — write lock is never taken for bad UTXOs.
@@ -357,12 +369,13 @@ pub async fn post_output(
 
     // Validate output_address before acquiring write lock (WR-03).
     // An invalid address would otherwise abort the entire round at PSBT build time.
-    {
+    // Keep the parsed script — M3 needs it to check the token↔output binding.
+    let output_script = {
         let bitcoin_network = parse_bitcoin_network(&state.config.network.bitcoin_network);
         parse_address_to_script(&req.output_address, bitcoin_network).map_err(|e| {
             api_error(StatusCode::BAD_REQUEST, "INVALID_ADDRESS", e, None)
-        })?;
-    }
+        })?
+    };
 
     // Write lock
     let mut guard = state.round.write().await;
@@ -405,6 +418,7 @@ pub async fn post_output(
             msg_randomizer,
             denomination_sats,
             req.amount_sats,
+            &output_script,
         ).map_err(|e| {
             let status = match e.code {
                 shared::errors::ErrorCode::TokenAlreadyUsed => StatusCode::CONFLICT,
@@ -590,10 +604,18 @@ pub async fn post_sign(
 
     let round_id_str = guard.round_id.to_string();
 
+    // Acquire the ban-list write lock (round → ban_list order, matching the phase
+    // monitor's signing-timeout handler) so process_sign can attribute blame and
+    // ban a double-spend griefer on broadcast failure (H2).
+    let mut ban_guard = state.ban_list.write().await;
+
     let sign_result = process_sign(
         &mut guard,
         &state.rpc,
         &state.config,
+        &mut ban_guard,
+        &state.blame_round_count,
+        &state.round_paused_until,
         &utxo,
         &partial_sig_bytes,
         &session_token,
@@ -616,6 +638,8 @@ pub async fn post_sign(
             Ok(Json(json!({ "status": "recorded" })))
         }
         SignResult::Broadcast { txid } => {
+            // H3 reset now lives in signing::assemble_and_broadcast (single locus for
+            // the blame-counter transitions on the broadcast path).
             Ok(Json(json!({ "status": "broadcast", "txid": txid })))
         }
     }
@@ -632,13 +656,10 @@ fn parse_address_to_script(addr_str: &str, expected_network: bitcoin::Network) -
         .map_err(|e| format!("Invalid address '{}': {}", addr_str, e))
 }
 
-/// Parse a bitcoin network name string into bitcoin::Network.
+/// Parse the (startup-validated) configured network string. M1: the single parser
+/// lives in `config.rs`; unknown strings were rejected by `validate()` at boot, so
+/// this cannot fail here.
 fn parse_bitcoin_network(network_str: &str) -> bitcoin::Network {
-    match network_str {
-        "mainnet" | "bitcoin" => bitcoin::Network::Bitcoin,
-        "testnet" | "testnet4" => bitcoin::Network::Testnet,
-        "signet" => bitcoin::Network::Signet,
-        "regtest" => bitcoin::Network::Regtest,
-        _ => bitcoin::Network::Signet,
-    }
+    crate::config::parse_bitcoin_network(network_str)
+        .expect("bitcoin_network validated in CoordinatorConfig::validate")
 }

@@ -60,6 +60,17 @@ services:
       BLINDJOIN__NETWORK__BITCOIN_RPC_PASS: "blindjoin"
       BLINDJOIN__NETWORK__BITCOIN_NETWORK: "signet"
       BLINDJOIN__COORDINATOR__LISTEN_ADDR: "0.0.0.0:8080"
+      # Round parameters (M1): these are REQUIRED — the coordinator now fails fast on
+      # an incomplete config instead of silently booting hardcoded defaults, so the
+      # stack must specify them explicitly. Values below are the signet-demo defaults.
+      BLINDJOIN__COORDINATOR__DENOMINATION_SATS: "1000000"
+      BLINDJOIN__COORDINATOR__MIN_PARTICIPANTS: "3"
+      BLINDJOIN__COORDINATOR__MAX_PARTICIPANTS: "20"
+      BLINDJOIN__COORDINATOR__ROUND_TIMEOUT_INPUT_REG_SECS: "60"
+      BLINDJOIN__COORDINATOR__ROUND_TIMEOUT_OUTPUT_REG_SECS: "60"
+      BLINDJOIN__COORDINATOR__ROUND_TIMEOUT_SIGNING_SECS: "30"
+      BLINDJOIN__COORDINATOR__BLAME_BAN_DURATION_SECS: "3600"
+      BLINDJOIN__COORDINATOR__FEE_RATE_SAT_PER_VBYTE: "2"
       # This stack is clearnet-internal by design: the healthcheck curls
       # http://localhost:8080/info and the bot reaches http://coordinator:8080,
       # both of which need a clearnet listener (tor_mode would create a .onion

@@ -16,6 +16,41 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ### Fixed
 
+External security-review pass (no criticals; high- and medium-severity findings):
+
+- **Registration fee estimate under-charged, wedging rounds and mass-banning honest
+  participants (security/availability).** The input-registration gate estimated each
+  participant's fee share at `max_participants`, but the per-participant share is
+  largest at the *smallest* round size — so a UTXO funded for a near-minimum margin
+  passed registration then failed `InsufficientFunds` when the round finalized below
+  max. That failed the whole PSBT build for *every* signer, so the signing timeout
+  banned all of them for the coordinator's own arithmetic. The gate now estimates at
+  `min_participants` (the true worst case). Regression tests pin the monotonicity
+  bound and the concrete boundary.
+- **Post-registration double-spend griefing escaped blame (security).** A participant
+  could register, submit a valid partial signature, then double-spend its registered
+  UTXO in the mempool — the CoinJoin was rejected at broadcast, the round wedged until
+  timeout, and because everyone had "signed" the blame path banned nobody. On a
+  broadcast failure the coordinator now re-validates every input (mempool-aware),
+  bans the ones provably spent, and ends the round with attribution. Unattributed
+  failures (e.g. a static fee too low for the mempool) are counted toward the
+  consecutive-blame cap so they can't fast-churn forever.
+- **Consecutive-blame cap was inert and its counter drifted (correctness).** The
+  "full abort after N blame rounds" cap never actually paused anything, and the
+  counter was never reset on a successful broadcast, so it wasn't counting
+  *consecutive* failures. A full abort now pauses the round re-armer for a
+  configurable backoff, and a successful broadcast resets the counter.
+- **Output tokens were transferable bearer assets (privacy/correctness).** The
+  coordinator verified a blind-signed token's signature but never checked that the
+  token was issued for the output address being registered, letting a token be
+  redeemed to any address — contradicting the protocol's binding requirement. Output
+  registration now enforces `token == H("blindjoin-v1" ‖ output_script ‖ amount)`, so
+  tokens are non-transferable as specified.
+- **Canonical CoinJoin PSBT ordering depended on HashMap iteration order
+  (availability).** The display, per-signature-verification, and broadcast PSBTs were
+  byte-identical only by accident (same map instance, registration closed). Inputs
+  are now ordered canonically by outpoint (BIP-69), making byte-identity an explicit
+  invariant — one refactor away from a silent sighash-mismatch outage otherwise.
 - **Intermittent BIP-322 ownership-proof rejection on ECDSA descriptor wallets
   (security/availability).** The pinned `bip322 = "=0.0.10"` verifier only accepts
   ECDSA witness signatures of length 71/72 bytes, but bdk's deterministic signer
@@ -32,8 +67,34 @@ threat-model treatment of v1.4 / v1.5 invariants see
   detection notes in `docs/solutions/bip322-ecdsa-signature-length-flake.md`. This
   was surfacing as the intermittent `mixed_script_e2e` CI flake.
 
+### Changed
+
+- **A bad coordinator config is now a fatal startup error — no silent fallback to
+  defaults.** Previously any config load error (one typo) logged a warning and booted
+  hardcoded defaults (signet, loopback RPC, clearnet), so a mainnet-intended daemon
+  could come up as something else. Load/validation failure now aborts startup. An
+  unrecognized `network.bitcoin_network` is rejected outright instead of silently
+  mapping to signet. **The Docker Compose stack now specifies the full round config
+  explicitly** (it previously relied on the silent fallback). Startup validation also
+  gained round-parameter sanity checks: `min_participants ≥ 2`, `min ≤ max`,
+  non-dust `denomination_sats`, `fee_rate ≥ 1`, and non-zero phase timeouts.
+- **Rate-limit defaults raised: reads 60→600/min, writes 30→120/min.** The old reads
+  default (1 token/sec) exactly matched a single client polling `/info`, so two honest
+  clients starved each other with no attacker present. The reference client now treats
+  HTTP 429 as retryable (honoring `Retry-After`, bounded retries) on every read and
+  write call rather than aborting the round — the global bucket can't be fixed by
+  sizing alone under Tor, so graceful client backoff is the load-bearing mitigation.
+- **RSA round keygen moved off the round write lock.** The per-round RSA-2048 keypair
+  is now generated on a blocking thread pool and installed under the lock only
+  briefly, so keygen no longer stalls `/info` reads and every handler once per round.
+- **Bitcoin Core RPC calls now have an explicit 10s per-request timeout**, so a hung
+  `bitcoind` fails the call cleanly instead of blocking indefinitely.
+
 ### Added
 
+- **`coordinator.blame_full_abort_backoff_secs` (default 300).** Seconds the round
+  re-armer pauses after a full-abort blame outcome instead of instantly restarting
+  into the same wedge; `0` restarts immediately (legacy behavior).
 - **Per-input partial-signature verification at submission (security, H3).** The
   coordinator now cryptographically verifies each partial signature against the
   canonical CoinJoin transaction's sighash *before* recording it

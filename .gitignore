@@ -11,3 +11,6 @@
 # material — NEVER commit. Phase 17 17-02 added test paths that exercise this.
 descriptors.txt
 **/descriptors.txt
+
+# Session progress scratchpad (see checkpoint skill) — local-only, not shared repo state.
+CHECKPOINT.md

@@ -1,6 +1,27 @@
+use anyhow::Context;
 use config::{Config, File, Environment};
 use serde::Deserialize;
 use shared::bip322::ScriptType;
+
+/// Parse a configured network name into `bitcoin::Network`, erroring on anything
+/// unrecognized (M1). Single source of truth — previously duplicated verbatim in
+/// `handlers.rs` and `signing.rs`, both of which silently mapped an unknown string
+/// (e.g. a typo "signte") to Signet via a `_ =>` arm. A coordinator meant for
+/// mainnet must never boot as something else. `CoordinatorConfig::validate()`
+/// calls this at startup so a bad `network.bitcoin_network` fails fast; the
+/// runtime call sites then consume the already-validated value.
+pub fn parse_bitcoin_network(s: &str) -> anyhow::Result<bitcoin::Network> {
+    Ok(match s {
+        "mainnet" | "bitcoin" => bitcoin::Network::Bitcoin,
+        "testnet" | "testnet4" => bitcoin::Network::Testnet,
+        "signet" => bitcoin::Network::Signet,
+        "regtest" => bitcoin::Network::Regtest,
+        other => anyhow::bail!(
+            "unknown network.bitcoin_network {other:?}; expected one of: \
+             mainnet|bitcoin, testnet|testnet4, signet, regtest"
+        ),
+    })
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct NetworkConfig {
@@ -50,18 +71,44 @@ pub struct CoordinatorSection {
     /// PRIV-03: production deployments must set tor_mode = true.
     #[serde(default)]
     pub tor_mode: bool,
+    /// Seconds the round re-armer pauses after a FullAbort blame outcome (H3).
+    /// A FullAbort means the coordinator hit the consecutive-blame cap (or a signing
+    /// timeout with nobody to blame) — restarting instantly just burns a fresh round
+    /// into the same wedge. This backoff makes FullAbort observably different from a
+    /// RestartWithout instead of being inert. 0 = restart immediately (legacy
+    /// behavior). Operator-tunable via
+    /// `BLINDJOIN__COORDINATOR__BLAME_FULL_ABORT_BACKOFF_SECS`.
+    #[serde(default = "default_blame_full_abort_backoff_secs")]
+    pub blame_full_abort_backoff_secs: u64,
+}
+
+fn default_blame_full_abort_backoff_secs() -> u64 {
+    300
 }
 
 fn default_ban_file_path() -> String {
     "ban_list.jsonl".to_string()
 }
 
+/// H4: sized for real protocol load, not a token bucket that one honest client
+/// saturates. The old default (60/min = 1 token/s) exactly matched a single
+/// client polling `/info` every 1000 ms — so two honest clients starved each
+/// other with no attacker present. 600/min (10/s) gives ~10 concurrent honest
+/// pollers headroom. Under a global key extractor (forced by Tor — no per-client
+/// key exists) NO finite limit stops one actor exhausting the bucket; the durable
+/// mitigation is the client tolerating 429 with backoff (see client poll loop) and,
+/// longer-term, per-client cost (PoW / blind-token credits). This value only keeps
+/// normal operation off the limiter.
 fn default_rate_limit_info_per_min() -> u32 {
-    60
+    600
 }
 
+/// H4: a full round of `max_participants` (default 20) does 3 writes each
+/// (input, output, sign) = 60 writes across the round window; the old 30/min
+/// default was ~half a single round's write load. 120/min (2/s) covers a full
+/// round with headroom. Same global-bucket caveat as reads applies.
 fn default_rate_limit_writes_per_min() -> u32 {
-    30
+    120
 }
 
 fn default_request_timeout_secs() -> u64 {
@@ -337,6 +384,46 @@ impl CoordinatorConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         let c = &self.coordinator;
 
+        // M1: fail fast on an unrecognized network name instead of silently
+        // booting Signet at the first runtime parse.
+        parse_bitcoin_network(&self.network.bitcoin_network)
+            .context("Invalid network.bitcoin_network")?;
+
+        // M4: round-parameter sanity. Each of these is a guaranteed-broken round if
+        // left unchecked — a 1-person "CoinJoin", a max below the advertised min, a
+        // zero/dust denomination that can never cover a real output, a sub-1 fee
+        // rate, or a zero phase timeout that fires before any handler runs.
+        anyhow::ensure!(
+            c.min_participants >= 2,
+            "coordinator.min_participants must be >= 2; got {} (a 1-participant round \
+             is not a CoinJoin and leaks the input↔output mapping trivially).",
+            c.min_participants,
+        );
+        anyhow::ensure!(
+            c.min_participants <= c.max_participants,
+            "coordinator.min_participants ({}) must be <= max_participants ({}); \
+             otherwise rounds can proceed below the advertised minimum.",
+            c.min_participants, c.max_participants,
+        );
+        anyhow::ensure!(
+            c.denomination_sats >= 546,
+            "coordinator.denomination_sats must be >= 546 (dust threshold); got {} — \
+             a 0/dust denomination guarantees perpetual round failure.",
+            c.denomination_sats,
+        );
+        anyhow::ensure!(
+            c.fee_rate_sat_per_vbyte >= 1,
+            "coordinator.fee_rate_sat_per_vbyte must be >= 1; got 0 (a 0 fee-rate \
+             CoinJoin cannot relay).",
+        );
+        anyhow::ensure!(
+            c.round_timeout_input_reg_secs >= 1
+                && c.round_timeout_output_reg_secs >= 1
+                && c.round_timeout_signing_secs >= 1,
+            "coordinator.round_timeout_*_secs must all be >= 1; a 0 timeout fires \
+             before any participant can act.",
+        );
+
         anyhow::ensure!(
             (1..=60_000).contains(&c.rate_limit_info_per_min),
             "coordinator.rate_limit_info_per_min must be in 1..=60_000; got {}. \
@@ -389,11 +476,12 @@ impl CoordinatorConfig {
                 fee_rate_sat_per_vbyte: 2,
                 listen_addr: "127.0.0.1:8080".into(),
                 ban_file_path: "ban_list.jsonl".into(),
-                rate_limit_info_per_min: 60,
-                rate_limit_writes_per_min: 30,
+                rate_limit_info_per_min: 600,
+                rate_limit_writes_per_min: 120,
                 request_timeout_secs: 30,
                 max_concurrent_connections: 256,
                 tor_mode: false,
+                blame_full_abort_backoff_secs: 300,
             },
             discovery: DiscoveryConfig::default(),
             bip: BipConfig::default(),
@@ -426,6 +514,65 @@ impl CoordinatorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- M1 / M4: startup validation of round parameters + network name ---
+
+    #[test]
+    fn validate_accepts_defaults() {
+        assert!(CoordinatorConfig::with_defaults().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_min_participants_below_two() {
+        let mut c = CoordinatorConfig::with_defaults();
+        c.coordinator.min_participants = 1;
+        assert!(c.validate().is_err(), "min=1 is a degenerate 1-person round");
+    }
+
+    #[test]
+    fn validate_rejects_max_below_min() {
+        let mut c = CoordinatorConfig::with_defaults();
+        c.coordinator.min_participants = 5;
+        c.coordinator.max_participants = 3;
+        assert!(c.validate().is_err(), "max < min lets rounds run below the advertised minimum");
+    }
+
+    #[test]
+    fn validate_rejects_dust_denomination() {
+        let mut c = CoordinatorConfig::with_defaults();
+        c.coordinator.denomination_sats = 100; // below 546 dust
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_fee_rate() {
+        let mut c = CoordinatorConfig::with_defaults();
+        c.coordinator.fee_rate_sat_per_vbyte = 0;
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_zero_round_timeout() {
+        let mut c = CoordinatorConfig::with_defaults();
+        c.coordinator.round_timeout_signing_secs = 0;
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_network() {
+        let mut c = CoordinatorConfig::with_defaults();
+        c.network.bitcoin_network = "signte".into(); // typo → must NOT map to Signet
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn parse_bitcoin_network_rejects_unknown_and_accepts_known() {
+        assert_eq!(parse_bitcoin_network("mainnet").unwrap(), bitcoin::Network::Bitcoin);
+        assert_eq!(parse_bitcoin_network("signet").unwrap(), bitcoin::Network::Signet);
+        assert_eq!(parse_bitcoin_network("regtest").unwrap(), bitcoin::Network::Regtest);
+        assert!(parse_bitcoin_network("signte").is_err());
+        assert!(parse_bitcoin_network("").is_err());
+    }
 
     /// Build a CoordinatorConfig env-var prefix that is unique per-test and
     /// per-process so concurrent `cargo test` runs and the suite's own test

@@ -8,8 +8,11 @@ use crate::bitcoin::rpc::BitcoinRpc;
 use crate::bitcoin::sig_verify::verify_input_signature;
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
 use crate::config::CoordinatorConfig;
+use crate::round::blame::{BanList, BanEntry, append_ban_entry, now_unix_secs, CONSECUTIVE_BLAME_CAP};
 use bitcoin::ScriptBuf;
-use tracing::info;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::time::Duration;
+use tracing::{info, warn};
 
 /// Result of a successful signing submission — indicates whether broadcast was triggered.
 #[derive(Debug)]
@@ -23,10 +26,14 @@ pub enum SignResult {
 /// Core signing phase logic. Called from handler with write-locked state.
 ///
 /// Verifies session token, records partial signature, and broadcasts if complete.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_sign(
     state: &mut RoundState,
     rpc: &BitcoinRpc,
     config: &CoordinatorConfig,
+    ban_list: &mut BanList,
+    blame_round_count: &AtomicU32,
+    round_paused_until: &AtomicU64,
     utxo: &OutPoint,
     partial_signature: &[u8],
     session_token_bytes: &[u8; 32],
@@ -117,11 +124,114 @@ pub async fn process_sign(
 
     if collected >= expected_count {
         // All signatures collected — assemble and broadcast
-        let txid = assemble_and_broadcast(state, rpc, config, round_id_str).await?;
+        let txid = assemble_and_broadcast(
+            state, rpc, config, ban_list, blame_round_count, round_paused_until, round_id_str,
+        ).await?;
         return Ok(SignResult::Broadcast { txid });
     }
 
     Ok(SignResult::Recorded)
+}
+
+/// H2: on broadcast failure, re-validate every registered input against the
+/// mempool-aware UTXO set, ban the ones that have since been spent, and end the
+/// round via Blame→Idle instead of leaving it wedged in Signing until the signing
+/// timeout (where every participant has "signed" → zero non-signers → the round
+/// dies with nobody attributed and the griefer escapes).
+///
+/// Banning is gated on ACTUAL on-chain/mempool spentness, so a genuinely transient
+/// broadcast failure (RPC hiccup, fee issue) bans nobody — it just restarts the
+/// round. Only a participant who spent their registered coin out from under the
+/// round is banned, which is correct attribution.
+///
+/// H2 follow-up 1 (fast-churn guard): an *unattributed* failure (banned == 0, e.g.
+/// the static fee rate is too low for the current mempool) would otherwise recur
+/// every round forever, N RPC calls per cycle, because Blame→Idle lets the monitor
+/// re-arm instantly into the identical failure. So when nothing was attributed we
+/// count the round toward the consecutive-blame cap and, on reaching it, arm the
+/// same FullAbort backoff the signing-timeout path uses (H3) — pausing the
+/// re-armer. When a griefer IS attributed (banned > 0) the round made progress
+/// (that coin is now banned and can't recur), so we reset the counter and let the
+/// next round start immediately.
+async fn blame_broadcast_failure(
+    state: &mut RoundState,
+    rpc: &BitcoinRpc,
+    ban_list: &mut BanList,
+    blame_round_count: &AtomicU32,
+    round_paused_until: &AtomicU64,
+    config: &CoordinatorConfig,
+    round_id_str: &str,
+) {
+    use crate::round::state::Phase;
+
+    let ban_file_path = &config.coordinator.ban_file_path;
+    let ban_duration_secs = config.coordinator.blame_ban_duration_secs;
+
+    // Snapshot the outpoints to re-check (release the borrow before mutating state).
+    let outpoints: Vec<String> = state
+        .inner
+        .as_ref()
+        .map(|inner| inner.registered_inputs.keys().cloned().collect())
+        .unwrap_or_default();
+
+    let now = now_unix_secs();
+    let ban_duration = Duration::from_secs(ban_duration_secs);
+    let mut banned = 0usize;
+
+    for utxo_str in &outpoints {
+        let Some(outpoint) = parse_outpoint(utxo_str) else { continue };
+        match rpc
+            .is_output_unspent_including_mempool(&outpoint.txid, outpoint.vout)
+            .await
+        {
+            Ok(true) => {} // still spendable — not this participant's fault
+            Ok(false) => {
+                // Spent (incl. mempool) since registration → double-spend griefing.
+                ban_list.ban(utxo_str, now, ban_duration);
+                let entry = BanEntry { banned_at: now, expires_at: now + ban_duration_secs };
+                if let Err(e) = append_ban_entry(ban_file_path, utxo_str, &entry) {
+                    warn!(ban_file = ban_file_path, "Failed to append ban entry: {e}");
+                }
+                banned += 1;
+            }
+            Err(e) => {
+                // Can't determine spentness — do NOT ban on uncertainty (never ban
+                // an honest participant for a coordinator-side RPC failure).
+                warn!(round_id = %round_id_str, "re-validation gettxout failed: {e}");
+            }
+        }
+    }
+
+    // H2 follow-up 1: attributed vs unattributed churn control.
+    if banned > 0 {
+        // Progress made — a griefer was banned and can't recur. Restart immediately.
+        blame_round_count.store(0, Ordering::Relaxed);
+    } else {
+        // Nothing attributed: this failure will recur next round. Count it, and once
+        // the cap is hit arm the FullAbort backoff so the re-armer stops fast-churning.
+        let n = blame_round_count.fetch_add(1, Ordering::Relaxed) + 1;
+        let backoff = config.coordinator.blame_full_abort_backoff_secs;
+        if n >= CONSECUTIVE_BLAME_CAP && backoff > 0 {
+            round_paused_until.store(now + backoff, Ordering::Relaxed);
+            blame_round_count.store(0, Ordering::Relaxed);
+            warn!(
+                round_id = %round_id_str, backoff_secs = backoff,
+                "unattributed broadcast failures hit the blame cap — pausing round re-armer"
+            );
+        }
+    }
+
+    warn!(
+        round_id = %round_id_str,
+        banned,
+        checked = outpoints.len(),
+        "broadcast failed — re-validated inputs and attributed blame for spent coins"
+    );
+
+    // End the wedged round: Signing→Blame→Idle (zeroes sensitive state). The phase
+    // monitor re-arms a fresh round on its next tick (unless paused above).
+    let _ = state.transition_to(Phase::Blame);
+    let _ = state.transition_to(Phase::Idle);
 }
 
 /// Build the canonical CoinJoin PSBT from the round's registered inputs/outputs.
@@ -138,7 +248,9 @@ fn build_canonical_psbt(
     config: &CoordinatorConfig,
     round_id_str: &str,
 ) -> Result<Psbt, ApiError> {
-    let bitcoin_network = parse_bitcoin_network(&config.network.bitcoin_network);
+    // M1: config was validated at startup, so the network string is known-good here.
+    let bitcoin_network = crate::config::parse_bitcoin_network(&config.network.bitcoin_network)
+        .expect("bitcoin_network validated in CoordinatorConfig::validate");
 
     let mut participant_inputs: Vec<ParticipantInput> = Vec::new();
     for reg in inner.registered_inputs.values() {
@@ -190,10 +302,14 @@ fn build_canonical_psbt(
 }
 
 /// Assemble the CoinJoin TX from registered inputs/outputs and broadcast.
+#[allow(clippy::too_many_arguments)]
 async fn assemble_and_broadcast(
     state: &mut RoundState,
     rpc: &BitcoinRpc,
     config: &CoordinatorConfig,
+    ban_list: &mut BanList,
+    blame_round_count: &AtomicU32,
+    round_paused_until: &AtomicU64,
     round_id_str: &str,
 ) -> Result<String, ApiError> {
     use bitcoin::consensus::encode::serialize_hex;
@@ -307,6 +423,11 @@ async fn assemble_and_broadcast(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
+        // H2: a rejected CoinJoin is the double-spend griefer's signature. Attribute
+        // blame to whoever spent their registered input, ban them, and end the round.
+        blame_broadcast_failure(
+            state, rpc, ban_list, blame_round_count, round_paused_until, config, round_id_str,
+        ).await;
         return Err(ApiError {
             code: ErrorCode::BroadcastRejected,
             message: format!("TX rejected by mempool: {reject_reason}"),
@@ -315,14 +436,29 @@ async fn assemble_and_broadcast(
     }
 
     // Broadcast
-    let txid = rpc.sendrawtransaction(&tx_hex).await.map_err(|e| ApiError {
-        code: ErrorCode::BroadcastRejected,
-        message: format!("Broadcast failed: {e}"),
-        round_id: Some(round_id_str.to_string()),
-    })?;
+    let txid = match rpc.sendrawtransaction(&tx_hex).await {
+        Ok(txid) => txid,
+        Err(e) => {
+            // H2: same treatment as a testmempoolaccept rejection — a coin was spent
+            // between the accept check and broadcast, or the node rejected it.
+            blame_broadcast_failure(
+                state, rpc, ban_list, blame_round_count, round_paused_until, config, round_id_str,
+            ).await;
+            return Err(ApiError {
+                code: ErrorCode::BroadcastRejected,
+                message: format!("Broadcast failed: {e}"),
+                round_id: Some(round_id_str.to_string()),
+            });
+        }
+    };
 
     // ALLOWED to log txid — it's public info (T-04-05)
     info!(txid = %txid, round_id = %round_id_str, "CoinJoin TX broadcast");
+
+    // H3: a successful broadcast is the only thing that makes the blame rounds truly
+    // "consecutive" — reset the counter so an earlier blamed round doesn't carry
+    // over toward the FullAbort cap across a success.
+    blame_round_count.store(0, Ordering::Relaxed);
 
     // Transition round to Broadcast then Idle (zeroes all sensitive state)
     let _ = state.transition_to(Phase::Broadcast);
@@ -342,17 +478,6 @@ fn parse_address_to_script(addr_str: &str, expected_network: bitcoin::Network) -
         .and_then(|a| a.require_network(expected_network))
         .map(|a| a.script_pubkey())
         .map_err(|e| format!("Invalid address '{}': {}", addr_str, e))
-}
-
-/// Parse a bitcoin network name string into bitcoin::Network.
-fn parse_bitcoin_network(network_str: &str) -> bitcoin::Network {
-    match network_str {
-        "mainnet" | "bitcoin" => bitcoin::Network::Bitcoin,
-        "testnet" | "testnet4" => bitcoin::Network::Testnet,
-        "signet" => bitcoin::Network::Signet,
-        "regtest" => bitcoin::Network::Regtest,
-        _ => bitcoin::Network::Signet, // safe default
-    }
 }
 
 // TEST-06: Signing unit tests
@@ -450,9 +575,11 @@ mod tests {
         );
         let config = CoordinatorConfig::with_defaults();
         let wrong_token = [0x00u8; 32];
+        let mut ban_list = BanList::new();
 
         let result = process_sign(
-            &mut state, &rpc, &config, &utxo,
+            &mut state, &rpc, &config, &mut ban_list,
+            &AtomicU32::new(0), &AtomicU64::new(0), &utxo,
             &[1, 2, 3], &wrong_token, "test-round"
         ).await;
 
@@ -481,9 +608,11 @@ mod tests {
         // Token generated for utxo:1 but utxo:1 is not registered → token check fails
         // (token for utxo:1 is different from token for utxo:0, and utxo:1 is not registered)
         let token_for_wrong_utxo = generate_session_token(&secret, &wrong_utxo);
+        let mut ban_list = BanList::new();
 
         let result = process_sign(
-            &mut state, &rpc, &config, &wrong_utxo,
+            &mut state, &rpc, &config, &mut ban_list,
+            &AtomicU32::new(0), &AtomicU64::new(0), &wrong_utxo,
             &[1, 2, 3], &token_for_wrong_utxo, "test-round"
         ).await;
 
@@ -515,9 +644,11 @@ mod tests {
         bogus.push(vec![0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01, 0x01]); // junk DER + ALL flag
         bogus.push(fixture_input_spk().1.to_bytes());
         let bogus_bytes = bitcoin::consensus::serialize(&bogus);
+        let mut ban_list = BanList::new();
 
         let result = process_sign(
-            &mut state, &rpc, &config, &utxo, &bogus_bytes, &token, "test-round",
+            &mut state, &rpc, &config, &mut ban_list,
+            &AtomicU32::new(0), &AtomicU64::new(0), &utxo, &bogus_bytes, &token, "test-round",
         ).await;
 
         assert!(result.is_err());
@@ -563,13 +694,60 @@ mod tests {
         witness.push(sig_ser);
         witness.push(cpk.to_bytes());
         let witness_bytes = bitcoin::consensus::serialize(&witness);
+        let mut ban_list = BanList::new();
 
         let result = process_sign(
-            &mut state, &rpc, &config, &utxo, &witness_bytes, &token, "test-round",
+            &mut state, &rpc, &config, &mut ban_list,
+            &AtomicU32::new(0), &AtomicU64::new(0), &utxo, &witness_bytes, &token, "test-round",
         ).await;
 
         assert!(matches!(result, Ok(SignResult::Recorded)), "got: {result:?}");
         assert!(state.inner.as_ref().unwrap().partial_sigs.contains_key(&utxo_str));
+    }
+
+    /// H2 follow-up 1: an unattributed broadcast failure (nothing provably spent —
+    /// here forced by an unreachable RPC, so every re-validation returns Err → no
+    /// ban) counts toward the consecutive-blame cap but does NOT pause below it.
+    #[tokio::test]
+    async fn unattributed_broadcast_failure_below_cap_increments_no_pause() {
+        let utxo_str = format!("{}:0", test_txid());
+        let (mut state, _secret) = make_signing_state(&utxo_str);
+        // Unreachable RPC → is_output_unspent_including_mempool returns Err → banned=0.
+        let rpc = BitcoinRpc::new("http://127.0.0.1:1".into(), "u".into(), "p".into());
+        let config = CoordinatorConfig::with_defaults();
+        let blame_count = AtomicU32::new(0);
+        let paused = AtomicU64::new(0);
+
+        blame_broadcast_failure(
+            &mut state, &rpc, &mut BanList::new(), &blame_count, &paused, &config, "r",
+        ).await;
+
+        assert_eq!(blame_count.load(Ordering::Relaxed), 1, "unattributed failure counts");
+        assert_eq!(paused.load(Ordering::Relaxed), 0, "must not pause below the cap");
+        assert_eq!(state.phase, Phase::Idle, "round still ends");
+    }
+
+    /// H2 follow-up 1: on the Nth consecutive unattributed failure (cap reached),
+    /// the FullAbort backoff is armed (round_paused_until set) and the counter reset,
+    /// so the re-armer stops fast-churning into the same static failure.
+    #[tokio::test]
+    async fn unattributed_broadcast_failure_at_cap_arms_backoff() {
+        use crate::round::blame::CONSECUTIVE_BLAME_CAP;
+
+        let utxo_str = format!("{}:0", test_txid());
+        let (mut state, _secret) = make_signing_state(&utxo_str);
+        let rpc = BitcoinRpc::new("http://127.0.0.1:1".into(), "u".into(), "p".into());
+        let mut config = CoordinatorConfig::with_defaults();
+        config.coordinator.blame_full_abort_backoff_secs = 300;
+        let blame_count = AtomicU32::new(CONSECUTIVE_BLAME_CAP - 1); // one short of the cap
+        let paused = AtomicU64::new(0);
+
+        blame_broadcast_failure(
+            &mut state, &rpc, &mut BanList::new(), &blame_count, &paused, &config, "r",
+        ).await;
+
+        assert!(paused.load(Ordering::Relaxed) > 0, "backoff armed at the cap");
+        assert_eq!(blame_count.load(Ordering::Relaxed), 0, "counter reset after arming pause");
     }
 
     // TEST-07 blame unit tests — on_signing_timeout and BlameOutcome from crate::round::blame

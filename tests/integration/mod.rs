@@ -130,6 +130,7 @@ pub(crate) async fn spawn_coordinator(
             request_timeout_secs: 30,
             max_concurrent_connections: 256,
             tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
         },
         discovery: DiscoveryConfig::default(),
         bip: coordinator::config::BipConfig::default(),
@@ -144,6 +145,85 @@ pub(crate) async fn spawn_coordinator(
     });
 
     (format!("http://{}", addr), tmp)
+}
+
+/// Like [`spawn_coordinator`] but also returns the shared `blame_round_count`
+/// atomic and the `BanList` so a test can (a) pre-seed the counter and assert the
+/// sign handler resets it on a successful broadcast (H3), and (b) query bans
+/// attributed on a broadcast failure (H2). Uses `min = max = 3` and a comfortable
+/// signing timeout so the round reaches broadcast via the final signer, not a
+/// timeout.
+pub(crate) async fn spawn_coordinator_exposing_state(
+    rpc_url: String,
+    rpc_user: String,
+    rpc_pass: String,
+) -> (
+    String,
+    tempfile::TempDir,
+    std::sync::Arc<std::sync::atomic::AtomicU32>,
+    std::sync::Arc<tokio::sync::RwLock<coordinator::round::blame::BanList>>,
+) {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, AtomicU64};
+    use tokio::sync::RwLock;
+    use coordinator::bitcoin::rpc::BitcoinRpc;
+    use coordinator::config::{CoordinatorConfig, CoordinatorSection, DiscoveryConfig, NetworkConfig};
+    use coordinator::round::blame::BanList;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let listen_addr = addr.to_string();
+
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let ban_file_path = tmp.path().join("ban_list.jsonl").to_string_lossy().into_owned();
+
+    let cfg = Arc::new(CoordinatorConfig {
+        network: NetworkConfig {
+            bitcoin_network: "regtest".into(),
+            bitcoin_rpc_url: rpc_url.clone(),
+            bitcoin_rpc_user: rpc_user.clone(),
+            bitcoin_rpc_pass: rpc_pass.clone(),
+        },
+        coordinator: CoordinatorSection {
+            denomination_sats: 100_000,
+            min_participants: 3,
+            max_participants: 3,
+            round_timeout_input_reg_secs: 30,
+            round_timeout_output_reg_secs: 30,
+            round_timeout_signing_secs: 15,
+            blame_ban_duration_secs: 60,
+            fee_rate_sat_per_vbyte: 1,
+            listen_addr: listen_addr.clone(),
+            ban_file_path,
+            rate_limit_info_per_min: 60_000,
+            rate_limit_writes_per_min: 60_000,
+            request_timeout_secs: 30,
+            max_concurrent_connections: 256,
+            tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
+        },
+        discovery: DiscoveryConfig::default(),
+        bip: coordinator::config::BipConfig::default(),
+    });
+
+    let rpc = Arc::new(BitcoinRpc::new(rpc_url, rpc_user, rpc_pass));
+    let round_state = Arc::new(RwLock::new(build_input_reg_round_state()));
+    let ban_list = Arc::new(RwLock::new(BanList::new()));
+    let blame_round_count = Arc::new(AtomicU32::new(0));
+    let app = coordinator::api::build_router_with_ban_list(
+        round_state,
+        rpc,
+        cfg,
+        Arc::clone(&ban_list),
+        Arc::clone(&blame_round_count),
+        Arc::new(AtomicU64::new(0)),
+    );
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    (format!("http://{}", addr), tmp, blame_round_count, ban_list)
 }
 
 /// Wait for coordinator /info to return 200 OK.

@@ -243,6 +243,307 @@ async fn full_round_three_clients() {
 }
 
 // ---------------------------------------------------------------------------
+// Integration test: H3 — a successful broadcast resets blame_round_count.
+//
+// The counter is meant to bound *consecutive* blame rounds (cap → FullAbort).
+// Before the fix nothing reset it on success, so it wasn't "consecutive" at all
+// and a success sandwiched between blames still marched toward the cap. This test
+// pre-seeds the counter to 1 (as if a prior round was blamed), runs a full
+// successful 3-client round, and asserts the sign handler zeroed it on broadcast.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn broadcast_resets_blame_round_count() {
+    use std::sync::atomic::Ordering;
+
+    let exe = require_bitcoind!();
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
+    let _bitcoind_guard = bitcoind_guard;
+
+    let (coordinator_url, _tmp_dir, blame_count, _ban_list) = crate::spawn_coordinator_exposing_state(
+        setup.rpc_url.clone(),
+        setup.rpc_user.clone(),
+        setup.rpc_pass.clone(),
+    )
+    .await;
+
+    // Simulate a prior blamed round: the counter is non-zero going into this round.
+    blame_count.store(1, Ordering::Relaxed);
+    wait_for_coordinator(&coordinator_url).await;
+
+    let test_wifs = [
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
+    ];
+
+    let handles: Vec<_> = test_wifs
+        .iter()
+        .enumerate()
+        .map(|(i, wif)| {
+            let url = coordinator_url.clone();
+            let wif = wif.to_string();
+            let (utxo_str, _utxo_value) = setup.utxos[i].clone();
+            tokio::spawn(async move {
+                use bitcoin::Network;
+                use client::http::CoordinatorClient;
+                use client::round;
+                use client::wallet::ClientWallet;
+
+                let wallet = ClientWallet::from_wif(&wif, &utxo_str, Network::Regtest)
+                    .expect("ClientWallet creation");
+                let coordinator_client = CoordinatorClient::new(url);
+
+                let info = coordinator_client
+                    .poll_until_phase("input_reg", 100, Duration::from_secs(600))
+                    .await
+                    .expect("poll for input_reg");
+                let reg = round::input::register_input(
+                    &coordinator_client, &wallet, &info, &v14_p2wpkh_coordinator_info(),
+                ).await.expect("register_input");
+                coordinator_client
+                    .poll_until_phase("output_reg", 100, Duration::from_secs(600))
+                    .await.expect("poll for output_reg");
+                round::output::register_output(&coordinator_client, &wallet, &reg, &info)
+                    .await.expect("register_output");
+                coordinator_client
+                    .poll_until_phase("signing", 100, Duration::from_secs(600))
+                    .await.expect("poll for signing");
+                round::sign::verify_and_sign(&coordinator_client, &wallet, &reg, 1, None)
+                    .await.expect("verify_and_sign");
+            })
+        })
+        .collect();
+
+    for handle in handles {
+        handle.await.expect("client task panicked");
+    }
+
+    // Every client's verify_and_sign has returned, so the last-signer handler has
+    // already run assemble_and_broadcast and (on success) reset the counter. No
+    // sleep/race: the reset happens BEFORE the "broadcast" HTTP response the final
+    // client awaited.
+    assert_eq!(
+        blame_count.load(Ordering::Relaxed),
+        0,
+        "successful broadcast must reset blame_round_count to 0 (H3); a leftover \
+         non-zero value means the cap is still counting non-consecutive blames",
+    );
+
+    eprintln!("broadcast_resets_blame_round_count PASSED: counter 1 → 0 on broadcast");
+}
+
+// ---------------------------------------------------------------------------
+// Integration test: H2 — post-registration double-spend griefing is BLAMED,
+// not silently escaped.
+//
+// A griefer registers an input+output like everyone else, then spends its
+// registered UTXO into the mempool before the CoinJoin can broadcast. It still
+// submits a valid partial signature (sighash verification can't see the coin is
+// gone), so all sigs collect and the coordinator assembles the CoinJoin — which
+// testmempoolaccept now rejects as a conflict. Before the fix the round wedged in
+// Signing until the timeout, found zero non-signers (everyone "signed"), aborted,
+// and banned nobody: a free, repeatable round-kill. The fix re-validates every
+// input on broadcast failure, bans the one that was spent, and ends the round.
+// ---------------------------------------------------------------------------
+
+/// Build a signed P2WPKH self-spend of `utxo_str` (value `value_sats`) using
+/// `wif`, returned as broadcastable tx hex. Deterministic — no wallet sync.
+fn build_p2wpkh_selfspend(wif: &str, utxo_str: &str, value_sats: u64) -> String {
+    use std::str::FromStr;
+    use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness};
+    use bitcoin::sighash::{EcdsaSighashType, SighashCache};
+    use bitcoin::secp256k1::{Message, PublicKey, Secp256k1};
+    use bitcoin::hashes::Hash;
+    use bitcoin::consensus::encode::serialize_hex;
+
+    let secp = Secp256k1::new();
+    let priv_key = bitcoin::PrivateKey::from_wif(wif).expect("valid WIF");
+    let sk = priv_key.inner;
+    let cpk = bitcoin::CompressedPublicKey(PublicKey::from_secret_key(&secp, &sk));
+    let spk = ScriptBuf::new_p2wpkh(&cpk.wpubkey_hash());
+    let outpoint = OutPoint::from_str(utxo_str).expect("utxo_str is txid:vout");
+
+    let mut tx = Transaction {
+        version: bitcoin::transaction::Version::TWO,
+        lock_time: bitcoin::absolute::LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output: outpoint,
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::new(),
+        }],
+        // Spend back to the same address minus a 1000-sat fee.
+        output: vec![TxOut {
+            value: Amount::from_sat(value_sats - 1000),
+            script_pubkey: spk.clone(),
+        }],
+    };
+    let sighash = SighashCache::new(&tx)
+        .p2wpkh_signature_hash(0, &spk, Amount::from_sat(value_sats), EcdsaSighashType::All)
+        .expect("p2wpkh sighash");
+    let sig = secp.sign_ecdsa(&Message::from_digest(sighash.to_byte_array()), &sk);
+    let mut sig_ser = sig.serialize_der().to_vec();
+    sig_ser.push(EcdsaSighashType::All as u8);
+    let mut witness = Witness::new();
+    witness.push(sig_ser);
+    witness.push(cpk.to_bytes());
+    tx.input[0].witness = witness;
+    serialize_hex(&tx)
+}
+
+#[tokio::test]
+async fn double_spend_griefer_is_blamed_not_escaped() {
+    use bitcoin::Network;
+    use client::http::CoordinatorClient;
+    use client::round;
+    use client::wallet::ClientWallet;
+    use coordinator::round::blame::now_unix_secs;
+
+    let exe = require_bitcoind!();
+    let (bitcoind_guard, setup) = crate::fund_regtest(exe).await;
+    let _bitcoind_guard = bitcoind_guard;
+
+    let (coordinator_url, _tmp_dir, blame_count, ban_list) =
+        crate::spawn_coordinator_exposing_state(
+            setup.rpc_url.clone(),
+            setup.rpc_user.clone(),
+            setup.rpc_pass.clone(),
+        )
+        .await;
+    // Seed a prior blame so we can confirm the attributed failure RESETS the counter
+    // (H2 follow-up 1: banned > 0 ⇒ progress ⇒ restart immediately, no backoff).
+    blame_count.store(1, std::sync::atomic::Ordering::Relaxed);
+    wait_for_coordinator(&coordinator_url).await;
+
+    let test_wifs = [
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
+    ];
+
+    // Build wallets + clients so we can drive all three through the phases in
+    // lockstep and inject the double-spend at exactly the right moment.
+    let mut wallets = Vec::new();
+    let mut clients = Vec::new();
+    for (i, wif) in test_wifs.iter().enumerate() {
+        let (utxo_str, _v) = setup.utxos[i].clone();
+        wallets.push(
+            ClientWallet::from_wif(wif, &utxo_str, Network::Regtest).expect("wallet"),
+        );
+        clients.push(CoordinatorClient::new(coordinator_url.clone()));
+    }
+
+    // Phase 1: all register inputs → coordinator auto-advances to output_reg at max=3.
+    let mut regs = Vec::new();
+    for i in 0..3 {
+        let info = clients[i]
+            .poll_until_phase("input_reg", 100, Duration::from_secs(600))
+            .await.expect("poll input_reg");
+        let reg = round::input::register_input(
+            &clients[i], &wallets[i], &info, &v14_p2wpkh_coordinator_info(),
+        ).await.expect("register_input");
+        regs.push((reg, info));
+    }
+
+    // Phase 2: all register outputs → coordinator auto-advances to signing.
+    for i in 0..3 {
+        clients[i]
+            .poll_until_phase("output_reg", 100, Duration::from_secs(600))
+            .await.expect("poll output_reg");
+        round::output::register_output(&clients[i], &wallets[i], &regs[i].0, &regs[i].1)
+            .await.expect("register_output");
+    }
+
+    // Phase 3: griefer (client 0) double-spends its registered UTXO into the mempool.
+    // Registration already passed the coordinator's confirmed-UTXO check; the spend
+    // lands before any CoinJoin broadcast can.
+    let (grief_utxo, grief_value) = setup.utxos[0].clone();
+    let ds_hex = build_p2wpkh_selfspend(test_wifs[0], &grief_utxo, grief_value);
+    {
+        let rpc = coordinator::bitcoin::rpc::BitcoinRpc::new(
+            setup.rpc_url.clone(), setup.rpc_user.clone(), setup.rpc_pass.clone(),
+        );
+        rpc.sendrawtransaction(&ds_hex)
+            .await
+            .expect("double-spend must be accepted into the mempool");
+    }
+
+    // Phase 4: all submit signatures. The final signer triggers assembly, which
+    // testmempoolaccept rejects (conflicts with the double-spend). The last signer
+    // receives the broadcast-rejected error — do NOT expect() on the sign result.
+    for i in 0..3 {
+        clients[i]
+            .poll_until_phase("signing", 100, Duration::from_secs(600))
+            .await.expect("poll signing");
+        let _ = round::sign::verify_and_sign(&clients[i], &wallets[i], &regs[i].0, 1, None).await;
+    }
+
+    // Assert 1 (the core of H2): the griefer's UTXO is on the ban list — attributed,
+    // not escaped.
+    {
+        let bl = ban_list.read().await;
+        assert!(
+            bl.is_banned(&grief_utxo, now_unix_secs() + 5),
+            "double-spender's UTXO ({grief_utxo}) must be banned after the broadcast \
+             failure — H2 regressed and the griefer escaped blame",
+        );
+    }
+
+    // Assert 1b (H2 follow-up 1): an ATTRIBUTED failure (banned > 0) is progress, so
+    // the consecutive-blame counter resets — the round restarts immediately, unlike
+    // an unattributed static failure which would count toward the backoff cap.
+    assert_eq!(
+        blame_count.load(std::sync::atomic::Ordering::Relaxed),
+        0,
+        "attributed broadcast failure must reset blame_round_count (seeded to 1)",
+    );
+
+    // Assert 2: the round ended (Signing→Blame→Idle) rather than wedging in Signing.
+    let round_state = reqwest::get(format!("{coordinator_url}/info"))
+        .await.expect("get /info")
+        .json::<serde_json::Value>()
+        .await.expect("info json")
+        .get("round_state").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    assert_eq!(
+        round_state, "idle",
+        "after a broadcast failure the round must end (Blame→Idle), not wedge in \
+         signing; got round_state={round_state}",
+    );
+
+    // Assert 3: the CoinJoin never broadcast — no mempool tx carries 3 denomination
+    // outputs (the double-spend has a single output; the CoinJoin would have 3).
+    let rpc_url_c = setup.rpc_url.clone();
+    let rpc_user_c = setup.rpc_user.clone();
+    let rpc_pass_c = setup.rpc_pass.clone();
+    let coinjoin_present = tokio::task::spawn_blocking(move || {
+        use corepc_node::client::client_sync::Auth;
+        let auth = Auth::UserPass(rpc_user_c, rpc_pass_c);
+        let client = corepc_node::Client::new_with_auth(&rpc_url_c, auth).expect("rpc client");
+        let txids = client.get_raw_mempool().expect("get_raw_mempool").0;
+        txids.iter().any(|txid_str| {
+            use std::str::FromStr;
+            let txid = bitcoin::Txid::from_str(txid_str).expect("txid");
+            let tx = client.get_raw_transaction_verbose(txid).expect("verbose");
+            tx.outputs
+                .iter()
+                .filter(|o| ((o.value * 100_000_000.0).round() as u64) == 100_000)
+                .count()
+                >= 3
+        })
+    })
+    .await
+    .expect("mempool scan");
+    assert!(
+        !coinjoin_present,
+        "the CoinJoin must NOT have broadcast — a tx with 3 denomination outputs is \
+         in the mempool, meaning the double-spend did not block the round as intended",
+    );
+
+    eprintln!("double_spend_griefer_is_blamed_not_escaped PASSED: griefer banned, round idle, no CoinJoin broadcast");
+}
+
+// ---------------------------------------------------------------------------
 // Integration test: blame protocol — non-signer timeout.
 // TEST-07: 3 clients register inputs+outputs; only 2 submit signatures;
 // signing timeout fires; non-signer UTXO is banned.
@@ -293,6 +594,7 @@ async fn spawn_coordinator_with_blame(
             request_timeout_secs: 30,
             max_concurrent_connections: 256,
             tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
         },
         discovery: DiscoveryConfig::default(),
         // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
@@ -342,6 +644,8 @@ async fn spawn_coordinator_with_blame(
         rpc,
         Arc::clone(&cfg),
         Arc::clone(&ban_list),
+        Arc::clone(&blame_round_count),
+        Arc::new(std::sync::atomic::AtomicU64::new(0)),
     );
 
     tokio::spawn(async move {
@@ -562,6 +866,7 @@ async fn spawn_coordinator_with_blame_and_restart(
             request_timeout_secs: 30,
             max_concurrent_connections: 256,
             tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
         },
         discovery: DiscoveryConfig::default(),
         // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained
@@ -641,6 +946,8 @@ async fn spawn_coordinator_with_blame_and_restart(
         rpc,
         Arc::clone(&cfg),
         Arc::clone(&ban_list),
+        Arc::clone(&blame_round_count),
+        Arc::new(std::sync::atomic::AtomicU64::new(0)),
     );
 
     tokio::spawn(async move {
@@ -1046,6 +1353,7 @@ async fn coordinator_info_endpoint_fields() {
             request_timeout_secs: 30,
             max_concurrent_connections: 256,
             tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
         },
         discovery: DiscoveryConfig::default(),
         // Phase 16 Plan 16-01 (Rule 3 — Blocker): CoordinatorConfig gained

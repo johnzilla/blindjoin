@@ -11,6 +11,18 @@ use crate::round::state::{Phase, RoundState, RoundStateInner};
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Pre-generated, lock-free round material produced by `generate_round_material`
+/// (RSA keypair + serializations + per-round secret) and consumed by
+/// `install_round`. Exists so the CPU-bound keygen can run in `spawn_blocking`
+/// off the round write lock (M2).
+pub struct RoundMaterial {
+    signer: RsaBlindSigner,
+    sk_der: Vec<u8>,
+    pk_der: Vec<u8>,
+    pk_hash: [u8; 32],
+    round_secret: [u8; 32],
+}
+
 /// Errors returned by `start_round`.
 #[derive(Debug, thiserror::Error)]
 pub enum StartRoundError {
@@ -38,11 +50,25 @@ pub enum StartRoundError {
 /// production startup (see `coordinator::run::run`) and the continuous-rounds
 /// re-armer call this function — no `#[cfg(test)]` branches.
 pub fn start_round(state: &mut RoundState) -> Result<(), StartRoundError> {
+    // Convenience wrapper for synchronous callers (tests, and any path where the
+    // brief keygen stall is acceptable): generate + install in one step. The
+    // production re-armer instead calls `generate_round_material` in `spawn_blocking`
+    // and `install_round` under the lock (M2) so RSA keygen never stalls the async
+    // runtime while the round write lock is held.
     if state.phase != Phase::Idle {
         return Err(StartRoundError::WrongPhase(state.phase.clone()));
     }
+    let material = generate_round_material()?;
+    install_round(state, material)
+}
 
-    // Fresh RSA-2048 keypair for this round (D-02)
+/// The CPU-bound, lock-free half of starting a round: a fresh RSA-2048 keypair
+/// (D-02) plus a per-round HMAC secret (D-05). RSA keygen is tens–hundreds of ms
+/// of CPU, so this MUST run OFF the round write lock — and off the async runtime's
+/// worker via `spawn_blocking` — or every `/info` read and handler stalls once per
+/// round cycle (M2). Holds no `RoundState` reference; the result is installed
+/// separately by `install_round`.
+pub fn generate_round_material() -> Result<RoundMaterial, StartRoundError> {
     let signer = RsaBlindSigner::generate()
         .map_err(|e| StartRoundError::KeyGen(format!("{e}")))?;
     let sk_der = signer.secret_key_der()
@@ -51,10 +77,22 @@ pub fn start_round(state: &mut RoundState) -> Result<(), StartRoundError> {
         .map_err(|e| StartRoundError::KeySerialize(format!("public key: {e}")))?;
     let pk_hash = signer.public_key_hash();
 
-    // Per-round HMAC secret for session-token derivation (D-05). 32 random bytes
-    // from a CSPRNG. Zeroized when the inner state is dropped.
     let mut round_secret = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut round_secret);
+
+    Ok(RoundMaterial { signer, sk_der, pk_der, pk_hash, round_secret })
+}
+
+/// Install pre-generated round material and transition Idle → InputReg.
+///
+/// Caller MUST hold the write lock and MUST have re-checked the FSM is still
+/// `Phase::Idle` (the material may have been generated off-lock while another path
+/// advanced the round — in which case discard it). Cheap: no crypto, just moves.
+pub fn install_round(state: &mut RoundState, material: RoundMaterial) -> Result<(), StartRoundError> {
+    if state.phase != Phase::Idle {
+        return Err(StartRoundError::WrongPhase(state.phase.clone()));
+    }
+    let RoundMaterial { signer, sk_der, pk_der, pk_hash, round_secret } = material;
 
     state.rsa_pubkey_der = Some(pk_der);
     state.rsa_pubkey_hash = Some(pk_hash);

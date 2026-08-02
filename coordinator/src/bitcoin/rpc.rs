@@ -37,9 +37,22 @@ pub struct BitcoinRpc {
     pass: String,
 }
 
+/// Per-request timeout for all Bitcoin Core JSON-RPC calls (M5a). Without this,
+/// `reqwest::Client::new()` has NO request timeout — a hung `bitcoind` (or a
+/// dropped connection) would block the caller indefinitely; today the only backstop
+/// is the coordinator's outer 30s `TimeoutLayer`, which rescues the socket by
+/// dropping the handler future but leaves the round holding the write lock and the
+/// client with an ambiguous broadcast outcome. A short explicit timeout fails the
+/// RPC cleanly (mapped to `RpcError::Unreachable`) so the caller can react.
+const RPC_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 impl BitcoinRpc {
     pub fn new(url: String, user: String, pass: String) -> Self {
-        Self { client: Client::new(), url, user, pass }
+        let client = Client::builder()
+            .timeout(RPC_REQUEST_TIMEOUT)
+            .build()
+            .expect("reqwest client builds with a static timeout config");
+        Self { client, url, user, pass }
     }
 
     async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
@@ -55,7 +68,18 @@ impl BitcoinRpc {
             .json(&body)
             .send()
             .await
-            .map_err(|e| RpcError::Unreachable(e.to_string()))?
+            .map_err(|e| {
+                // M5a: surface a timeout distinctly so logs/clients can tell a hung
+                // bitcoind apart from an unreachable one.
+                if e.is_timeout() {
+                    RpcError::Unreachable(format!(
+                        "Bitcoin Core RPC timed out after {}s ({method})",
+                        RPC_REQUEST_TIMEOUT.as_secs(),
+                    ))
+                } else {
+                    RpcError::Unreachable(e.to_string())
+                }
+            })?
             .json::<RpcResponse>()
             .await?;
         if let Some(err) = resp.error {
@@ -83,6 +107,25 @@ impl BitcoinRpc {
         let txout = serde_json::from_value(result)
             .map_err(|e| RpcError::Parse(e.to_string()))?;
         Ok(Some(txout))
+    }
+
+    /// Returns true if the output is still unspent, considering the mempool.
+    ///
+    /// H2 re-validation: `gettxout` with `include_mempool = true` returns null the
+    /// moment a UTXO is spent by an *unconfirmed* transaction — the exact signal a
+    /// post-registration double-spend griefer produces. Used on broadcast failure
+    /// to attribute blame to the participant who spent their registered coin out
+    /// from under the round, rather than letting them escape the ban list. Note the
+    /// deliberate `include_mempool = true` here (vs `false` in registration's
+    /// `gettxout`): at registration we require a *confirmed* coin, but for spent-
+    /// detection we must also see mempool spends.
+    pub async fn is_output_unspent_including_mempool(
+        &self,
+        txid: &Txid,
+        vout: u32,
+    ) -> Result<bool, RpcError> {
+        let result = self.call("gettxout", json!([txid.to_string(), vout, true])).await?;
+        Ok(!result.is_null())
     }
 
     pub async fn sendrawtransaction(&self, hex: &str) -> Result<Txid, RpcError> {

@@ -88,7 +88,7 @@ pub enum TxError {
 /// Build a CoinJoin PSBT.
 ///
 /// Structure:
-///   Inputs: all registered participant inputs (in registration order)
+///   Inputs: all registered participant inputs (canonical outpoint order — M6)
 ///   Outputs: all denomination outputs (one per participant)
 ///            change outputs per participant (if above dust threshold, TX-04)
 ///
@@ -109,6 +109,19 @@ pub fn build_coinjoin_psbt(
         return Err(TxError::NoParticipants);
     }
     let n = inputs.len() as u64;
+
+    // M6: canonical input ordering by outpoint (BIP-69-style). The three PSBT build
+    // paths — get_tx (display), each process_sign verification, and the broadcast —
+    // MUST produce byte-identical transactions or a participant's signature verifies
+    // against a different sighash than the one broadcast (silent round-wedge). That
+    // byte-identity previously held only by accident: all three iterate the same
+    // `registered_inputs` HashMap and its iteration order happens to be stable within
+    // one process while registration is closed. Sorting here makes the ordering an
+    // explicit, deterministic invariant independent of HashMap internals (and, as a
+    // bonus, independent of participant registration *timing*). Change outputs below
+    // follow this same order.
+    let mut ordered: Vec<&ParticipantInput> = inputs.iter().collect();
+    ordered.sort_by_key(|i| i.outpoint);
 
     // Estimate size assuming all participants have change outputs (upper bound).
     //
@@ -144,8 +157,8 @@ pub fn build_coinjoin_psbt(
         }
     }
 
-    // Build transaction inputs
-    let tx_inputs: Vec<TxIn> = inputs.iter().map(|inp| TxIn {
+    // Build transaction inputs (canonical outpoint order — see M6 note above)
+    let tx_inputs: Vec<TxIn> = ordered.iter().map(|inp| TxIn {
         previous_output: inp.outpoint,
         script_sig: ScriptBuf::new(),
         sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
@@ -158,8 +171,9 @@ pub fn build_coinjoin_psbt(
         script_pubkey: out.script_pubkey.clone(),
     }).collect();
 
-    // Build change outputs — fold dust into fee (TX-04, T-03-06)
-    for inp in inputs {
+    // Build change outputs — fold dust into fee (TX-04, T-03-06). Same canonical
+    // input order as tx_inputs so change-output positions are deterministic too.
+    for inp in &ordered {
         let change = inp.value_sats - denomination_sats - fee_share;
         if change >= DUST_THRESHOLD_SATS {
             tx_outputs.push(TxOut {
@@ -181,8 +195,11 @@ pub fn build_coinjoin_psbt(
     let mut psbt = Psbt::from_unsigned_tx(tx)
         .map_err(|e| TxError::Psbt(e.to_string()))?;
 
-    // Add UTXO info for each input (required for SegWit inputs, TX-06)
-    for (i, inp) in inputs.iter().enumerate() {
+    // Add UTXO info for each input (required for SegWit inputs, TX-06).
+    // MUST iterate `ordered` (the same canonical order as tx_inputs) so
+    // psbt.inputs[i].witness_utxo aligns with unsigned_tx.input[i] — misalignment
+    // would attach the wrong prevout to a sighash and silently break signing (M6).
+    for (i, inp) in ordered.iter().enumerate() {
         psbt.inputs[i].witness_utxo = Some(TxOut {
             value: Amount::from_sat(inp.value_sats),
             script_pubkey: inp.script_pubkey.clone(),
@@ -233,6 +250,33 @@ mod tests {
         (0..n).map(|i| ParticipantOutput {
             script_pubkey: p2wpkh_script((i + 200) as u8),
         }).collect()
+    }
+
+    /// M6: byte-identical output regardless of the order inputs are supplied in.
+    /// This is the load-bearing invariant behind sighash agreement across the
+    /// get_tx / per-sign-verify / broadcast PSBT builds — previously it held only
+    /// because all three iterated the same HashMap. Feeding the inputs in reverse
+    /// must yield the same serialized transaction.
+    #[test]
+    fn coinjoin_psbt_input_order_is_canonical() {
+        let denomination_sats = 1_000_000;
+        let forward = make_inputs(3, 1_100_000);
+        let mut reversed = forward.clone();
+        reversed.reverse();
+        let outputs = make_outputs(3);
+
+        let psbt_fwd = build_coinjoin_psbt(&forward, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
+        let psbt_rev = build_coinjoin_psbt(&reversed, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
+
+        assert_eq!(
+            psbt_fwd.serialize(), psbt_rev.serialize(),
+            "PSBT must be byte-identical regardless of input registration order (M6)",
+        );
+        // And the canonical order is ascending by outpoint.
+        let outpoints: Vec<_> = psbt_fwd.unsigned_tx.input.iter().map(|i| i.previous_output).collect();
+        let mut sorted = outpoints.clone();
+        sorted.sort();
+        assert_eq!(outpoints, sorted, "inputs must be in ascending outpoint order");
     }
 
     #[test]

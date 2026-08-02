@@ -258,7 +258,7 @@ Distinct from coordinator-misbehavior threats above, the coordinator's *own* ava
 | Attack | Mitigation | Observable behavior |
 |--------|-----------|---------------------|
 | Flood `/info` or `/round/tx` past the read limit | Per-route `tower_governor::GovernorLayer` with `GlobalKeyExtractor` (Tor-safe — see below) | HTTP 429 + `Retry-After: <seconds>` + JSON body `{"error":{"code":"RATE_LIMITED",...}}` |
-| Flood `/round/input`, `/round/output`, or `/round/sign` past the write limit | Same, separate write-bucket `GovernorConfig` (default 30 req/min/route) | HTTP 429 with the same envelope and header |
+| Flood `/round/input`, `/round/output`, or `/round/sign` past the write limit | Same, separate write-bucket `GovernorConfig` (default 120 req/min/route) | HTTP 429 with the same envelope and header |
 | Open a request and stall the body / never close | Uniform Router-scope `tower_http::timeout::TimeoutLayer` honoring `request_timeout_secs` | HTTP 408 emitted at the deadline (not after body completion) |
 | Open more concurrent Tor streams than the coordinator can serve | `tokio::sync::Semaphore` (`max_concurrent_connections`) gating the arti accept loop; permit acquired *before* `accept`, released via `ConnectionGuard` RAII on close | New streams park at the listener until a permit is released |
 
@@ -424,8 +424,8 @@ blame_ban_duration_secs = 3600         # 1 hour ban for non-signers
 fee_rate_sat_per_vbyte = 2             # Coordinator-suggested fee rate
 
 # Public-endpoint hardening (v1.2 Phase 8); all validated at startup
-rate_limit_info_per_min = 60           # GET /info, GET /round/tx; 429 + Retry-After on flood
-rate_limit_writes_per_min = 30         # POST /round/input, /round/output, /round/sign
+rate_limit_info_per_min = 600          # GET /info, GET /round/tx; 429 + Retry-After on flood (global bucket)
+rate_limit_writes_per_min = 120        # POST /round/input, /round/output, /round/sign
 request_timeout_secs = 30              # Uniform handler deadline; HTTP 408 on stall
 max_concurrent_connections = 256       # Tor accept-loop semaphore cap (tor_mode only)
 

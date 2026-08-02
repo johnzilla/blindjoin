@@ -3,7 +3,7 @@
 //! All startup logic lives in `coordinator::run::run` so integration tests can
 //! exercise the same path as the production binary.
 
-use tracing::error;
+use anyhow::Context;
 
 use coordinator::config::CoordinatorConfig;
 
@@ -17,11 +17,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    // Load configuration (D-11)
-    let cfg = CoordinatorConfig::load().unwrap_or_else(|e| {
-        error!(error = %e, "Config load failed — using defaults");
-        CoordinatorConfig::with_defaults()
-    });
+    // Load configuration (D-11). M1: a config error is a FATAL startup failure —
+    // never silently fall back to defaults (signet + hardcoded creds + clearnet),
+    // which would boot a mainnet-intended daemon as something else entirely.
+    let cfg = CoordinatorConfig::load()
+        .context("Failed to load coordinator configuration (refusing to boot defaults)")?;
 
     coordinator::run(cfg).await
 }

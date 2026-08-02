@@ -196,6 +196,7 @@ async fn info_endpoint_returns_429_when_flooded() {
             request_timeout_secs: 30,
             max_concurrent_connections: 256,
             tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
         },
         discovery: DiscoveryConfig {
             pkarr_key_file,
@@ -383,6 +384,7 @@ async fn request_timeout_returns_408() {
             request_timeout_secs: 1,
             max_concurrent_connections: 256,
             tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
         },
         discovery: DiscoveryConfig {
             pkarr_key_file,

@@ -106,6 +106,7 @@ async fn run_bootstraps_round_into_input_reg() {
             request_timeout_secs: 30,
             max_concurrent_connections: 256,
             tor_mode: false,
+            blame_full_abort_backoff_secs: 0,
         },
         discovery: DiscoveryConfig {
             pkarr_key_file,

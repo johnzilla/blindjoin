@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 use tokio::sync::RwLock;
 use axum::{Router, routing::{get, post}};
 use tower::ServiceBuilder;
@@ -22,8 +22,13 @@ pub struct AppState {
     /// Count of consecutive blame rounds for the current original round.
     /// Capped at 2 (BLAME-04, Pitfall 3): after cap, full abort without restart.
     /// AtomicU32 prevents TOCTOU on concurrent timer reads (T-02-10).
-    #[allow(dead_code)]
+    /// H3: the SAME Arc the phase monitor holds — the sign handler resets it to 0
+    /// on a successful broadcast so the cap counts genuinely *consecutive* blames.
     pub blame_round_count: Arc<AtomicU32>,
+    /// H3: Unix-seconds timestamp before which the round re-armer must NOT start a
+    /// new round. Set by the monitor on a FullAbort blame outcome. Shared with the
+    /// monitor so FullAbort is observable (a real backoff) instead of inert.
+    pub round_paused_until: Arc<AtomicU64>,
 }
 
 #[allow(dead_code)]
@@ -32,7 +37,14 @@ pub fn build_router(
     rpc: Arc<BitcoinRpc>,
     config: Arc<CoordinatorConfig>,
 ) -> Router {
-    build_router_with_ban_list(round, rpc, config, Arc::new(RwLock::new(BanList::new())))
+    build_router_with_ban_list(
+        round,
+        rpc,
+        config,
+        Arc::new(RwLock::new(BanList::new())),
+        Arc::new(AtomicU32::new(0)),
+        Arc::new(AtomicU64::new(0)),
+    )
 }
 
 /// Build router with a pre-populated ban list (used at startup after loading ban file).
@@ -46,8 +58,9 @@ pub fn build_router_with_ban_list(
     rpc: Arc<BitcoinRpc>,
     config: Arc<CoordinatorConfig>,
     ban_list: Arc<RwLock<BanList>>,
+    blame_round_count: Arc<AtomicU32>,
+    round_paused_until: Arc<AtomicU64>,
 ) -> Router {
-    let blame_round_count = Arc::new(AtomicU32::new(0));
     let limits = middleware::build_rate_limit_layers(&config);
     Router::new()
         .route("/info", get(handlers::get_info).layer(limits.reads_layer.clone()))
@@ -81,5 +94,5 @@ pub fn build_router_with_ban_list(
                 .layer(RequestBodyLimitLayer::new(64 * 1024))
                 .layer(middleware::build_timeout_layer(&config)),
         )
-        .with_state(AppState { round, rpc, config, ban_list, blame_round_count })
+        .with_state(AppState { round, rpc, config, ban_list, blame_round_count, round_paused_until })
 }
