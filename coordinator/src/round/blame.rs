@@ -165,6 +165,39 @@ pub fn load_unexpired_entries(path: &str, now_secs: u64) -> std::io::Result<Vec<
     Ok(result)
 }
 
+/// Compact the append-only ban file (B1): rewrite it with ONLY the currently
+/// unexpired entries, dropping accumulated expired records. `append_ban_entry` never
+/// removes lines, so without this the file grows unbounded on a long-running
+/// coordinator. Called once at startup (after loading into the in-memory `BanList`).
+///
+/// Atomic: writes to `<path>.tmp`, fsyncs, then renames over `path` (same-directory
+/// rename is atomic on POSIX), so a crash mid-compaction never corrupts the ban file.
+/// No-op if the file does not exist. Returns the number of entries kept.
+pub fn compact_ban_file(path: &str, now_secs: u64) -> std::io::Result<usize> {
+    use std::io::Write;
+    if !std::path::Path::new(path).exists() {
+        return Ok(0);
+    }
+    let unexpired = load_unexpired_entries(path, now_secs)?;
+
+    let tmp_path = format!("{path}.tmp");
+    {
+        let mut file = std::fs::File::create(&tmp_path)?;
+        for (utxo_hash, entry) in &unexpired {
+            let record = BanRecord {
+                utxo_hash: utxo_hash.clone(),
+                banned_at: entry.banned_at,
+                expires_at: entry.expires_at,
+            };
+            let line = serde_json::to_string(&record).map_err(std::io::Error::other)?;
+            writeln!(file, "{}", line)?;
+        }
+        file.sync_all()?;
+    }
+    std::fs::rename(&tmp_path, path)?;
+    Ok(unexpired.len())
+}
+
 /// Returns the current Unix timestamp in seconds.
 pub fn now_unix_secs() -> u64 {
     SystemTime::now()
@@ -400,5 +433,37 @@ mod tests {
 
         let loaded = load_unexpired_entries(path_str, 50).unwrap();
         assert_eq!(loaded.len(), 2, "Corrupt line must be skipped, valid entries loaded");
+    }
+
+    /// B1: compaction physically removes expired records (not just filters on load).
+    #[test]
+    fn compact_ban_file_drops_expired() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ban_list.jsonl");
+        let path_str = path.to_str().unwrap();
+
+        append_ban_entry(path_str, "tx_expired:0", &BanEntry { banned_at: 1, expires_at: 1000 }).unwrap();
+        append_ban_entry(path_str, "tx_live:0", &BanEntry { banned_at: 1, expires_at: 9999 }).unwrap();
+
+        let kept = compact_ban_file(path_str, 5000).unwrap(); // now=5000 → expired dropped
+        assert_eq!(kept, 1);
+
+        // The expired record is gone from DISK, not merely filtered on read.
+        let contents = std::fs::read_to_string(path_str).unwrap();
+        assert_eq!(
+            contents.lines().filter(|l| !l.trim().is_empty()).count(), 1,
+            "compaction must physically remove the expired line",
+        );
+        let reloaded = load_unexpired_entries(path_str, 5000).unwrap();
+        assert_eq!(reloaded.len(), 1);
+        assert_eq!(reloaded[0].0, hash_utxo_str("tx_live:0"));
+    }
+
+    #[test]
+    fn compact_ban_file_missing_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("nope.jsonl");
+        assert_eq!(compact_ban_file(missing.to_str().unwrap(), 1000).unwrap(), 0);
+        assert!(!missing.exists(), "compaction must not create a missing file");
     }
 }

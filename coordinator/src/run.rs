@@ -105,6 +105,14 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
             bl.load_entry(utxo_hash, entry);
         }
         info!(loaded = entry_count, "Loaded unexpired ban entries from ban file");
+
+        // B1: compact the append-only ban file so accumulated expired records don't
+        // grow it unbounded across restarts. Best-effort — a failure here is
+        // non-fatal (the in-memory ban list is already loaded and correct).
+        match crate::round::blame::compact_ban_file(&cfg.coordinator.ban_file_path, now) {
+            Ok(kept) => info!(kept, "Compacted ban file (dropped expired records)"),
+            Err(e) => tracing::warn!("Ban-file compaction failed (non-fatal): {e}"),
+        }
     }
 
     // blame_round_count tracks consecutive blame rounds for the cap (T-02-07).
