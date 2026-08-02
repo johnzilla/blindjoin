@@ -19,6 +19,26 @@ use crate::round::blame::{BanList, BlameOutcome};
 use crate::round::state::{Phase, RoundState};
 use crate::{api, discovery};
 
+/// Backstop for the in-flight Broadcast phase (M5b): if the round is STILL in
+/// `Broadcast` under the SAME `round_id`, force it to `Idle`. Called by the phase
+/// monitor after the derived watchdog delay. The `round_id` guard is essential — a
+/// slow finalize that already transitioned the round (or a fresh round that began
+/// after) must not be clobbered. Extracted from the monitor so the guard logic is
+/// unit-testable without spinning up the full monitor or an RPC.
+pub(crate) async fn broadcast_watchdog_force_idle(
+    round: &Arc<RwLock<RoundState>>,
+    round_id: uuid::Uuid,
+) {
+    let mut guard = round.write().await;
+    if guard.round_id == round_id && guard.phase == Phase::Broadcast {
+        tracing::warn!(
+            %round_id,
+            "broadcast watchdog fired — finalize task did not complete; forcing Idle"
+        );
+        let _ = guard.transition_to(Phase::Idle);
+    }
+}
+
 /// Run the coordinator with the supplied configuration. Runs forever; returns
 /// an error only if startup fails.
 ///
@@ -120,12 +140,12 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let signing_timeout = Duration::from_secs(cfg.coordinator.round_timeout_signing_secs);
         let output_reg_timeout = Duration::from_secs(cfg.coordinator.round_timeout_output_reg_secs);
         // M5b: watchdog for the in-flight Broadcast phase. The off-lock finalize task
-        // normally ends the round in well under this; the watchdog only fires if that
+        // normally ends the round well within this; the watchdog only fires if that
         // task DIES (panic/abort) without transitioning, force-Idling the round so the
-        // coordinator can't wedge in Broadcast forever. Comfortably longer than the
-        // worst-case finalize (testmempoolaccept + send + ~2×10s re-validation).
-        const BROADCAST_WATCHDOG_SECS: u64 = 90;
-        let broadcast_watchdog = Duration::from_secs(BROADCAST_WATCHDOG_SECS);
+        // coordinator can't wedge in Broadcast forever. DERIVED from max_participants
+        // (see CoordinatorConfig::broadcast_watchdog_secs) so it always exceeds the
+        // worst-case honest finalize and cannot preempt a live broadcast.
+        let broadcast_watchdog = Duration::from_secs(cfg.broadcast_watchdog_secs());
 
         tokio::spawn(async move {
             // Track the last (round_id, phase) for which we acted so we never
@@ -308,15 +328,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                         tracing::debug!(%round_id, "Arming broadcast watchdog");
                         tokio::spawn(async move {
                             tokio::time::sleep(broadcast_watchdog).await;
-                            let mut round = round_c.write().await;
-                            if round.round_id == round_id && round.phase == Phase::Broadcast {
-                                tracing::warn!(
-                                    %round_id,
-                                    "broadcast watchdog fired — finalize task did not \
-                                     complete; forcing Idle"
-                                );
-                                let _ = round.transition_to(Phase::Idle);
-                            }
+                            broadcast_watchdog_force_idle(&round_c, round_id).await;
                         });
                     }
                     _ => {}
@@ -526,4 +538,47 @@ async fn startup_health_check(rpc: &BitcoinRpc) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::round::state::{Phase, RoundState};
+
+    /// M5b watchdog: a round STILL stuck in Broadcast under the same round_id is
+    /// force-Idled (the finalize task died without transitioning).
+    #[tokio::test]
+    async fn watchdog_forces_idle_when_stuck_in_broadcast() {
+        let mut st = RoundState::new_idle();
+        st.phase = Phase::Broadcast;
+        let round_id = st.round_id;
+        let arc = Arc::new(RwLock::new(st));
+        broadcast_watchdog_force_idle(&arc, round_id).await;
+        assert_eq!(arc.read().await.phase, Phase::Idle, "stuck Broadcast must be force-Idled");
+    }
+
+    /// The round_id guard: a slow finalize that already advanced the round (or a new
+    /// round that began after) must NOT be clobbered by a stale watchdog.
+    #[tokio::test]
+    async fn watchdog_skips_on_round_id_mismatch() {
+        let mut st = RoundState::new_idle();
+        st.phase = Phase::Broadcast;
+        let arc = Arc::new(RwLock::new(st));
+        broadcast_watchdog_force_idle(&arc, uuid::Uuid::new_v4()).await; // not our round
+        assert_eq!(
+            arc.read().await.phase, Phase::Broadcast,
+            "watchdog must not act on a round_id it does not own",
+        );
+    }
+
+    /// The watchdog only acts on Broadcast — a round in any other phase is untouched.
+    #[tokio::test]
+    async fn watchdog_noop_when_not_broadcasting() {
+        let mut st = RoundState::new_idle();
+        st.phase = Phase::Signing;
+        let round_id = st.round_id;
+        let arc = Arc::new(RwLock::new(st));
+        broadcast_watchdog_force_idle(&arc, round_id).await;
+        assert_eq!(arc.read().await.phase, Phase::Signing, "watchdog only acts on Broadcast");
+    }
 }

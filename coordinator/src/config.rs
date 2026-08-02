@@ -456,6 +456,27 @@ impl CoordinatorConfig {
         Ok(())
     }
 
+    /// Seconds the run.rs Broadcast watchdog waits before force-Idling a round whose
+    /// off-lock finalize task never completed (M5b). This MUST exceed the worst-case
+    /// HONEST finalize, or the watchdog could preempt a live broadcast: the failure
+    /// path re-validates up to `max_participants` inputs SERIALLY, each `gettxout`
+    /// bounded by the ~10s RPC request timeout (and slow-but-successful calls do NOT
+    /// trip the consecutive-error break), so a slow-but-responsive bitcoind pushes the
+    /// worst case to ≈ `10 + max_participants·10` seconds. Preempting there would let
+    /// the finalize's re-acquire find `phase == Idle` and SKIP banning a proven
+    /// double-spend griefer — an attribution regression in exactly the overloaded-node
+    /// world that needs it. So the watchdog is DERIVED from `max_participants` (not a
+    /// fixed const) with generous per-participant headroom over the RPC timeout,
+    /// bounded to a sane ceiling.
+    pub fn broadcast_watchdog_secs(&self) -> u64 {
+        const BASE_SECS: u64 = 30; // testmempoolaccept + sendrawtransaction + slack
+        const PER_PARTICIPANT_SECS: u64 = 15; // > the 10s RPC request timeout, w/ headroom
+        const CAP_SECS: u64 = 3600; // 1h ceiling — a dead finalize recovers by then regardless
+        BASE_SECS
+            .saturating_add(PER_PARTICIPANT_SECS.saturating_mul(self.coordinator.max_participants as u64))
+            .min(CAP_SECS)
+    }
+
     /// Default config used in tests when no config file is present.
     pub fn with_defaults() -> Self {
         Self {
@@ -563,6 +584,39 @@ mod tests {
         let mut c = CoordinatorConfig::with_defaults();
         c.network.bitcoin_network = "signte".into(); // typo → must NOT map to Signet
         assert!(c.validate().is_err());
+    }
+
+    /// M5b: the Broadcast watchdog MUST exceed the worst-case honest finalize so it
+    /// cannot preempt a live broadcast (which would skip banning a proven griefer).
+    /// The failure path re-validates up to `max_participants` inputs serially, each
+    /// bounded by the ~10s RPC timeout, plus testmempoolaccept + broadcast.
+    #[test]
+    fn broadcast_watchdog_exceeds_worst_case_finalize() {
+        let c = CoordinatorConfig::with_defaults(); // max_participants = 20
+        // Conservative worst case: (max_participants + 1) serial RPCs at ~10s each.
+        let worst_case = 10 * (c.coordinator.max_participants as u64 + 1); // ~210s
+        assert!(
+            c.broadcast_watchdog_secs() > worst_case,
+            "watchdog {} must exceed worst-case finalize {}s",
+            c.broadcast_watchdog_secs(), worst_case,
+        );
+    }
+
+    /// The watchdog scales with `max_participants` (so a larger round can't outrun it)
+    /// and is bounded to a sane ceiling.
+    #[test]
+    fn broadcast_watchdog_scales_and_is_bounded() {
+        let mut small = CoordinatorConfig::with_defaults();
+        small.coordinator.max_participants = 3;
+        let mut big = CoordinatorConfig::with_defaults();
+        big.coordinator.max_participants = 20;
+        assert!(
+            big.broadcast_watchdog_secs() > small.broadcast_watchdog_secs(),
+            "more participants → longer watchdog",
+        );
+        let mut huge = CoordinatorConfig::with_defaults();
+        huge.coordinator.max_participants = 100_000;
+        assert!(huge.broadcast_watchdog_secs() <= 3600, "watchdog is capped");
     }
 
     #[test]
