@@ -12,6 +12,26 @@ A standalone CoinJoin coordinator and client for Bitcoin signet. Uses RSA blind 
 
 MIT licensed. No fees. No company. No terms of service.
 
+---
+
+> [!CAUTION]
+> ## ⚠️ WORK IN PROGRESS — NOT PRODUCTION READY — DO NOT USE WITH REAL FUNDS ⚠️
+>
+> **blindjoin is experimental, unaudited software under active development.** It has
+> **not** received a professional security or cryptography audit. It is intended for
+> **signet and testnet only** — coins with **no monetary value**.
+>
+> - **🚫 Do NOT use this with real bitcoin (mainnet) or any funds you are not prepared to lose entirely.**
+> - **🚫 Do NOT rely on it for privacy, unlinkability, or anonymity** in any situation where a mistake or bug would harm you. The privacy properties are design goals, not guarantees, and have not been independently verified.
+> - **🧪 Expect bugs, breaking changes, protocol changes, and data loss.** Interfaces, wire formats, and behavior can change without notice.
+> - **🔍 Mainnet is a config flag, not an endorsement.** The fact that a network can be set to `mainnet` does **not** mean it is safe to do so.
+>
+> Use it to learn, experiment, test, and contribute — **on worthless coins**. You assume
+> all risk. See the [MIT License](LICENSE): the software is provided "AS IS", without
+> warranty of any kind.
+
+---
+
 ## What This Does
 
 1. Coordinator announces a fixed-denomination CoinJoin round (default: 0.01 BTC) and the input script types it accepts (P2WPKH, P2TR, P2SH-P2WPKH)
