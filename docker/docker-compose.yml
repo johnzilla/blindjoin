@@ -34,8 +34,12 @@ services:
       - bitcoin-data:/home/bitcoin/.bitcoin
       - ./bitcoind/bitcoin.conf:/home/bitcoin/.bitcoin/bitcoin.conf:ro
     ports:
-      # Expose signet RPC for local tooling (bitcoin-cli from host)
-      - "38332:38332"
+      # Expose signet RPC to the HOST ONLY (127.0.0.1), for local tooling
+      # (bitcoin-cli from the host). B2: not published on 0.0.0.0, so the RPC —
+      # which uses the well-known dev credentials — is never reachable from the
+      # open internet. The coordinator reaches bitcoind over the compose network
+      # (bitcoind:38332), not via this published port.
+      - "127.0.0.1:38332:38332"
     healthcheck:
       # bitcoin-cli -signet getblockchaininfo exits 0 when bitcoind is up and accepting RPC.
       # start_period: 60s handles slow peer connection on signet (can take 30-120s).
