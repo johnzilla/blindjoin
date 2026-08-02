@@ -119,6 +119,13 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let input_reg_timeout = Duration::from_secs(cfg.coordinator.round_timeout_input_reg_secs);
         let signing_timeout = Duration::from_secs(cfg.coordinator.round_timeout_signing_secs);
         let output_reg_timeout = Duration::from_secs(cfg.coordinator.round_timeout_output_reg_secs);
+        // M5b: watchdog for the in-flight Broadcast phase. The off-lock finalize task
+        // normally ends the round in well under this; the watchdog only fires if that
+        // task DIES (panic/abort) without transitioning, force-Idling the round so the
+        // coordinator can't wedge in Broadcast forever. Comfortably longer than the
+        // worst-case finalize (testmempoolaccept + send + ~2×10s re-validation).
+        const BROADCAST_WATCHDOG_SECS: u64 = 90;
+        let broadcast_watchdog = Duration::from_secs(BROADCAST_WATCHDOG_SECS);
 
         tokio::spawn(async move {
             // Track the last (round_id, phase) for which we acted so we never
@@ -128,6 +135,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
             let mut last_input_reg_round: Option<uuid::Uuid> = None;
             let mut last_output_reg_round: Option<uuid::Uuid> = None;
             let mut last_signing_round: Option<uuid::Uuid> = None;
+            let mut last_broadcast_round: Option<uuid::Uuid> = None;
 
             let mut ticker = tokio::time::interval(Duration::from_millis(500));
             loop {
@@ -286,6 +294,28 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                                 BlameOutcome::RestartWithout { .. } => {
                                     blame_count_c.fetch_add(1, Ordering::Relaxed);
                                 }
+                            }
+                        });
+                    }
+                    Phase::Broadcast if last_broadcast_round != Some(round_id) => {
+                        // M5b watchdog. The detached finalize task normally moves the
+                        // round out of Broadcast well within this window; this only
+                        // fires if that task died without transitioning, force-Idling
+                        // the round so the coordinator can't wedge in Broadcast. The tx
+                        // may already be out — benign (the round resets clean).
+                        last_broadcast_round = Some(round_id);
+                        let round_c = Arc::clone(&round_clone);
+                        tracing::debug!(%round_id, "Arming broadcast watchdog");
+                        tokio::spawn(async move {
+                            tokio::time::sleep(broadcast_watchdog).await;
+                            let mut round = round_c.write().await;
+                            if round.round_id == round_id && round.phase == Phase::Broadcast {
+                                tracing::warn!(
+                                    %round_id,
+                                    "broadcast watchdog fired — finalize task did not \
+                                     complete; forcing Idle"
+                                );
+                                let _ = round.transition_to(Phase::Idle);
                             }
                         });
                     }

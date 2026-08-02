@@ -193,9 +193,55 @@ verification.
 
 #### Phase: Broadcast
 
-**[TODO]** Specify final-signature aggregation, broadcast retry policy,
-and successful-completion behavior (memory zeroing, ephemeral-key
-destruction, ban-list updates).
+**Aggregation.** When the coordinator has recorded a valid partial signature for
+every registered input (each verified against the canonical transaction's sighash
+at submission time), it assembles the final transaction: it applies each
+participant's witness to the corresponding input of the canonical PSBT (and, for
+P2SH-P2WPKH, reconstructs the deterministic `scriptSig` redeem push from the witness
+pubkey), then extracts the network-serializable transaction. Assembly is pure
+computation over already-collected data — no per-participant interaction occurs in
+this phase. The round MUST transition `Signing → Broadcast` at the moment assembly
+succeeds, **before** the transaction is submitted to Bitcoin Core, so that the
+signing-deadline timer stops treating the round as awaiting signatures.
+
+**Single broadcast, no retry.** The coordinator submits the assembled transaction
+exactly once (a `testmempoolaccept` pre-check followed by `sendrawtransaction`). It
+MUST NOT resubmit or rebuild the transaction within a round: every honest participant
+signed one specific transaction, so a rebuild would invalidate their signatures. A
+submission that is rejected is treated as a broadcast failure (see below), not
+retried.
+
+**Transient state.** `Broadcast` is an in-flight state, not a terminal one. The
+coordinator performs the (network) broadcast without holding the round lock, so
+`GET /info` MAY report `round_state = "broadcast"` for the brief window between
+assembly and the broadcast RPC returning. Observing `"broadcast"` does not by itself
+prove the transaction was accepted by the network — clients that require confirmation
+MUST watch the mempool/chain for the transaction, not the coordinator's phase.
+
+**Successful completion.** Once the transaction is accepted for relay, the
+coordinator transitions `Broadcast → Idle`. On entering `Idle` all sensitive round
+state is dropped and zeroed — the per-round ephemeral RSA key, the round secret, and
+all registered-input/-output and partial-signature material — and a fresh `round_id`
+is minted for the next round. A successful broadcast resets the consecutive-blame
+counter (see Phase: Blame).
+
+**Broadcast failure.** If `testmempoolaccept` rejects the transaction or
+`sendrawtransaction` fails, the coordinator re-validates each registered input
+against the mempool-aware UTXO set and bans (with attribution) any input that has
+been spent since registration — the double-spend griefing case — then ends the round
+via `Broadcast → Blame → Idle`. A failure that attributes no spent input (e.g. a fee
+rate too low for current mempool conditions) bans no one; repeated such failures
+count toward the consecutive-blame cap so the coordinator backs off rather than
+re-attempting the identical broadcast every round.
+
+**Crash window.** Because the broadcast is a single external submission, a coordinator
+that is killed *after* `sendrawtransaction` succeeds but *before* it records the
+`Broadcast → Idle` transition leaves the transaction propagating on the network while
+the coordinator restarts into a clean `Idle`. This is benign: the CoinJoin completes
+on-chain regardless of coordinator state, and the coordinator holds no authority over
+a transaction already broadcast. A backstop watchdog also force-transitions a round
+out of `Broadcast` if the in-flight broadcast task ever dies without finalizing, so a
+crashed or hung broadcast cannot wedge the coordinator.
 
 #### Phase: Blame
 

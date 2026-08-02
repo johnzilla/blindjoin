@@ -18,7 +18,7 @@ use crate::api::AppState;
 use crate::round::state::Phase;
 use crate::round::input_reg::{register_input, parse_outpoint};
 use crate::round::output_reg::register_output_logic;
-use crate::round::signing::{process_sign, SignResult};
+use crate::round::signing::{process_sign, SignOutcome};
 use crate::bitcoin::tx::{build_coinjoin_psbt, ParticipantInput, ParticipantOutput};
 use crate::bitcoin::fee::estimate_fee_share;
 use blind_rsa_signatures::MessageRandomizer;
@@ -602,25 +602,14 @@ pub async fn post_sign(
         ));
     }
 
-    let round_id_str = guard.round_id.to_string();
+    let round_id_uuid = guard.round_id;
+    let round_id_str = round_id_uuid.to_string();
 
-    // Acquire the ban-list write lock (round → ban_list order, matching the phase
-    // monitor's signing-timeout handler) so process_sign can attribute blame and
-    // ban a double-spend griefer on broadcast failure (H2).
-    let mut ban_guard = state.ban_list.write().await;
-
-    let sign_result = process_sign(
-        &mut guard,
-        &state.rpc,
-        &state.config,
-        &mut ban_guard,
-        &state.blame_round_count,
-        &state.round_paused_until,
-        &utxo,
-        &partial_sig_bytes,
-        &session_token,
-        &round_id_str,
-    ).await.map_err(|e| {
+    // M5b: process_sign does NO network I/O. It records the signature and, when the
+    // set is complete, assembles the final tx and moves the round Signing→Broadcast,
+    // returning the prepared payload. The write lock is released BEFORE any broadcast
+    // RPC — the actual broadcast runs off the lock in a detached finalize task.
+    let map_sign_err = |e: shared::errors::ApiError| {
         let status = match e.code {
             shared::errors::ErrorCode::SessionInvalid => StatusCode::UNAUTHORIZED,
             shared::errors::ErrorCode::WrongPhase => StatusCode::CONFLICT,
@@ -631,16 +620,52 @@ pub async fn post_sign(
             .unwrap_or_else(|_| "\"INTERNAL_ERROR\"".into())
             .trim_matches('"').to_string();
         api_error(status, &code_str, e.message, Some(&round_id_str))
-    })?;
+    };
 
-    match sign_result {
-        SignResult::Recorded => {
-            Ok(Json(json!({ "status": "recorded" })))
-        }
-        SignResult::Broadcast { txid } => {
-            // H3 reset now lives in signing::assemble_and_broadcast (single locus for
-            // the blame-counter transitions on the broadcast path).
-            Ok(Json(json!({ "status": "broadcast", "txid": txid })))
+    let outcome = process_sign(
+        &mut guard,
+        &state.config,
+        &utxo,
+        &partial_sig_bytes,
+        &session_token,
+        &round_id_str,
+    ).map_err(map_sign_err)?;
+
+    // Release the round write lock in ALL cases before any broadcast RPC.
+    drop(guard);
+
+    match outcome {
+        SignOutcome::Recorded => Ok(Json(json!({ "status": "recorded" }))),
+        SignOutcome::ReadyToBroadcast(prepared) => {
+            // Detached finalize task: runs the broadcast RPC OFF the lock, then
+            // re-acquires to end the round. It runs to completion regardless of whether
+            // this handler's HTTP connection survives (client disconnect / request
+            // timeout), so a broadcast is never abandoned half-done. The run.rs
+            // Broadcast watchdog force-Idles the round if this task ever dies.
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let round = state.round.clone();
+            let rpc = state.rpc.clone();
+            let ban_list = state.ban_list.clone();
+            let blame_count = state.blame_round_count.clone();
+            let paused = state.round_paused_until.clone();
+            let config = state.config.clone();
+            tokio::spawn(async move {
+                let result = crate::round::signing::finalize_broadcast(
+                    round, rpc, ban_list, blame_count, paused, config, prepared, round_id_uuid,
+                ).await;
+                let _ = tx.send(result); // handler may have gone away — best-effort
+            });
+
+            match rx.await {
+                Ok(Ok(txid)) => Ok(Json(json!({ "status": "broadcast", "txid": txid }))),
+                Ok(Err(e)) => Err(map_sign_err(e)),
+                Err(_) => Err(api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "broadcast finalize task ended without a result".to_string(),
+                    Some(&round_id_str),
+                )),
+            }
         }
     }
 }

@@ -44,6 +44,12 @@ impl Phase {
             | (Phase::Signing, Phase::Broadcast)
             | (Phase::Signing, Phase::Blame)
             | (Phase::Broadcast, Phase::Idle)
+            // Broadcast → Blame (M5b): the round moves to Broadcast the instant the
+            // final tx is assembled (before the RPC, so the signing-timeout monitor
+            // stops watching it). If the off-lock broadcast then FAILS, the finalize
+            // step attributes bans and ends via Blame — so Broadcast must be able to
+            // reach Blame, not only Idle.
+            | (Phase::Broadcast, Phase::Blame)
             | (Phase::Blame, Phase::Idle)
         )
     }
@@ -224,6 +230,7 @@ mod tests {
             (Phase::Signing, Phase::Broadcast),
             (Phase::Signing, Phase::Blame),
             (Phase::Broadcast, Phase::Idle),
+            (Phase::Broadcast, Phase::Blame),  // M5b: off-lock broadcast failed → blame
             (Phase::Blame, Phase::Idle),
         ];
         for (from, to) in valid {

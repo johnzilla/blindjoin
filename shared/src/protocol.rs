@@ -19,7 +19,15 @@ pub struct InfoResponse {
     pub denomination_sats: u64,
     pub min_participants: u32,
     pub max_participants: u32,
-    /// "idle" | "input_reg" | "output_reg" | "signing" | "broadcast" | "blame"
+    /// "idle" | "input_reg" | "output_reg" | "signing" | "broadcast" | "blame".
+    ///
+    /// `"broadcast"` is a **transient in-flight** state (M5b): the round enters it the
+    /// instant the final transaction is assembled — BEFORE the coordinator submits it
+    /// to Bitcoin Core — and leaves it (to `"idle"` on success, or via `"blame"` on
+    /// failure) once the broadcast RPC returns. It is normally observable for well
+    /// under a second and never longer than the RPC timeout window; observing it does
+    /// NOT by itself mean the CoinJoin was accepted by the network. Clients that need
+    /// broadcast confirmation should watch the mempool/chain for the tx, not `/info`.
     pub round_state: String,
     pub participants_registered: u32,
     /// hex SHA-256(DER pubkey bytes); None when Idle
