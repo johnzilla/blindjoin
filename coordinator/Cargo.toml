@@ -69,6 +69,9 @@ shared = { path = "../shared" }
 liquidity-bot = { path = "../liquidity-bot" }
 reqwest = { workspace = true }
 tempfile = "3"
+# B5: property-based testing for the round-state FSM (STACK.md — proptest for state
+# machine transition invariants).
+proptest = "1"
 
 [features]
 default = []

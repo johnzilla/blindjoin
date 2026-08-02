@@ -381,3 +381,56 @@ mod tests {
             "AVAIL-02: raw rsa_signing_key bytes must decode to same key");
     }
 }
+
+/// B5: property-based FSM invariants. Drives arbitrary sequences of attempted phase
+/// transitions and checks that `transition_to` is exactly consistent with
+/// `can_transition_to`, that the phase only changes on a valid edge, and that a fresh
+/// `round_id` is minted (and `inner` cleared) exactly when a `→ Idle` edge succeeds.
+#[cfg(test)]
+mod fsm_proptest {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_phase() -> impl Strategy<Value = Phase> {
+        prop_oneof![
+            Just(Phase::Idle),
+            Just(Phase::InputReg),
+            Just(Phase::OutputReg),
+            Just(Phase::Signing),
+            Just(Phase::Broadcast),
+            Just(Phase::Blame),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn transition_to_matches_can_transition_to(
+            seq in prop::collection::vec(arb_phase(), 0..40)
+        ) {
+            let mut state = RoundState::new_idle();
+            for target in seq {
+                let from = state.phase.clone();
+                let expected_ok = from.can_transition_to(&target);
+                let round_id_before = state.round_id;
+                let res = state.transition_to(target.clone());
+
+                if expected_ok {
+                    prop_assert!(res.is_ok(), "valid edge {:?}->{:?} must succeed", from, target);
+                    prop_assert!(state.phase == target);
+                    if target == Phase::Idle {
+                        // Idle transition mints a fresh round_id and drops sensitive state.
+                        prop_assert!(state.round_id != round_id_before);
+                        prop_assert!(state.inner.is_none());
+                    } else {
+                        prop_assert!(state.round_id == round_id_before);
+                    }
+                } else {
+                    prop_assert!(res.is_err(), "invalid edge {:?}->{:?} must fail", from, target);
+                    // An invalid transition leaves the state completely unchanged.
+                    prop_assert!(state.phase == from);
+                    prop_assert!(state.round_id == round_id_before);
+                }
+            }
+        }
+    }
+}

@@ -1070,6 +1070,7 @@ dependencies = [
  "hyper-util",
  "liquidity-bot",
  "pkarr",
+ "proptest",
  "rand 0.8.6",
  "reqwest 0.13.2",
  "safelog",
