@@ -243,6 +243,174 @@ async fn full_round_three_clients() {
 }
 
 // ---------------------------------------------------------------------------
+// P0.1: fee-boundary registration→build contract, end-to-end (H1).
+//
+// The H1 arithmetic is unit-proven in `coordinator/src/bitcoin/fee.rs`. These two
+// tests pin the pipeline the unit tests can't reach:
+//   (1) the registration gate is EXACT — a UTXO one sat below
+//       `denomination + estimate_fee_share(min_participants)` is rejected, and a
+//       UTXO exactly at it is accepted;
+//   (2) a boundary UTXO finalizes a real round with NOBODY banned — the exact
+//       failure the pre-H1 bug produced (marginal UTXO passes registration, fails
+//       the build, wedges the round, mass-bans every honest signer).
+// ---------------------------------------------------------------------------
+
+/// The registration threshold the coordinator (as configured by
+/// `spawn_coordinator*`: denomination 100_000, min_participants 3, fee_rate 1,
+/// `BipConfig::default()`) requires: `denomination + estimate_fee_share(min)`.
+/// Computed from the real formula so the test tracks it, never a hardcoded number.
+fn p0_1_required_value() -> u64 {
+    use coordinator::config::BipConfig;
+    100_000 + coordinator::bitcoin::fee::estimate_fee_share(&BipConfig::default(), 3, 1)
+}
+
+#[tokio::test]
+async fn fee_boundary_registration_gate_is_exact() {
+    use bitcoin::Network;
+    use client::http::CoordinatorClient;
+    use client::round;
+    use client::wallet::ClientWallet;
+
+    let exe = require_bitcoind!();
+    let required = p0_1_required_value();
+    // utxo[0] one sat below the gate (must be REJECTED); utxo[1] exactly at it
+    // (must be ACCEPTED); utxo[2] unused, funded comfortably.
+    let (bitcoind_guard, setup) =
+        crate::fund_regtest_with_amounts(exe, [required - 1, required, 150_000]).await;
+    let _bitcoind_guard = bitcoind_guard;
+
+    let (url, _tmp) = spawn_coordinator(
+        setup.rpc_url.clone(), setup.rpc_user.clone(), setup.rpc_pass.clone(),
+    ).await;
+    wait_for_coordinator(&url).await;
+
+    let wifs = [
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+    ];
+
+    // Below-threshold: rejected. The wallet controls the UTXO so the BIP-322 proof
+    // is valid — the ONLY possible rejection is the insufficient-value fee gate.
+    {
+        let (utxo_str, _v) = setup.utxos[0].clone();
+        let wallet = ClientWallet::from_wif(wifs[0], &utxo_str, Network::Regtest).unwrap();
+        let c = CoordinatorClient::new(url.clone());
+        let info = c.poll_until_phase("input_reg", 100, Duration::from_secs(600)).await.unwrap();
+        let res = round::input::register_input(&c, &wallet, &info, &v14_p2wpkh_coordinator_info()).await;
+        assert!(
+            res.is_err(),
+            "UTXO one sat below denomination+estimate_fee_share(min) must be rejected at \
+             registration (H1), but it was accepted",
+        );
+    }
+
+    // Exactly-at-threshold: accepted (differential proof the boundary is exact —
+    // same coordinator, same phase, one sat higher).
+    {
+        let (utxo_str, _v) = setup.utxos[1].clone();
+        let wallet = ClientWallet::from_wif(wifs[1], &utxo_str, Network::Regtest).unwrap();
+        let c = CoordinatorClient::new(url.clone());
+        let info = c.poll_until_phase("input_reg", 100, Duration::from_secs(600)).await.unwrap();
+        let res = round::input::register_input(&c, &wallet, &info, &v14_p2wpkh_coordinator_info()).await;
+        assert!(
+            res.is_ok(),
+            "UTXO exactly at denomination+estimate_fee_share(min) must register: {:?}",
+            res.err(),
+        );
+    }
+}
+
+#[tokio::test]
+async fn fee_boundary_utxo_finalizes_round_without_bans() {
+    let exe = require_bitcoind!();
+    let required = p0_1_required_value();
+    // Client 0 sits exactly on the registration gate; clients 1 & 2 comfortably
+    // above. Pre-H1 this exact-boundary input would pass registration then fail the
+    // build and wedge the round; post-fix it must finalize with nobody banned.
+    let (bitcoind_guard, setup) =
+        crate::fund_regtest_with_amounts(exe, [required, required + 50_000, required + 50_000]).await;
+    let _bitcoind_guard = bitcoind_guard;
+
+    let denomination: u64 = 100_000;
+    let (coordinator_url, _tmp_dir, _blame_count, ban_list) =
+        crate::spawn_coordinator_exposing_state(
+            setup.rpc_url.clone(), setup.rpc_user.clone(), setup.rpc_pass.clone(),
+        ).await;
+    wait_for_coordinator(&coordinator_url).await;
+
+    let test_wifs = [
+        "cPyRhf56BjNjMMmijQQvUeNG2VPkmxvBf6iYpygDu6DWR8UqkZGQ",
+        "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
+        "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
+    ];
+
+    let handles: Vec<_> = test_wifs
+        .iter()
+        .enumerate()
+        .map(|(i, wif)| {
+            let url = coordinator_url.clone();
+            let wif = wif.to_string();
+            let (utxo_str, _v) = setup.utxos[i].clone();
+            tokio::spawn(async move {
+                use bitcoin::Network;
+                use client::http::CoordinatorClient;
+                use client::round;
+                use client::wallet::ClientWallet;
+
+                let wallet = ClientWallet::from_wif(&wif, &utxo_str, Network::Regtest).unwrap();
+                let c = CoordinatorClient::new(url);
+                let info = c.poll_until_phase("input_reg", 100, Duration::from_secs(600)).await.unwrap();
+                let reg = round::input::register_input(&c, &wallet, &info, &v14_p2wpkh_coordinator_info())
+                    .await.expect("register_input (boundary UTXO must register)");
+                c.poll_until_phase("output_reg", 100, Duration::from_secs(600)).await.unwrap();
+                round::output::register_output(&c, &wallet, &reg, &info).await.expect("register_output");
+                c.poll_until_phase("signing", 100, Duration::from_secs(600)).await.unwrap();
+                round::sign::verify_and_sign(&c, &wallet, &reg, 1, None).await.expect("verify_and_sign");
+            })
+        })
+        .collect();
+    for h in handles {
+        h.await.expect("client task panicked");
+    }
+
+    // The CoinJoin must broadcast (3 denomination outputs in the mempool).
+    let rpc_url = setup.rpc_url.clone();
+    let rpc_user = setup.rpc_user.clone();
+    let rpc_pass = setup.rpc_pass.clone();
+    let denom_outputs = {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let (u, us, pw) = (rpc_url.clone(), rpc_user.clone(), rpc_pass.clone());
+            let count = tokio::task::spawn_blocking(move || {
+                use corepc_node::client::client_sync::Auth;
+                let client = corepc_node::Client::new_with_auth(&u, Auth::UserPass(us, pw)).unwrap();
+                let txids = client.get_raw_mempool().unwrap().0;
+                txids.iter().map(|t| {
+                    use std::str::FromStr;
+                    let txid = bitcoin::Txid::from_str(t).unwrap();
+                    let tx = client.get_raw_transaction_verbose(txid).unwrap();
+                    tx.outputs.iter().filter(|o| ((o.value * 100_000_000.0).round() as u64) == denomination).count()
+                }).max().unwrap_or(0)
+            }).await.unwrap();
+            if count >= 3 { break count; }
+            if tokio::time::Instant::now() >= deadline {
+                panic!("boundary-UTXO round never broadcast a CoinJoin (3 denomination outputs)");
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    assert_eq!(denom_outputs, 3, "CoinJoin must have 3 denomination outputs");
+
+    // ...and NOBODY was banned — the boundary UTXO finalized cleanly.
+    assert!(
+        ban_list.read().await.entries().is_empty(),
+        "a boundary UTXO must finalize the round with an empty ban list (H1 mass-ban regression)",
+    );
+
+    eprintln!("fee_boundary_utxo_finalizes_round_without_bans PASSED: boundary UTXO finalized, no bans");
+}
+
+// ---------------------------------------------------------------------------
 // Integration test: H3 — a successful broadcast resets blame_round_count.
 //
 // The counter is meant to bound *consecutive* blame rounds (cap → FullAbort).

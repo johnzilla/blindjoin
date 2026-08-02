@@ -624,6 +624,18 @@ pub struct FundedSetup {
 /// }
 /// ```
 pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
+    // Historical default: denomination (100_000) + 50_000 fee margin per UTXO.
+    fund_regtest_with_amounts(exe, [150_000; 3]).await
+}
+
+/// Like [`fund_regtest`] but funds each of the three test keys with a
+/// caller-specified sat amount. Used by the P0.1 fee-boundary test, which needs
+/// UTXOs valued at exactly `denomination + estimate_fee_share(min_participants)`
+/// and one sat below it to pin the registration→build contract end-to-end.
+pub async fn fund_regtest_with_amounts(
+    exe: String,
+    amounts: [u64; 3],
+) -> (BitcoindGuard, FundedSetup) {
     // Shared bootstrap: brings up bitcoind, sets stdio to /dev/null,
     // passes -printtoconsole=0, mines 101 blocks. Returns the bare guard.
     let (bitcoind_guard, creds) = bootstrap_regtest_bitcoind(exe).await;
@@ -653,10 +665,6 @@ pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
             "cQExMWoJTPmEFT131NAnkTKSGUb8JDV7wV6U7yx4SDzNMvrfNPLz",
             "cRh8UTgSFtzpWVSLZF5cQL2HN3awKze49MPiLurQ9KL4h71ah15F",
         ];
-        let denomination: u64 = 100_000;
-        let fund_sats: u64 = denomination + 50_000; // covers denomination + fee margin
-        let fund_btc = Amount::from_sat(fund_sats);
-
         let secp = Secp256k1::new();
 
         // Derive P2WPKH addresses for each test key (regtest). These are
@@ -679,10 +687,10 @@ pub async fn fund_regtest(exe: String) -> (BitcoindGuard, FundedSetup) {
 
         // Fund each test address via sendtoaddress.
         let mut funding_txids: Vec<String> = Vec::new();
-        for addr in &utxo_addresses {
+        for (addr, amount_sats) in utxo_addresses.iter().zip(amounts.iter()) {
             let txid_result = node
                 .client
-                .send_to_address(addr, fund_btc)
+                .send_to_address(addr, Amount::from_sat(*amount_sats))
                 .expect("send_to_address failed");
             // SendToAddress is a newtype: SendToAddress(pub String).
             funding_txids.push(txid_result.0.clone());

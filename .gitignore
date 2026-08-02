@@ -14,3 +14,7 @@ descriptors.txt
 
 # Session progress scratchpad (see checkpoint skill) — local-only, not shared repo state.
 CHECKPOINT.md
+
+# Runtime ban-file artifact (default ban_file_path) written to cwd by the coordinator/tests.
+ban_list.jsonl
+**/ban_list.jsonl
