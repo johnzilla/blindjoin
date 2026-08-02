@@ -47,7 +47,7 @@ const NET: Network = Network::Signet;
 
 #[tokio::test]
 async fn p2wpkh_descriptor_sign_roundtrip_verifies() {
-    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2wpkh)
+    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2wpkh, false)
         .expect("P2WPKH descriptor generate should succeed");
     let spk = wallet.script_pubkey();
     let signed = wallet
@@ -73,7 +73,7 @@ async fn p2wpkh_descriptor_sign_roundtrip_verifies() {
 
 #[tokio::test]
 async fn p2tr_descriptor_sign_roundtrip_verifies() {
-    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2tr)
+    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2tr, false)
         .expect("P2TR descriptor generate should succeed");
     let spk = wallet.script_pubkey();
     let signed = wallet
@@ -96,7 +96,7 @@ async fn p2tr_descriptor_sign_roundtrip_verifies() {
 
 #[tokio::test]
 async fn p2sh_p2wpkh_descriptor_sign_roundtrip_verifies() {
-    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2shP2wpkh)
+    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2shP2wpkh, false)
         .expect("P2SH-P2WPKH descriptor generate should succeed");
     let spk = wallet.script_pubkey();
     let signed = wallet
@@ -152,7 +152,7 @@ async fn p2wpkh_wif_sign_roundtrip_verifies() {
 async fn signed_proof_witness_stack_matches_witness_iter() {
     // D-70 symmetry: witness_stack is always the flat-Vec<Vec<u8>> form of
     // witness.iter(). One canonical assertion across the dispatcher.
-    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2tr)
+    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, ScriptType::P2tr, false)
         .expect("P2TR generate should succeed");
     let signed = wallet.sign_bip322(TEST_MESSAGE).expect("sign_bip322 should succeed");
     let expected: Vec<Vec<u8>> = signed.witness.iter().map(|s| s.to_vec()).collect();
@@ -165,7 +165,7 @@ async fn signed_proof_script_type_matches_wallet_script_type() {
     // wallet.script_type() (descriptor outer-wrapper), NEVER from a CLI flag.
     // Exercise all three descriptor paths + the WIF path.
     for st in [ScriptType::P2wpkh, ScriptType::P2tr, ScriptType::P2shP2wpkh] {
-        let w = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, st)
+        let w = BdkClientWallet::generate(DUMMY_OUTPOINT, NET, st, false)
             .expect("descriptor generate should succeed");
         let signed = w.sign_bip322(TEST_MESSAGE).expect("sign_bip322 should succeed");
         assert_eq!(signed.script_type, w.script_type());

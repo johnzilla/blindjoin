@@ -270,6 +270,16 @@ impl BdkClientWallet {
         // Engage the grinded ECDSA proof path only when the index-0 leaf key
         // actually controls the registered UTXO (the common case — funding the
         // wallet's first external address). Otherwise fall back to bdk.
+        //
+        // B6 (known limitation): the fallback (`external_leaf_sk == None`) uses bdk's
+        // non-grinding ECDSA signer, which produces a 70- or 73-byte signature ~5% of
+        // the time — lengths the pinned `bip322 = "=0.0.10"` verifier rejects as
+        // malformed (see docs/solutions/bip322-ecdsa-signature-length-flake.md). So an
+        // ECDSA (P2WPKH / P2SH-P2WPKH) UTXO funded to a NON-index-0 address of a
+        // descriptor wallet has a ~5% chance of an intermittent 400 INVALID_PROOF at
+        // registration; retrying re-derives a fresh blind and usually succeeds. P2TR
+        // (Schnorr, fixed-length) and index-0 ECDSA (grinded) are unaffected. Removed
+        // once bip322#69 releases (then the grinding workaround goes too).
         let external_leaf_sk = derive_external_leaf_sk(external_desc)
             .filter(|sk| ecdsa_leaf_controls_script(sk, script_type, &utxo_script_pubkey));
         Ok(Self {
@@ -301,6 +311,7 @@ impl BdkClientWallet {
         utxo_outpoint_str: &str,
         network: Network,
         script_type: ScriptType,
+        print_secrets: bool,
     ) -> Result<Self> {
         use bdk_wallet::keys::GeneratableKey;
         use bdk_wallet::keys::bip39::{Mnemonic, Language, WordCount};
@@ -354,24 +365,34 @@ impl BdkClientWallet {
         // derivation will not produce valid signatures.
         let first_address = inner.peek_address(KeychainKind::External, 0).address;
 
-        // T-03-04: print prominent warning and write descriptors.txt with restricted permissions
-        println!();
-        println!("=============================================================");
-        println!("  WARNING: MASTER PRIVATE KEY MATERIAL — KEEP SECURE");
-        println!("=============================================================");
-        println!("Mnemonic (12 words — BACK THIS UP):");
-        println!("  {}", mnemonic_str);
-        println!();
-        println!("External descriptor (receiving addresses):");
-        println!("  {}", external_desc);
-        println!();
-        println!("Internal descriptor (change addresses):");
-        println!("  {}", internal_desc);
-        println!();
-        println!("SAVE these descriptors. They are your wallet. Anyone with");
-        println!("these descriptors can spend all funds derived from this key.");
-        println!("=============================================================");
-        println!();
+        // T-03-04: print prominent warning and write descriptors.txt with restricted
+        // permissions. B3: the mnemonic + descriptors are the master secret; skip
+        // printing them to stdout when `print_secrets` is false (still written to
+        // descriptors.txt), so scripted/logged/shared-terminal use can't leak them.
+        if print_secrets {
+            println!();
+            println!("=============================================================");
+            println!("  WARNING: MASTER PRIVATE KEY MATERIAL — KEEP SECURE");
+            println!("=============================================================");
+            println!("Mnemonic (12 words — BACK THIS UP):");
+            println!("  {}", mnemonic_str);
+            println!();
+            println!("External descriptor (receiving addresses):");
+            println!("  {}", external_desc);
+            println!();
+            println!("Internal descriptor (change addresses):");
+            println!("  {}", internal_desc);
+            println!();
+            println!("SAVE these descriptors. They are your wallet. Anyone with");
+            println!("these descriptors can spend all funds derived from this key.");
+            println!("=============================================================");
+            println!();
+        } else {
+            println!();
+            println!("Secret material (mnemonic + descriptors) written to descriptors.txt");
+            println!("only (stdout printing suppressed by --no-print-secrets).");
+            println!();
+        }
         println!("=============================================================");
         println!("  FUND THIS ADDRESS TO PARTICIPATE IN A ROUND:");
         println!("=============================================================");
@@ -881,7 +902,7 @@ mod tests {
 
     #[test]
     fn generate_p2wpkh_produces_bip84_descriptor() {
-        let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2wpkh)
+        let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2wpkh, false)
             .expect("P2WPKH generate should succeed");
         let desc = wallet.external_desc_str();
         assert!(
@@ -896,7 +917,7 @@ mod tests {
 
     #[test]
     fn generate_p2tr_produces_bip86_descriptor() {
-        let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr)
+        let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr, false)
             .expect("P2TR generate should succeed");
         let desc = wallet.external_desc_str();
         assert!(
@@ -915,6 +936,7 @@ mod tests {
             DUMMY_OUTPOINT,
             Network::Signet,
             ScriptType::P2shP2wpkh,
+            false,
         )
         .expect("P2SH-P2WPKH generate should succeed");
         let desc = wallet.external_desc_str();
@@ -932,15 +954,15 @@ mod tests {
     fn script_type_accessor_matches_construction() {
         // For each of the 3 generate paths, wallet.script_type() must return
         // the script type passed to generate (D-62).
-        let w1 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2wpkh)
+        let w1 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2wpkh, false)
             .expect("P2WPKH generate should succeed");
         assert_eq!(w1.script_type(), ScriptType::P2wpkh);
 
-        let w2 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr)
+        let w2 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr, false)
             .expect("P2TR generate should succeed");
         assert_eq!(w2.script_type(), ScriptType::P2tr);
 
-        let w3 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2shP2wpkh)
+        let w3 = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2shP2wpkh, false)
             .expect("P2SH-P2WPKH generate should succeed");
         assert_eq!(w3.script_type(), ScriptType::P2shP2wpkh);
     }

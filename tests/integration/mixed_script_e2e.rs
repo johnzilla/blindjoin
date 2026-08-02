@@ -161,7 +161,7 @@ async fn mixed_script_e2e_three_clients_broadcast() {
 
     // wallet1 and wallet2 need to be mut so we can assign utxo_outpoint after funding.
     let mut wallet1 =
-        BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Regtest, ScriptType::P2tr)
+        BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Regtest, ScriptType::P2tr, false)
             .expect("BdkClientWallet::generate P2TR");
     fund_descriptor_wallet(
         setup.rpc_url.clone(),
@@ -173,7 +173,7 @@ async fn mixed_script_e2e_three_clients_broadcast() {
     .await;
 
     let mut wallet2 =
-        BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Regtest, ScriptType::P2shP2wpkh)
+        BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Regtest, ScriptType::P2shP2wpkh, false)
             .expect("BdkClientWallet::generate P2SH-P2WPKH");
     fund_descriptor_wallet(
         setup.rpc_url.clone(),

@@ -115,6 +115,21 @@ correlation). Rotation is round-robin across the operator-configured
 `BLINDJOIN_BOT_SCRIPT_TYPES`; each run is single-shot and uses a fresh
 wallet, so output addresses do not cluster across rounds.
 
+**Choosing an anonymity floor (important).** The client refuses to sign unless the
+CoinJoin has at least `--min-anonymity-set` distinct denomination outputs, counted
+from the PSBT itself (never from a coordinator-reported number — a malicious
+coordinator running one real victim plus its own sybils can claim any participant
+count). **The default of 3 is a floor, not a strong guarantee: a coordinator that
+sybils the round can trivially reach 3 outputs (one victim + two of its own), so
+your effective anonymity against a hostile coordinator can be as low as 1.** For
+meaningful privacy, raise the floor — and note it is coupled to the coordinator: a
+client that requires N outputs will not complete a round on a coordinator whose
+`coordinator.min_participants` is below N. To run rounds with a higher real floor,
+raise **both** `coordinator.min_participants` (on the coordinator you trust or run)
+**and** the client's `--min-anonymity-set` / `BLINDJOIN_MIN_ANONYMITY_SET` together.
+Larger sets cost more coordination time and require more honest participants, so pick
+the largest value your liquidity can actually fill.
+
 ## Build from Source
 
 Requires Rust 1.89+ and cargo (the floor is set by `arti-client` 0.41).

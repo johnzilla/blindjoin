@@ -12,6 +12,20 @@ const MAX_429_RETRIES: u32 = 5;
 /// Floor for 429 backoff so a `Retry-After: 0` (sub-second bucket) never busy-spins.
 const RETRY_FLOOR_MS: u64 = 250;
 
+/// B3: on a non-2xx write response, surface the coordinator's error BODY (its JSON
+/// `{"error":{"code","message",...}}` envelope) instead of a bare "HTTP 400".
+/// `reqwest::error_for_status()` discards the body, so a failed registration/output
+/// gave the operator no actionable reason. Mirrors what `post_sign` already does.
+async fn error_body_or_pass(resp: reqwest::Response, endpoint: &str) -> Result<reqwest::Response> {
+    let status = resp.status();
+    if status.is_success() {
+        Ok(resp)
+    } else {
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("{endpoint} failed: {status} — {body}");
+    }
+}
+
 /// Parse a `Retry-After` delta-seconds header into a millisecond backoff, floored
 /// at `floor_ms`. Shared by the read poll loop and the write-endpoint retry.
 fn retry_after_backoff_ms(resp: &reqwest::Response, floor_ms: u64) -> u64 {
@@ -33,11 +47,22 @@ pub struct CoordinatorClient {
     base_url: String,
 }
 
+/// B3: per-request timeout on every client HTTP call. `reqwest::Client::new()` has
+/// NO request timeout, so a hung or half-dead coordinator would block a client write
+/// or poll indefinitely. Chosen LONGER than the coordinator's own request timeout
+/// (`request_timeout_secs`, default 30s) so the coordinator's graceful 408 wins over
+/// this blunt client-side cutoff on the final signer's /round/sign (which waits for
+/// the coordinator's broadcast finalize). Tor circuit latency also lives under this.
+const CLIENT_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 impl CoordinatorClient {
     /// Clearnet constructor — no change in behavior from Phase 4.
     pub fn new(base_url: String) -> Self {
         Self {
-            alice_client: Client::new(),
+            alice_client: Client::builder()
+                .timeout(CLIENT_REQUEST_TIMEOUT)
+                .build()
+                .expect("reqwest client builds with a static timeout"),
             bob_client: None,
             base_url,
         }
@@ -54,9 +79,11 @@ impl CoordinatorClient {
     pub fn new_tor(base_url: String, alice_proxy: String, bob_proxy: String) -> Result<Self> {
         let alice_client = Client::builder()
             .proxy(Proxy::all(&alice_proxy)?)
+            .timeout(CLIENT_REQUEST_TIMEOUT)
             .build()?;
         let bob_client = Client::builder()
             .proxy(Proxy::all(&bob_proxy)?)
+            .timeout(CLIENT_REQUEST_TIMEOUT)
             .build()?;
         Ok(Self {
             alice_client,
@@ -115,11 +142,9 @@ impl CoordinatorClient {
         let url = format!("{}/round/input", self.base_url);
         let resp = self
             .send_with_429_retry(|| self.alice_client.post(&url).json(&req))
-            .await?
-            .error_for_status()?
-            .json::<InputRegResponse>()
             .await?;
-        Ok(resp)
+        let resp = error_body_or_pass(resp, "POST /round/input").await?;
+        Ok(resp.json::<InputRegResponse>().await?)
     }
 
     /// Output registration uses the Bob circuit — the isolated Tor circuit that
@@ -128,11 +153,9 @@ impl CoordinatorClient {
         let url = format!("{}/round/output", self.base_url);
         let resp = self
             .send_with_429_retry(|| self.bob().post(&url).json(&req))
-            .await?
-            .error_for_status()?
-            .json::<OutputRegResponse>()
             .await?;
-        Ok(resp)
+        let resp = error_body_or_pass(resp, "POST /round/output").await?;
+        Ok(resp.json::<OutputRegResponse>().await?)
     }
 
     pub async fn get_tx(&self) -> Result<RoundTxResponse> {

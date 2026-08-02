@@ -66,6 +66,13 @@ pub struct ClientConfig {
     #[arg(long)]
     pub generate_wallet: bool,
 
+    /// With --generate-wallet, do NOT print the mnemonic and descriptors to stdout
+    /// (they are still written to descriptors.txt with 0600 permissions). Use this
+    /// when generating in a script, a shared terminal, or anywhere stdout may be
+    /// logged/captured — so the master secret never lands in logs or scrollback.
+    #[arg(long)]
+    pub no_print_secrets: bool,
+
     /// Bitcoin network: signet | testnet4 | mainnet
     #[arg(long, default_value = "signet")]
     pub network: String,

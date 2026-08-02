@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     // --generate-wallet: print descriptors and exit (no round participation needed)
     if cfg.generate_wallet {
         let utxo = cfg.utxo.as_deref().unwrap_or("0000000000000000000000000000000000000000000000000000000000000000:0");
-        ClientWallet::generate(utxo, network, cfg.script_type)?;
+        ClientWallet::generate(utxo, network, cfg.script_type, !cfg.no_print_secrets)?;
         std::process::exit(0);
     }
 

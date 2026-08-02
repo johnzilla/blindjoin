@@ -140,7 +140,7 @@ async fn p2sh_p2wpkh_sign_roundtrip_verifies() {
 #[tokio::test]
 async fn v13_pkarr_record_with_p2tr_wallet_rejects_before_tor() {
     // Step 1: construct a P2TR descriptor wallet.
-    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr)
+    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr, false)
         .expect("P2TR descriptor generate should succeed");
     assert_eq!(wallet.script_type(), ScriptType::P2tr);
 
@@ -305,7 +305,7 @@ async fn v14_pkarr_record_with_p2tr_wallet_emits_v2_envelope() {
     assert_eq!(caps.output_script_type, ScriptType::P2tr);
 
     // Step 2: construct a P2TR descriptor wallet.
-    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr)
+    let wallet = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2tr, false)
         .expect("P2TR descriptor generate should succeed");
     assert_eq!(wallet.script_type(), ScriptType::P2tr);
 
