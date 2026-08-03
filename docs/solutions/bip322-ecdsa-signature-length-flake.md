@@ -26,12 +26,20 @@ P2SH-P2WPKH client's ownership proof failing cryptographic verification.
 
 ## Root cause
 
-The pinned `bip322 = "=0.0.10"` crate hardcodes, in its witness parser,
-`match signature_length { 71 | 72 => ok, _ => SignatureLength }`. It rejects
+`bip322` 0.0.6–0.0.10 hardcoded, in its witness parser,
+`match signature_length { 71 | 72 => ok, _ => SignatureLength }`. It rejected
 ECDSA witness signatures of **70 or 73 bytes** as malformed — even though those
 are perfectly valid Bitcoin ECDSA DER signatures (70 when R and S both serialize
 to 32 bytes with no `0x00` pad; 73 when both pad). ~5% of signatures land outside
 71/72.
+
+> **Update (2026-08-03):** `bip322 = "=0.0.11"` removed this restriction — it now
+> parses the witness sig with `ecdsa::Signature::from_der` and accepts any valid DER
+> length. The pin moved to `=0.0.11` (0.0.6–0.0.10 were yanked). The grinding
+> workaround below is therefore now belt-and-suspenders: it produces 71/72-byte sigs
+> that **every** version accepts, so it's retained for interop with disposable
+> coordinators that may still run a yanked 0.0.6–0.0.10. Removal is tracked in
+> `.planning/BACKLOG.md` § BIP322-GRIND.
 
 The codebase already knew this and worked around it with
 `shared::bip322::sign_ecdsa_compat_bip322_length`, which re-signs (deterministic

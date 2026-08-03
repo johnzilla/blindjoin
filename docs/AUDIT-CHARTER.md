@@ -96,9 +96,10 @@ the sign body returns `Bip322Error::ScriptTypeMismatch` before producing a
 witness. This catches the case where a benign client misconfiguration would
 otherwise produce an unverifiable signature.
 
-**Supply-chain mitigation:** The `bip322 = "=0.0.10"` exact pin is enforced
+**Supply-chain mitigation:** The `bip322 = "=0.0.11"` exact pin is enforced
 by the `bip322-pin-check` CI gate. The crate is pre-1.0; any minor release
-can break the wire format. The pin + gate prevents a `cargo update` from
+can break the wire format. (0.0.6–0.0.10 were yanked from crates.io after the
+0.0.11 key-binding soundness fix — see [§1](#in-scope-modules).) The pin + gate prevents a `cargo update` from
 silently swapping in a behavior change.
 
 **Behavioral assertions:** The 9 cross-shape rejection tests in
@@ -436,7 +437,7 @@ per-row. blindjoin's USAGE shapes of these components ARE in scope — see
 | `arti-client` (Tor circuit isolation + hidden-service hosting) | Upstream Tor Project Arti 2.x audit posture. The blindjoin codebase consumes the public `arti-client` API only; no fork, no patch, no custom transport layer. Arti is the only viable in-process Tor implementation in Rust. |
 | `pkarr` (Mainline DHT discovery layer) | Pubky project audit posture. blindjoin publishes a signed DNS-like packet via the public `pkarr` API; no fork, no custom DHT transport. The [PKARR](https://github.com/pubky/pkarr) record contents are the in-scope surface, not the DHT machinery. |
 | `blind-rsa-signatures` (jedisct1) crate **internals** | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signature primitive. The upstream crate is written by jedisct1 (libsodium author), production-grade, and the only [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)-compliant Rust implementation. OUR USAGE shape — the AUDIT-03 `RoundSecretKey` wrapper at [§5](#rsa-secret-key-zeroization-window) — IS in-scope. |
-| `bip322 = "=0.0.10"` (rust-bitcoin org) crate **internals** | BIP-322 verify path. Exact-pinned (`=0.0.10`) and enforced by the `bip322-pin-check` CI gate; the crate is pre-1.0 and any minor release can break the wire format. OUR 26-LOC zero-lossy adapter at `shared/src/bip322/mod.rs::verify_via_bip322_crate` IS in-scope ([§1](#in-scope-modules)). |
+| `bip322 = "=0.0.11"` (rust-bitcoin org) crate **internals** | BIP-322 verify path. Exact-pinned (`=0.0.11`; 0.0.6–0.0.10 yanked after the key-binding soundness fix) and enforced by the `bip322-pin-check` CI gate; the crate is pre-1.0 and any minor release can break the wire format. OUR compact zero-lossy adapter **and the key-binding guard** at `shared/src/bip322/mod.rs::verify_via_bip322_crate` ARE in-scope ([§1](#in-scope-modules)) — the guard re-binds the witness key to the address as defense-in-depth even though 0.0.11 now does so upstream. |
 | `rust-bitcoin` (consensus primitives + PSBT) and `secp256k1` (curve primitives) | Upstream rust-bitcoin team audit posture. These are the consensus-critical primitives the entire Rust Bitcoin ecosystem depends on. blindjoin uses the public API exclusively. |
 | `bdk_wallet` (client-side descriptor wallet) | The coordinator never runs bdk_wallet. The CLIENT's USAGE shape — `client/src/wallet.rs::sign_bip322` — IS in-scope insofar as it constructs the v=2 OwnershipProof PSBT (see [§4](#v-2-ownershipproof-psbt-handling)). The crate's descriptor parser, UTXO selector, and key derivation are out-of-scope. |
 | External penetration test execution | v1.5 *prepares for* an external audit by shipping the charter, audit.toml refresh, and bounded RoundSecretKey window. The engagement itself is a separate milestone scheduled after v1.5 ships. |

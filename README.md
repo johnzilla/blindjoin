@@ -319,7 +319,7 @@ blindjoin/
       protocol.rs    # Wire message structs (serde, forward-compatible)
       token.rs       # Blind token message computation (domain-separated SHA-256)
       bip322/        # BIP-322 Simple dispatcher + per-script-type sign/verify (v1.4)
-        mod.rs       # ScriptType enum, dispatcher, 26-LOC bip322-crate adapter
+        mod.rs       # ScriptType enum, dispatcher, bip322-crate adapter + key-binding guard
         p2wpkh.rs    # BIP-143 ECDSA sign/verify
         p2tr.rs      # BIP-341 Schnorr keypath sign/verify
         p2sh_p2wpkh.rs # BIP-49-wrapped P2WPKH sign/verify
@@ -393,7 +393,7 @@ Session tokens use HMAC with constant-time comparison. BIP-322 ownership proofs 
 |-------|---------|
 | `blind-rsa-signatures` | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signatures (jedisct1) |
 | `bitcoin` (rust-bitcoin) | Bitcoin primitives, PSBT, scripts |
-| `bip322` | BIP-322 Simple verifier (rust-bitcoin org). Exact-pinned to `=0.0.11` (0.0.6–0.0.10 were yanked after an upstream key-binding soundness fix) and enforced by a `bip322-pin-check` CI gate — the crate is pre-1.0 and any minor release can break the wire format. Wrapped behind a 26-LOC zero-lossy adapter so a future swap is mechanical. A local key-binding guard is retained as defense-in-depth. |
+| `bip322` | BIP-322 Simple verifier (rust-bitcoin org). Exact-pinned to `=0.0.11` (0.0.6–0.0.10 were yanked after an upstream key-binding soundness fix) and enforced by a `bip322-pin-check` CI gate — the crate is pre-1.0 and any minor release can break the wire format. Wrapped behind a compact zero-lossy adapter so a future swap is mechanical. A local key-binding guard is retained as defense-in-depth. |
 | `bdk_wallet` | Client wallet: key management, UTXO selection, PSBT signing |
 | `arti-client` | Tor hidden service (coordinator) and circuit isolation (client). Configured `default-features = false` with the `rustls` feature so the TLS backend is pure-Rust and the openssl chain is not in the dep tree. |
 | `pkarr` | Coordinator discovery via Mainline DHT |

@@ -18,11 +18,12 @@ use bitcoin::{Network, Script, Witness};
 ///
 /// Arity pre-flight: P2SH-P2WPKH witnesses are `[sig, pubkey]` (2 items),
 /// identical shape to P2WPKH because the unwrapped redeem IS a P2WPKH SPK.
-/// The `bip322 = "=0.0.10"` crate handles the BIP-143 sighash and signature check,
-/// but it does NOT bind the witness pubkey to the outer P2SH SPK (it does not verify
-/// `HASH160(P2WPKH(HASH160(witness[1]))) == p2sh_hash`). That key-to-address binding
-/// is enforced by the guard in [`super::verify_via_bip322_crate`], which rejects a
-/// witness whose key is unrelated to the address with
+/// The `bip322 = "=0.0.11"` crate handles the BIP-143 sighash and signature check,
+/// and (since 0.0.11) binds the witness pubkey to the outer P2SH SPK by requiring
+/// `ScriptBuf::new_p2sh(P2WPKH(HASH160(witness[1])).script_hash()) == prevout.spk`.
+/// blindjoin also enforces that key-to-address binding independently via the guard
+/// in [`super::verify_via_bip322_crate`] as defense-in-depth (it was the soundness
+/// gap in 0.0.7–0.0.10), rejecting a witness whose key is unrelated to the address with
 /// [`super::Bip322Error::WitnessKeyMismatch`] — without it, a signature by any key
 /// would verify against any P2SH-P2WPKH address.
 pub(crate) fn verify(
@@ -60,7 +61,9 @@ pub(crate) fn verify(
 /// which is RFC 6979 deterministic on the common path (signature naturally
 /// 71 or 72 bytes long, no retry triggered) and falls back to a counter-
 /// driven retry only when the natural RFC 6979 output would be 70 or 73
-/// bytes — lengths the upstream `bip322 = "=0.0.10"` verifier rejects. For
+/// bytes — lengths `bip322` 0.0.6–0.0.10 verifiers reject (the current `=0.0.11`
+/// pin accepts any DER length; grinding to 71/72 is retained for interop with
+/// older coordinators — removal → BACKLOG § BIP322-GRIND). For
 /// the fixed test vectors used by the
 /// `client/tests/wallet_sign_roundtrip.rs::p2sh_p2wpkh_shared_sign_matches_bdk_sign_byte_for_byte`
 /// parity test (Phase 19 Plan 19-01 D-119), the natural length is 71/72

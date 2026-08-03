@@ -82,7 +82,7 @@ and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 | Primitive | Specification | Implementation |
 |---|---|---|
 | Blind signatures | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSABSSA-SHA384-PSS-Randomized | [`blind-rsa-signatures` v0.17](https://crates.io/crates/blind-rsa-signatures) |
-| Ownership proofs | [BIP-322 Simple](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki) | Dispatcher in [`shared/src/bip322/`](../shared/src/bip322/) wrapping the upstream [`bip322 = "=0.0.10"`](https://crates.io/crates/bip322) crate (rust-bitcoin org) via a 26-LOC zero-lossy adapter. Per-script implementations (P2WPKH, P2TR, P2SH-P2WPKH) live in sibling files behind a `pub(crate)`-only surface so callers cannot reach them to bypass dispatch. |
+| Ownership proofs | [BIP-322 Simple](https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki) | Dispatcher in [`shared/src/bip322/`](../shared/src/bip322/) wrapping the upstream [`bip322 = "=0.0.11"`](https://crates.io/crates/bip322) crate (rust-bitcoin org) via a compact zero-lossy adapter plus a key-binding guard (defense-in-depth). Per-script implementations (P2WPKH, P2TR, P2SH-P2WPKH) live in sibling files behind a `pub(crate)`-only surface so callers cannot reach them to bypass dispatch. |
 | Coordinator identity | Ed25519 over [PKARR](https://github.com/pubky/pkarr) | [`pkarr` v5](https://crates.io/crates/pkarr) |
 | Transport | Tor v3 hidden services (server); isolated client circuits | [`arti-client` v0.41](https://crates.io/crates/arti-client) |
 | Session token integrity | HMAC-SHA-256 with constant-time comparison | `hmac` + `sha2` |

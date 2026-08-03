@@ -15,8 +15,8 @@ use bitcoin::{Network, Script, Witness};
 ///
 /// Arity pre-flight: P2TR Simple witnesses carry a single Schnorr signature
 /// (1 item, either 64 bytes SIGHASH_DEFAULT or 65 bytes SIGHASH_ALL). The
-/// `bip322 = "=0.0.10"` crate's `verify_full_p2tr` (`verify.rs:187-258`)
-/// handles both byte lengths internally.
+/// `bip322 = "=0.0.11"` crate's `verify_full_p2tr` handles both byte lengths
+/// internally.
 pub(crate) fn verify(
     spk: &Script,
     witness: &Witness,

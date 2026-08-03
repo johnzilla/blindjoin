@@ -64,9 +64,12 @@ pub struct BdkClientWallet {
     /// External-keychain index-0 leaf secret key for descriptor wallets — present
     /// ONLY when it actually controls the registered UTXO and the type is ECDSA
     /// (P2WPKH / P2SH-P2WPKH). It lets `sign_bip322` route ECDSA proofs through the
-    /// grinding-aware `shared::bip322::sign_simple` instead of bdk, which is
-    /// required because the pinned `bip322 = "=0.0.10"` verifier rejects the ~5% of
-    /// ECDSA signatures that serialize to 70/73 bytes (see `derive_external_leaf_sk`).
+    /// grinding-aware `shared::bip322::sign_simple` instead of bdk. `bip322`
+    /// 0.0.6–0.0.10 verifiers reject the ~5% of ECDSA signatures that serialize to
+    /// 70/73 bytes; grinding to 71/72 is accepted by every version. The current
+    /// `=0.0.11` pin accepts any DER length, so this is now belt-and-suspenders —
+    /// retained for interop with disposable coordinators that may still run a yanked
+    /// 0.0.6–0.0.10 (see `derive_external_leaf_sk`; removal → BACKLOG § BIP322-GRIND).
     /// `None` for WIF wallets (they use `wif_key`), P2TR (Schnorr — immune),
     /// watch-only descriptors, or a UTXO that is not the wallet's index-0 address.
     external_leaf_sk: Option<bitcoin::secp256k1::SecretKey>,
@@ -271,15 +274,18 @@ impl BdkClientWallet {
         // actually controls the registered UTXO (the common case — funding the
         // wallet's first external address). Otherwise fall back to bdk.
         //
-        // B6 (known limitation): the fallback (`external_leaf_sk == None`) uses bdk's
-        // non-grinding ECDSA signer, which produces a 70- or 73-byte signature ~5% of
-        // the time — lengths the pinned `bip322 = "=0.0.10"` verifier rejects as
-        // malformed (see docs/solutions/bip322-ecdsa-signature-length-flake.md). So an
+        // B6 (known limitation, narrowed by the =0.0.11 bump): the fallback
+        // (`external_leaf_sk == None`) uses bdk's non-grinding ECDSA signer, which
+        // produces a 70- or 73-byte signature ~5% of the time. `bip322` 0.0.6–0.0.10
+        // verifiers reject those lengths as malformed
+        // (see docs/solutions/bip322-ecdsa-signature-length-flake.md); the current
+        // `=0.0.11` verifier accepts any DER length, so this now only bites against a
+        // coordinator still running a yanked 0.0.6–0.0.10. Against such a coordinator, an
         // ECDSA (P2WPKH / P2SH-P2WPKH) UTXO funded to a NON-index-0 address of a
         // descriptor wallet has a ~5% chance of an intermittent 400 INVALID_PROOF at
         // registration; retrying re-derives a fresh blind and usually succeeds. P2TR
-        // (Schnorr, fixed-length) and index-0 ECDSA (grinded) are unaffected. Removed
-        // once bip322#69 releases (then the grinding workaround goes too).
+        // (Schnorr, fixed-length) and index-0 ECDSA (grinded) are unaffected. The
+        // grinding workaround is now removable (BACKLOG § BIP322-GRIND).
         let external_leaf_sk = derive_external_leaf_sk(external_desc)
             .filter(|sk| ecdsa_leaf_controls_script(sk, script_type, &utxo_script_pubkey));
         Ok(Self {
@@ -644,11 +650,12 @@ impl BdkClientWallet {
 
         // ECDSA descriptor wallets (P2WPKH / P2SH-P2WPKH) whose index-0 leaf key
         // controls the UTXO: sign the proof through shared::bip322::sign_simple,
-        // which grinds the ECDSA signature to the 71/72-byte length the pinned
-        // bip322 = "=0.0.10" verifier accepts. bdk's deterministic signer (the
-        // fallback below) emits ~5% of signatures at 70/73 bytes — cryptographically
-        // valid but rejected by that verifier, a real intermittent registration
-        // failure for ECDSA descriptor wallets. For in-range signatures sign_simple
+        // which grinds the ECDSA signature to a 71/72-byte length accepted by EVERY
+        // bip322 version. bdk's deterministic signer (the fallback below) emits ~5% of
+        // signatures at 70/73 bytes — cryptographically valid, rejected by 0.0.6–0.0.10
+        // verifiers but accepted by the current =0.0.11 pin; the grinding is retained
+        // for interop with disposable coordinators still on a yanked 0.0.6–0.0.10
+        // (removal → BACKLOG § BIP322-GRIND). For in-range signatures sign_simple
         // is byte-identical to bdk (see shared::bip322 *_matches_bdk_sign tests), so
         // this only changes behaviour for the ~5% bdk would have gotten rejected.
         // P2TR stays on the bdk path: Schnorr signatures are a fixed 64 bytes, so
@@ -773,12 +780,13 @@ pub type ClientWallet = BdkClientWallet;
 /// embeds an xprv, e.g. `sh(wpkh(xprv.../49'/0'/0'/0/*))`. Returns `None` for a
 /// watch-only (xpub) descriptor or any parse failure — callers fall back to bdk.
 ///
-/// Why this exists: ECDSA BIP-322 proofs must be signed through
-/// `shared::bip322::sign_simple`, which grinds the signature to the 71/72-byte
-/// length the pinned `bip322 = "=0.0.10"` verifier accepts. bdk's deterministic
-/// signer emits ~5% of signatures at 70/73 bytes, which that verifier rejects as
-/// malformed — a real intermittent registration failure for ECDSA descriptor
-/// wallets. Routing through `sign_simple` needs the raw leaf key, derived here.
+/// Why this exists: ECDSA BIP-322 proofs are signed through
+/// `shared::bip322::sign_simple`, which grinds the signature to a 71/72-byte
+/// length accepted by every `bip322` version. bdk's deterministic signer emits
+/// ~5% of signatures at 70/73 bytes — which 0.0.6–0.0.10 verifiers reject as
+/// malformed (the current `=0.0.11` pin accepts them); grinding is retained for
+/// interop with older coordinators. Routing through `sign_simple` needs the raw
+/// leaf key, derived here.
 ///
 /// The descriptor templates are validated at construction to the single-keychain
 /// shapes `wpkh(KEY/path/*)` / `tr(KEY/path/*)` / `sh(wpkh(KEY/path/*))` with no
@@ -851,10 +859,11 @@ mod tests {
         "0000000000000000000000000000000000000000000000000000000000000000:0";
 
     /// Regression for the intermittent "BIP-322 crate verification failed" flake:
-    /// the pinned `bip322 = "=0.0.10"` verifier accepts ECDSA witness signatures of
-    /// length 71/72 only, but bdk's deterministic signer emits ~5% at 70/73 bytes.
-    /// ECDSA descriptor wallets must therefore sign their ownership proof through
-    /// the grinding-aware `sign_simple` path. Iterating fixed seeds: without the
+    /// `bip322` 0.0.6–0.0.10 verifiers accept ECDSA witness signatures of length
+    /// 71/72 only, but bdk's deterministic signer emits ~5% at 70/73 bytes. ECDSA
+    /// descriptor wallets therefore sign their ownership proof through the
+    /// grinding-aware `sign_simple` path (the current `=0.0.11` pin accepts any
+    /// length; grinding is kept for interop with older coordinators). Iterating fixed seeds: without the
     /// grinding a reversion would (with overwhelming probability across 64 seeds)
     /// produce at least one 70/73-byte signature that fails verification here.
     #[test]

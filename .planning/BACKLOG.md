@@ -222,11 +222,18 @@ signature-length check, rejecting the ~5% of valid RFC 6979 signatures that are
 (verify.rs:347) and accepts any valid DER length, so the grinding loop is now
 belt-and-suspenders (71/72 is a subset every version accepts).
 
-**Why deferred:** Removing it changes the bytes the signer emits for ~5% of keys
-(they'd now be 70/73 bytes). 0.0.11 accepts them and the sign↔verify roundtrip
-tests are not byte-pinned, so removal should be safe — but it's a signer-behavior
-change that belongs in its own commit, verified against the full per-script
-vector + roundtrip suite, not bundled into a security dependency bump.
+**Why deferred:** Removing it changes the bytes the *client* signer emits for ~5%
+of keys (they'd now be 70/73 bytes). Our own `=0.0.11` coordinator accepts any DER
+length and the sign↔verify roundtrip tests are not byte-pinned, so removal is safe
+against current coordinators — BUT coordinators are **disposable and discovered via
+DHT**, and one may still be running a yanked `0.0.6`–`0.0.10`, which rejects 70/73
+as malformed. Dropping the grind therefore reintroduces the ~5% intermittent
+`INVALID_PROOF` at registration against such a coordinator (the original B6
+limitation, see `client/src/wallet.rs`). So this is not pure cleanup — it trades a
+harmless client-side grind for a mild interop regression against stale coordinators.
+Weigh that before removing; if kept, it's cheap insurance. It's also a signer-behavior
+change that belongs in its own commit, verified against the full per-script vector +
+roundtrip suite, not bundled into a security dependency bump.
 
 **Scope:** ~1 function deletion + 2 call-site edits + rerun
 `cargo test -p shared`. Small.
