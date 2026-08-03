@@ -14,9 +14,16 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
-### Fixed
+## [1.8.0] — 2026-08-02
 
-- **BIP-322 ownership-proof bypass for P2WPKH / P2SH-P2WPKH (security).** The pinned
+External security review (no criticals). This release resolves every high-, medium-,
+and low-severity finding from an external review, a separately-disclosed BIP-322
+ownership-proof soundness bug, and lands the M5b broadcast-lock restructure. All work
+is covered by tests (coordinator lib 124, full integration suite green).
+
+### Security
+
+- **BIP-322 ownership-proof bypass for P2WPKH / P2SH-P2WPKH.** The pinned
   `bip322 = "=0.0.10"` verifier checks a witness signature against the public key
   carried *in the witness* but never checks that key is the one the address /
   scriptPubKey commits to (its "key-mismatch" check compares the witness key with
@@ -37,8 +44,6 @@ threat-model treatment of v1.4 / v1.5 invariants see
   `detect_script_type` doc comments that wrongly asserted the crate performed the
   HASH160 cross-check internally. Reported via private disclosure by an anonymous
   security researcher; upstream maintainer contacted for a patched release.
-
-External security-review pass (no criticals; high- and medium-severity findings):
 
 - **Registration fee estimate under-charged, wedging rounds and mass-banning honest
   participants (security/availability).** The input-registration gate estimated each
@@ -88,6 +93,18 @@ External security-review pass (no criticals; high- and medium-severity findings)
   `descriptor_ecdsa_proofs_grind_to_verifiable_length` (64 seeds); root cause and
   detection notes in `docs/solutions/bip322-ecdsa-signature-length-flake.md`. This
   was surfacing as the intermittent `mixed_script_e2e` CI flake.
+- **Signet dev-stack Bitcoin Core RPC was exposed to the open internet.** The Docker
+  bitcoind ran with `rpcallowip=0.0.0.0/0` and published `38332` on the host's
+  `0.0.0.0`, with well-known dev credentials — anyone reaching the host got full node
+  RPC. `rpcallowip` is now scoped to loopback + the docker private range, and the
+  published port is bound to `127.0.0.1`. The coordinator reaches bitcoind over the
+  compose network. Documented that the dev credentials must be changed for any
+  non-localhost deployment.
+- **Dependency advisories cleared.** Bumped `quinn-proto` `0.11.14`→`0.11.16`
+  (RUSTSEC-2026-0185, high — remote memory exhaustion from unbounded out-of-order
+  QUIC stream reassembly, transitive via `reqwest`), and `serde_with` `3.18`→`3.21`
+  (GHSA-7gcf-g7xr-8hxj) + `cmov` `0.5.3`→`0.5.4` (GHSA-3rjw-m598-pq24) to clear the
+  two moderate Dependabot advisories.
 
 ### Changed
 
@@ -99,7 +116,31 @@ External security-review pass (no criticals; high- and medium-severity findings)
   mapping to signet. **The Docker Compose stack now specifies the full round config
   explicitly** (it previously relied on the silent fallback). Startup validation also
   gained round-parameter sanity checks: `min_participants ≥ 2`, `min ≤ max`,
-  non-dust `denomination_sats`, `fee_rate ≥ 1`, and non-zero phase timeouts.
+  `max_participants ≤ 100` (also keeps the derived broadcast watchdog structurally
+  ahead of the worst-case finalize), non-dust `denomination_sats`, `fee_rate ≥ 1`,
+  and non-zero phase timeouts.
+- **Broadcast RPC now runs outside the round write lock (M5b).** The final signer's
+  `testmempoolaccept` + `sendrawtransaction` (and the double-spend re-validation) used
+  to hold the `RoundState` write lock, stalling every handler for the RPC duration.
+  Signing now records + assembles under the lock and moves the round `Signing →
+  Broadcast` (so the signing-timeout monitor stops watching it); a detached task then
+  broadcasts off the lock and re-acquires to finalize `Broadcast → Idle` (success) or
+  `Broadcast → Blame → Idle` (failure, with attributed bans). A new FSM edge
+  `Broadcast → Blame` and a run.rs Broadcast watchdog (derived from `max_participants`
+  so it can never preempt a live finalize) back it up. `/info` `round_state` is now
+  documented as a transient in-flight state; PROTOCOL.md's Broadcast section is written.
+- **Client per-request timeouts + error-body propagation.** The reqwest clients
+  (clearnet + Tor) now use a 60s per-request timeout (a hung coordinator previously
+  blocked a write/poll indefinitely), and `post_input`/`post_output` surface the
+  coordinator's JSON error envelope on failure instead of a bare "HTTP 400". The
+  client also treats HTTP 429 as retryable (Retry-After, bounded) on every read and
+  write call.
+- **Ban file is compacted on startup.** The append-only ban file accumulated expired
+  records unbounded; the coordinator now rewrites it (atomically) with only unexpired
+  entries at boot.
+- **Removed dead fields.** `RegisteredInput.blind_sig_hash` (stored, never consulted),
+  `RoundStateInner.change_addresses` (write-only duplicate of `change_address`), and
+  `BitcoinRpc::getrawtransaction` (unused).
 - **Rate-limit defaults raised: reads 60→600/min, writes 30→120/min.** The old reads
   default (1 token/sec) exactly matched a single client polling `/info`, so two honest
   clients starved each other with no attacker present. The reference client now treats
@@ -111,12 +152,23 @@ External security-review pass (no criticals; high- and medium-severity findings)
   briefly, so keygen no longer stalls `/info` reads and every handler once per round.
 - **Bitcoin Core RPC calls now have an explicit 10s per-request timeout**, so a hung
   `bitcoind` fails the call cleanly instead of blocking indefinitely.
+- **`InputRegState.participants_registered` removed.** It carried the
+  coordinator-reported participant count, used only by the old denomination-count
+  check, which was defeated (a first registrant sees `0`, making the check vacuous).
+  Superseded by the PSBT-derived anonymity floor above.
 
 ### Added
 
 - **`coordinator.blame_full_abort_backoff_secs` (default 300).** Seconds the round
   re-armer pauses after a full-abort blame outcome instead of instantly restarting
   into the same wedge; `0` restarts immediately (legacy behavior).
+- **Client `--no-print-secrets` flag.** Suppresses printing the mnemonic and
+  descriptors to stdout on `--generate-wallet` (still written to `descriptors.txt`,
+  mode 0600) — for scripted, shared-terminal, or logged environments.
+- **Property-based FSM tests (proptest).** Arbitrary sequences of attempted phase
+  transitions are checked against `can_transition_to` (valid-edge-only, phase
+  unchanged on an invalid edge, fresh `round_id` minted and state cleared exactly on
+  `→ Idle`). Fuzz targets for the untrusted parse paths remain a deferred follow-up.
 - **Per-input partial-signature verification at submission (security, H3).** The
   coordinator now cryptographically verifies each partial signature against the
   canonical CoinJoin transaction's sighash *before* recording it
@@ -156,13 +208,6 @@ External security-review pass (no criticals; high- and medium-severity findings)
   `--max-fee-sats` / `BLINDJOIN_MAX_FEE_SATS` (default: denomination / 10). 12
   new unit tests cover the shorted-output, fee-theft, floor, and PSBT-reader
   paths.
-
-### Changed
-
-- **`InputRegState.participants_registered` removed.** It carried the
-  coordinator-reported participant count, used only by the old denomination-count
-  check, which was defeated (a first registrant sees `0`, making the check
-  vacuous). Superseded by the PSBT-derived anonymity floor above.
 
 ### Fixed
 
