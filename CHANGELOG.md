@@ -14,6 +14,24 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+### Security
+
+- **Bump `bip322` to the patched `=0.0.11`.** The upstream crate fixed the
+  BIP-322 key-binding soundness gap in `0.0.11` (commit `e8accbe`): for
+  P2WPKH / P2SH-P2WPKH it now derives the expected `scriptPubKey` from the
+  witness public key and requires equality with the challenged address, failing
+  with `PublicKeyMismatch` otherwise (the witness key must also be compressed).
+  Versions `0.0.6`–`0.0.10` were **yanked from crates.io**, so the previous
+  `=0.0.10` pin sat on a yanked crate and would break a fresh `cargo build` /
+  lockfile regeneration. blindjoin's own key-binding guard (added in v1.8.0)
+  already closed this gap defensively and is **retained as defense-in-depth** —
+  it fires first with a distinct `WitnessKeyMismatch`, so proof soundness never
+  depends on the crate alone. The `bip322-pin-check` CI gate now enforces
+  `=0.0.11`. Transitive `snafu` (0.8→0.9) and `base64` (adds 0.23) bumps come
+  with it; `cargo audit` allowed-warnings dropped 8→7 (the bip322 yank cleared).
+  All BIP-322 tests (guard regression, cross-shape, per-script vectors,
+  roundtrips) pass unchanged against `0.0.11`.
+
 ## [1.8.0] — 2026-08-02
 
 External security review (no criticals). This release resolves every high-, medium-,

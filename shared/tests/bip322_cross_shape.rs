@@ -157,10 +157,11 @@ fn reject_p2sh_p2wpkh_spk_with_p2wpkh_witness() {
         Network::Regtest,
     );
     // Arity passes (2 == 2); the key-binding guard rejects the witness before the
-    // crate runs. (NB: the pinned bip322 0.0.10 does NOT perform a HASH160 cross-check
-    // here — that was the reported soundness gap; the guard is what binds the witness
-    // key to the P2SH SPK.) The dummy `witness[1]` ([0u8; 33]) is not a valid
-    // compressed key related to the address, so this surfaces as WitnessKeyMismatch.
+    // crate runs. (NB: bip322 0.0.6–0.0.10 did NOT perform this HASH160 cross-check —
+    // that was the reported soundness gap, fixed upstream in =0.0.11; our guard binds
+    // the witness key to the P2SH SPK regardless, as defense-in-depth.) The dummy
+    // `witness[1]` ([0u8; 33]) is not a valid compressed key related to the address,
+    // so this surfaces as WitnessKeyMismatch.
     assert!(
         matches!(result, Err(Bip322Error::WitnessKeyMismatch)),
         "expected WitnessKeyMismatch (key-binding guard), got {result:?}",

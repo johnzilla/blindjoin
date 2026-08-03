@@ -59,10 +59,11 @@ pub struct UtxoDetails {
 ///    `shared::bip322::verify_simple`. v=2 additionally cross-checks
 ///    `declared == derived` BEFORE verify. Inside `verify_simple`, a key-binding
 ///    guard rebinds the witness pubkey to the on-chain `script_pubkey` for
-///    P2WPKH / P2SH-P2WPKH (`Address::is_related_to_pubkey`) — the pinned
-///    `bip322 = "=0.0.10"` crate verifies the signature but NOT that the key
-///    matches the address's HASH160, so this guard is what makes the ownership
-///    proof sound (a witness signed by an unrelated key is rejected).
+///    P2WPKH / P2SH-P2WPKH (`Address::is_related_to_pubkey`). The pinned
+///    `bip322 = "=0.0.11"` crate now performs this key-to-address check itself
+///    (it was the soundness gap in 0.0.6–0.0.10, fixed upstream and those
+///    versions yanked); the guard is kept as defense-in-depth so a witness
+///    signed by an unrelated key is rejected even if the crate regresses.
 ///
 /// `bip_config` carries the operator-configured allowlist (D-51 / CD-14).
 /// `network` is threaded from `CoordinatorConfig::network::bitcoin_network`

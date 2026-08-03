@@ -17,7 +17,13 @@ base64 = "0.22"
 # version bumps can break the 26-LOC adapter at shared/src/bip322/mod.rs.
 # A CI grep gate (.github/workflows/ci.yml::bip322-pin-check) enforces the
 # pin on every PR.
-bip322 = "=0.0.10"
+#
+# 0.0.11 (2026-08) binds the witness pubkey to the challenged address before
+# signature verification (fix commit e8accbe) — the soundness fix for the same
+# gap our key-binding guard closes. Versions 0.0.6–0.0.10 were YANKED from
+# crates.io, so this pin MUST move off 0.0.10. We keep the local guard as
+# defense-in-depth per the comment at shared/src/bip322/mod.rs.
+bip322 = "=0.0.11"
 thiserror = { workspace = true }
 
 [dev-dependencies]

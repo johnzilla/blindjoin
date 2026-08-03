@@ -170,17 +170,18 @@ jobs:
     name: bip322 exact-version pin check
     runs-on: ubuntu-latest
     # bip322 is pre-1.0; the API can break between patch releases. The adapter
-    # at shared/src/bip322/mod.rs is verified against exactly =0.0.10 — any
-    # drift needs the adapter re-verified by hand.
+    # at shared/src/bip322/mod.rs is verified against exactly =0.0.11 — any
+    # drift needs the adapter re-verified by hand. (0.0.6–0.0.10 were yanked
+    # from crates.io after the key-binding soundness fix landed in 0.0.11.)
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Enforce exact bip322 pin
         run: |
           set -eu
           if grep -rEn 'bip322\s*=' --include='Cargo.toml' . \
-             | grep -v '=\s*"=0\.0\.10"' \
+             | grep -v '=\s*"=0\.0\.11"' \
              | grep -v '^[^:]*:[0-9]*:#'; then
-            echo "ERROR: bip322 declaration(s) above lack the exact-version pin '=0.0.10'." >&2
+            echo "ERROR: bip322 declaration(s) above lack the exact-version pin '=0.0.11'." >&2
             echo "       The bip322 crate is pre-1.0; minor changes can break the adapter at shared/src/bip322/mod.rs." >&2
             exit 1
           fi

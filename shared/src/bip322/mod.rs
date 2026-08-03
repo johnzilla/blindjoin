@@ -12,7 +12,7 @@
 //! v1.4 Phase 15 Plan 15-02:
 //! - Splits the prior flat `shared/src/bip322.rs` into the four-file
 //!   directory module per D-04.
-//! - Ports the 26-LOC `bip322 = "=0.0.10"` crate adapter from
+//! - Ports the 26-LOC `bip322 = "=0.0.11"` crate adapter from
 //!   `sprint-0-A.md:145-175` verbatim as the crate-private
 //!   [`verify_via_bip322_crate`] helper (D-26).
 //! - Replaces the prior stub `ScriptType` with the full dispatcher + 10-variant
@@ -209,13 +209,15 @@ pub enum Bip322Error {
         source: Box<bip322::Error>,
     },
     /// The witness public key is not the one committed by the scriptPubKey being
-    /// proven (SECURITY — BIP-322 key-binding guard). `bip322 = "=0.0.10"` verifies
-    /// that the witness signature is valid for the key carried IN the witness, but
-    /// for P2WPKH / P2SH-P2WPKH it does not verify that key is the one the address's
-    /// HASH160 commits to — so a valid signature by ANY key would otherwise "prove"
-    /// ownership of anyone's UTXO. We reject a witness whose pubkey is not related to
-    /// the address. Distinct from `CrateVerifyFailed` so the guard is independently
-    /// observable in tests and logs. PII-safe: no key/address bytes in Display.
+    /// proven (SECURITY — BIP-322 key-binding guard). Historically `bip322`
+    /// 0.0.6–0.0.10 verified that the witness signature is valid for the key carried
+    /// IN the witness, but for P2WPKH / P2SH-P2WPKH did not verify that key is the one
+    /// the address's HASH160 commits to — so a valid signature by ANY key would
+    /// otherwise "prove" ownership of anyone's UTXO. Fixed upstream in `=0.0.11`, but
+    /// we still reject a witness whose pubkey is not related to the address as
+    /// defense-in-depth. Distinct from `CrateVerifyFailed` so the guard is
+    /// independently observable in tests and logs. PII-safe: no key/address bytes in
+    /// Display.
     #[error("witness public key does not match the proven scriptPubKey")]
     WitnessKeyMismatch,
     #[error("network mismatch: address decoded for {decoded:?}, configured for {configured:?}")]
@@ -243,10 +245,10 @@ pub enum Bip322Error {
 /// `detect_script_type` optimistically returns [`ScriptType::P2shP2wpkh`]
 /// for any P2SH SPK. The witness pubkey is bound to the address by the
 /// key-binding guard in [`verify_via_bip322_crate`] (via
-/// `Address::is_related_to_pubkey`), NOT by the `bip322 = "=0.0.10"` crate —
-/// which does not perform that HASH160 cross-check (the exact soundness gap the
-/// guard closes). A witness whose key is unrelated to the P2SH SPK is rejected
-/// there with [`Bip322Error::WitnessKeyMismatch`].
+/// `Address::is_related_to_pubkey`). `bip322 = "=0.0.11"` now performs this
+/// HASH160 cross-check itself (it was the soundness gap in 0.0.6–0.0.10), but
+/// we keep the guard as defense-in-depth. A witness whose key is unrelated to
+/// the P2SH SPK is rejected with [`Bip322Error::WitnessKeyMismatch`].
 pub fn detect_script_type(spk: &Script) -> Result<ScriptType, Bip322Error> {
     if spk.is_p2wpkh() {
         Ok(ScriptType::P2wpkh)
@@ -263,7 +265,7 @@ pub fn detect_script_type(spk: &Script) -> Result<ScriptType, Bip322Error> {
 ///
 /// Routes to the per-script verifier; per-script verifiers perform arity
 /// pre-flight then delegate to [`verify_via_bip322_crate`]. The
-/// `bip322 = "=0.0.10"` crate's `verify_simple` handles BIP-143 (P2WPKH,
+/// `bip322 = "=0.0.11"` crate's `verify_simple` handles BIP-143 (P2WPKH,
 /// P2SH-P2WPKH), BIP-341 (P2TR keyspend), and the 64-byte / 65-byte Schnorr
 /// branching internally per BIP322-02.
 pub fn verify_simple(
@@ -342,14 +344,20 @@ pub fn p2sh_p2wpkh_final_script_sig(pubkey: &bitcoin::secp256k1::PublicKey) -> S
 /// Sign an ECDSA digest, retrying with deterministic counter-derived entropy
 /// until the resulting DER signature + SIGHASH_ALL byte is 71 or 72 bytes.
 ///
-/// `bip322 = "=0.0.10"` (see verify.rs:138-153) hardcodes
+/// HISTORICAL: `bip322` 0.0.6–0.0.10 (see verify.rs:138-153 in 0.0.10) hardcoded
 /// `match signature_length { 71 | 72 => ... else SignatureLength }` for the
 /// witness sig length, but valid Bitcoin ECDSA DER signatures can be 70
 /// bytes (S naturally 31 bytes) or 73 bytes (both R and S padded with a
 /// leading 0x00) too. Without this retry loop, ~5% of RFC 6979 deterministic
-/// signatures fall outside 71/72 and the upstream verifier rejects them as
+/// signatures fell outside 71/72 and the upstream verifier rejected them as
 /// malformed even though they're cryptographically valid — surfacing as
 /// intermittent CI failures in any test that signs random keys.
+///
+/// `=0.0.11` removed the restriction: it now parses the sig with
+/// `ecdsa::Signature::from_der` (verify.rs:347) and accepts any valid DER length.
+/// This grinding loop is therefore now belt-and-suspenders (71/72 is a subset
+/// every version accepts) and REMOVABLE — kept for now to keep the 0.0.11 security
+/// bump focused. Tracked in `.planning/BACKLOG.md` § BIP322-GRIND.
 ///
 /// The retry uses a u32 counter as the noncedata seed so the helper is itself
 /// deterministic: same (key, message) always converges to the same final
@@ -385,13 +393,17 @@ pub(crate) fn verify_via_bip322_crate(
     let address = bitcoin::Address::from_script(spk, network)
         .map_err(|source| Bip322Error::UnrecognisedScriptPubkey { source })?;
 
-    // SECURITY — BIP-322 key-binding guard. KEEP THIS EVEN AFTER THE UPSTREAM CRATE
-    // IS PATCHED. `bip322` verifies the witness signature against the key carried IN
-    // the witness, but for P2WPKH / P2SH-P2WPKH it does NOT verify that key is the one
-    // the scriptPubKey's HASH160 commits to (its "key-mismatch" check compares the
-    // witness key with itself). Affected: P2WPKH 0.0.6–0.0.10, P2SH-P2WPKH
-    // 0.0.7–0.0.10 (we pin =0.0.10); P2TR unaffected. Reported upstream via private
-    // disclosure; no patched crates.io release yet.
+    // SECURITY — BIP-322 key-binding guard. KEEP THIS EVEN THOUGH THE UPSTREAM CRATE
+    // IS NOW PATCHED — it is defense-in-depth against a regression in a pre-1.0 crate.
+    // The historical gap: `bip322` 0.0.6–0.0.10 verified the witness signature against
+    // the key carried IN the witness but did NOT verify that key is the one the
+    // scriptPubKey's HASH160 commits to (its "key-mismatch" check compared the witness
+    // key with itself). Affected: P2WPKH 0.0.6–0.0.10, P2SH-P2WPKH 0.0.7–0.0.10; P2TR
+    // unaffected. Fixed upstream in 0.0.11 (commit e8accbe: derives the expected
+    // scriptPubKey from the witness key and requires equality, else PublicKeyMismatch;
+    // 0.0.6–0.0.10 were yanked from crates.io). We pin =0.0.11 AND keep this guard so
+    // proof soundness never depends on the crate alone — our guard fires first, with a
+    // distinct, independently-observable WitnessKeyMismatch error.
     //
     // Impact without this guard: an attacker signs the BIP-322 challenge with THEIR
     // OWN key and has it accepted as ownership of a victim's UTXO. It does NOT let
@@ -466,10 +478,11 @@ mod tests {
 
     // --- SECURITY: BIP-322 key-binding guard regression tests ---
     //
-    // The pinned `bip322 = "=0.0.10"` crate verifies a witness signature against the
-    // key carried in the witness but does NOT bind that key to the address's HASH160
-    // for P2WPKH / P2SH-P2WPKH. The guard in `verify_via_bip322_crate` re-binds it.
-    // These tests assert the guard rejects an unrelated key (the forgery) and still
+    // `bip322` 0.0.6–0.0.10 verified a witness signature against the key carried in the
+    // witness but did NOT bind that key to the address's HASH160 for P2WPKH /
+    // P2SH-P2WPKH. Fixed upstream in `=0.0.11`; the guard in `verify_via_bip322_crate`
+    // re-binds it anyway as defense-in-depth. These tests assert the guard rejects an
+    // unrelated key (the forgery) — independently of the crate — and still
     // accepts the honest key — for both single-key script types.
 
     fn p2wpkh_spk_for(pk: &PublicKey) -> ScriptBuf {

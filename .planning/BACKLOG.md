@@ -207,6 +207,36 @@ surfacing the 429. Shares the already-unit-exercised backoff helper.
 
 ---
 
+## BIP322-GRIND — remove the ECDSA length-grinding workaround (unblocked by bip322 0.0.11)
+
+**Status:** Unblocked but deferred. Kept out of the `=0.0.11` security bump to
+keep that commit focused on the soundness fix.
+
+**What:** Delete `sign_ecdsa_compat_bip322_length` in
+[`shared/src/bip322/mod.rs`](../shared/src/bip322/mod.rs) and replace its call
+sites in `p2wpkh::sign` / `p2sh_p2wpkh::sign` with a plain `secp.sign_ecdsa`.
+
+**Why now possible:** `bip322` 0.0.6–0.0.10 hardcoded a `71 | 72`-byte witness
+signature-length check, rejecting the ~5% of valid RFC 6979 signatures that are
+70 or 73 bytes. `=0.0.11` parses the sig with `ecdsa::Signature::from_der`
+(verify.rs:347) and accepts any valid DER length, so the grinding loop is now
+belt-and-suspenders (71/72 is a subset every version accepts).
+
+**Why deferred:** Removing it changes the bytes the signer emits for ~5% of keys
+(they'd now be 70/73 bytes). 0.0.11 accepts them and the sign↔verify roundtrip
+tests are not byte-pinned, so removal should be safe — but it's a signer-behavior
+change that belongs in its own commit, verified against the full per-script
+vector + roundtrip suite, not bundled into a security dependency bump.
+
+**Scope:** ~1 function deletion + 2 call-site edits + rerun
+`cargo test -p shared`. Small.
+
+**Source:** Upstream `bip322` 0.0.11 (fix for the length-check issue, distinct
+from the key-binding fix). Removal was pre-authorized once the upstream length
+fix released.
+
+---
+
 ## When to schedule
 
 **Historical note (pre-v1.5):** the three entries above were originally
