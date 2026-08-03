@@ -48,6 +48,7 @@ As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of
 
 ## Documentation
 
+- **[Anatomy of a round](https://johnzilla.github.io/blindjoin/round.html)** — a visual walkthrough of one CoinJoin round: the message sequence, the coordinator's phase state machine, and why the coordinator cannot link inputs to outputs. ([source](docs/round.html))
 - **[Security policy](SECURITY.md)** — how to report a vulnerability (`johnturner@gmail.com`), audit-readiness status, and the v1.6 supply-chain posture: cosign keyless signing + SLSA provenance + SPDX SBOM on every image and release tarball, base-image digest pinning.
 - **[Changelog](CHANGELOG.md)** — release notes per milestone, Keep-a-Changelog format.
 - **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.

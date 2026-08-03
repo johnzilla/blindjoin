@@ -80,6 +80,9 @@
   .lede { font-size: clamp(16px, 2.2vw, 18.5px); color: var(--muted); max-width: 64ch; margin: 0; text-wrap: pretty; }
 
   .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .source { margin: 20px 0 0; font-size: 14.5px; }
+  .source a { font-weight: 560; }
+  .source .sep { color: var(--muted); margin: 0 8px; font-weight: 400; }
   .tag {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 12px; letter-spacing: .02em; color: var(--muted);
@@ -160,6 +163,13 @@
       <span class="tag">two Tor circuits per client</span>
       <span class="tag">fixed denomination</span>
     </div>
+    <p class="source">
+      <a href="https://github.com/johnzilla/blindjoin">↗ View the source on GitHub</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/johnzilla/blindjoin#readme">README</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/johnzilla/blindjoin/releases">releases</a>
+    </p>
   </header>
 
   <section>
@@ -302,7 +312,13 @@ stateDiagram-v2
   </section>
 
   <footer>
-    A model of the protocol in <code>github.com/johnzilla/blindjoin</code>, from the README + code.
+    A model of the protocol in
+    <a href="https://github.com/johnzilla/blindjoin">github.com/johnzilla/blindjoin</a> — built from the
+    <a href="https://github.com/johnzilla/blindjoin#readme">README</a> and source
+    (<a href="https://github.com/johnzilla/blindjoin/tree/main/coordinator">coordinator</a> ·
+    <a href="https://github.com/johnzilla/blindjoin/tree/main/client">client</a>), using
+    <a href="https://www.rfc-editor.org/rfc/rfc9474.html">RSA blind signatures (RFC&nbsp;9474)</a>.
+    <br><br>
     blindjoin is <b>experimental, signet-only, and unaudited</b> — the unlinkability shown here is a design
     goal, not an independently verified guarantee. Don't use it with real funds.
   </footer>
