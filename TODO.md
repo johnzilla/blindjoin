@@ -284,14 +284,18 @@
 ## Open
 
 ### Tech debt
-- [ ] **Migrate `make_input_reg_state` and `make_signing_state` to use production
-  state-machine transitions.** Both build `RoundStateInner` via struct literal
-  in `#[cfg(test)]` blocks; `make_signing_state` additionally does direct
-  `state.phase = Phase::Signing` assignment (bypasses validator) and uses a
-  placeholder RSA key. Currently flagged with `TODO(fix-verification-gap)`
-  comments. Detail in
-  [`.planning/workstreams/fix-verification-gap/BACKDOOR-INVENTORY.md`](.planning/workstreams/fix-verification-gap/BACKDOOR-INVENTORY.md)
-  findings #1 and #2. Estimated ~30 min refactor.
+- [x] **Migrate `make_input_reg_state` and `make_signing_state` to use production
+  state-machine transitions.** Done. Both now build via production `start_round()`
+  + `transition_to()` — no struct literals, no direct `state.phase = Phase::Signing`
+  assignment, no placeholder RSA key
+  ([`input_reg.rs`](coordinator/src/round/input_reg.rs) `make_input_reg_state`,
+  [`signing.rs:617`](coordinator/src/round/signing.rs:617) `make_signing_state`).
+  **Residual (minor):** `make_signing_state` still hand-inserts one
+  `RegisteredInput`/`RegisteredOutput` directly into `inner` rather than driving
+  them through the `register_input`/`register_output` handlers. Acceptable — the
+  phase transitions themselves go through the validator now, which was the
+  load-bearing gap; wiring the fixture through the register handlers is a further
+  purity step, not a correctness fix.
 
 ### Scoped features (see BACKLOG.md)
 - [ ] **B-03:** Dynamic fee estimation (mempool-aware, safety margin, RBF)

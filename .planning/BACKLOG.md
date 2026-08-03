@@ -112,6 +112,101 @@ static fee rate from config at [coordinator/src/bitcoin/tx.rs:66-70](coordinator
 
 ---
 
+## Deferred from the external security review (v1.8.0, 2026-08-02)
+
+These four items are the deferred half of the external review that shipped in
+v1.8.0. They are recorded here (not just in CHECKPOINT.md) so they survive
+checkpoint rotation. Labels match the review's own IDs and the CHANGELOG
+breadcrumbs so the mapping stays 1:1. None are blocking; all are hardening or
+test-coverage debt.
+
+### REV-B4 — Session-token gate on `/round/tx`
+
+**Status:** Deferred by choice at v1.8.0. Defense-in-depth, low urgency.
+
+**What:** Require the per-round session token to fetch the unsigned PSBT from
+`/round/tx`, matching the gate already on `/round/sign`.
+
+**Why deferred:** Low value — the transaction composition becomes public at
+broadcast seconds later, so gating the pre-broadcast fetch leaks little. It is a
+belt-and-suspenders hardening, not a soundness fix.
+
+**Scope:** Thread the existing session-token check (as used by the sign handler
+in `coordinator/src/api/handlers.rs`) onto the `/round/tx` handler; reject with
+the same `SessionInvalid` envelope on mismatch. Small, mechanical.
+
+**Source:** External review Low #4.
+
+---
+
+### REV-B5-FUZZ — cargo-fuzz targets for untrusted parse paths
+
+**Status:** Deferred at v1.8.0. The FSM proptest half of B5 shipped; the fuzz
+half did not. Breadcrumbed in [`CHANGELOG.md`](../CHANGELOG.md) (v1.8.0 §Added,
+"Fuzz targets for the untrusted parse paths remain a deferred follow-up").
+
+**What:** A separate `cargo-fuzz` crate with targets for the three untrusted
+deserialize paths: PSBT deserialize, base64 decode, and the `OwnershipProof`
+envelope (v1 legacy + v2 PSBT try-parse).
+
+**Why deferred:** Fuzzing needs a nightly toolchain and a separate crate; it is
+not appropriate for the normal CI matrix. Kept out of scope to avoid bolting a
+nightly job onto stable CI.
+
+**Scope:** New `fuzz/` crate (not in the workspace default-members); one target
+per parse path; seed corpus from existing test fixtures; run manually / on a
+nightly schedule, not per-PR. Document the invocation in CONTRIBUTING.md.
+
+**Source:** External review Low #5 (fuzz half).
+
+---
+
+### REV-M5B-TEST — slow-RPC / broadcast-watchdog timing e2e
+
+**Status:** Deferred at v1.8.0. The M5b restructure itself shipped and is
+covered by unit tests (`process_sign_last_signature_moves_round_to_broadcast`),
+the new `Broadcast → Blame` FSM edge, and happy/failure e2e paths. The missing
+piece is a *timing* test.
+
+**What:** A deterministic e2e proving (a) a slow broadcast does not trip a
+signing-phase timeout blame, and (b) the broadcast watchdog fires and forces
+`Broadcast → Idle` when finalize hangs past `broadcast_watchdog_secs()`.
+
+**Why deferred:** Needs an RPC-delay seam the harness does not have today —
+either a proxy in front of bitcoind or a trait-ified RPC client that can inject
+latency. Building that seam is the actual work; the assertions are trivial once
+it exists.
+
+**Scope:** Introduce an injectable delay on the coordinator's RPC calls (mock or
+proxy), then two tests against it. Covered analytically + by watchdog-logic unit
+tests in the meantime.
+
+**Source:** External review; M5b test debt.
+
+---
+
+### REV-H4-TEST — write-endpoint 429-then-200 retry test
+
+**Status:** Deferred at v1.8.0. The retry logic ships and the backoff helper
+(`retry_after_backoff_ms`) is unit-tested; the end-to-end retry behavior on
+write endpoints is not.
+
+**What:** A test that a write call (`post_input` / `post_output` / `post_sign`)
+transparently retries through a `429 Retry-After` and succeeds on the
+subsequent `200`.
+
+**Why deferred:** Needs a stub HTTP server that returns `429` then `200` on the
+same route — not wired into the current integration harness (which drives a real
+coordinator, not a scriptable stub).
+
+**Scope:** Add a minimal scriptable HTTP stub (or a tower layer that fails-then-
+passes) and assert the client's `send_with_429_retry` path completes without
+surfacing the 429. Shares the already-unit-exercised backoff helper.
+
+**Source:** External review; H4 follow-up test debt.
+
+---
+
 ## When to schedule
 
 **Historical note (pre-v1.5):** the three entries above were originally

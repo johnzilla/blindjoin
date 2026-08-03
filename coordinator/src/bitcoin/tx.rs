@@ -34,9 +34,8 @@ pub const fn script_input_vbytes(st: ScriptType) -> u64 {
         // P2TR derivation: 41 non_witness (same as P2WPKH)
         // + 66 witness (1 stack_count + 1 sig_len(64) + 64 Schnorr SIGHASH_DEFAULT)
         //   → ceil(66/4) = 17
-        // = 58 vB. ROADMAP SC#1 cites 57 (floor of 57.5); STATE.md §v1.5 design
-        // notes mandates UP-rounding so the coordinator never underpays fees on
-        // a mixed round — 58 is the load-bearing value (raw 57.5, round UP).
+        // = 58 vB. Raw is 57.5; round UP (not floor to 57) so the coordinator
+        // never underpays fees on a mixed round — 58 is the load-bearing value.
         // 64 non_witness (32 prev_txid + 4 vout + 1 script_sig_len(23) + 23 redeem
         // wrapper + 4 sequence) + 108 witness (same as P2WPKH) / 4 = 27
         // = 91 vB
@@ -354,8 +353,8 @@ mod tests {
 
     #[test]
     fn script_input_vbytes_p2tr_is_58_up_rounded() {
-        // 41 + ceil(66/4) = 41 + 17 = 58. ROADMAP says 57 (floor); STATE.md §v1.5
-        // design notes mandates UP-rounding — 58 is correct.
+        // 41 + ceil(66/4) = 41 + 17 = 58. Raw 57.5 rounds UP (not floor to 57)
+        // — 58 is correct.
         assert_eq!(script_input_vbytes(ScriptType::P2tr), 58);
     }
 
