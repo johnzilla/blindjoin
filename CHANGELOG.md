@@ -14,6 +14,10 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-08-03
+
+Security patch: move off the yanked `bip322 0.0.10` onto the patched `0.0.11`.
+
 ### Security
 
 - **Bump `bip322` to the patched `=0.0.11`.** The upstream crate fixed the
