@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anatomy of a blindjoin round</title>
+<style>
+  :root {
+    --ground: #f4f6fa;
+    --panel: #ffffff;
+    --ink: #191c26;
+    --muted: #5b6274;
+    --faint: #e7eaf1;
+    --border: #e0e4ee;
+    --accent: #4b57c8;
+    --accent-ink: #3a44a6;
+    --accent-soft: #eef0fc;
+    /* diagram "paper" — kept light in both themes so mermaid stays legible */
+    --sheet: #fcfdff;
+    --sheet-border: #dfe3ef;
+    /* phase hues (theme-independent) */
+    --disc: #6b7386;
+    --input: #2a9d8f;
+    --output: #7a5bd0;
+    --sign: #c68526;
+    --cast: #2f9e5b;
+    --blame: #c0503c;
+    --shadow: 0 1px 2px rgba(20,24,40,.05), 0 8px 30px rgba(20,24,40,.06);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0e1016;
+      --panel: #161a24;
+      --ink: #e7eaf2;
+      --muted: #969db3;
+      --faint: #1c2130;
+      --border: #262c3b;
+      --accent: #9098ec;
+      --accent-ink: #aab0f2;
+      --accent-soft: #1b2038;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #f4f6fa; --panel: #ffffff; --ink: #191c26; --muted: #5b6274;
+    --faint: #e7eaf1; --border: #e0e4ee; --accent: #4b57c8; --accent-ink: #3a44a6;
+    --accent-soft: #eef0fc; --shadow: 0 1px 2px rgba(20,24,40,.05), 0 8px 30px rgba(20,24,40,.06);
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1016; --panel: #161a24; --ink: #e7eaf2; --muted: #969db3;
+    --faint: #1c2130; --border: #262c3b; --accent: #9098ec; --accent-ink: #aab0f2;
+    --accent-soft: #1b2038; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+
+  .wrap { max-width: 940px; margin: 0 auto; padding: clamp(20px, 5vw, 56px) clamp(16px, 4vw, 40px) 80px; }
+
+  header { border-bottom: 1px solid var(--border); padding-bottom: 26px; margin-bottom: 34px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--accent-ink); margin: 0 0 12px;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 42px); line-height: 1.08; letter-spacing: -.02em;
+    margin: 0 0 14px; text-wrap: balance; font-weight: 680;
+  }
+  h1 em { font-style: normal; color: var(--accent); }
+  .lede { font-size: clamp(16px, 2.2vw, 18.5px); color: var(--muted); max-width: 64ch; margin: 0; text-wrap: pretty; }
+
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .tag {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: .02em; color: var(--muted);
+    background: var(--faint); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 999px;
+  }
+
+  section { margin-top: 46px; }
+  h2 {
+    font-size: 13px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    margin: 0 0 6px; font-weight: 600;
+  }
+  .h2-title { font-size: clamp(20px, 3vw, 25px); letter-spacing: -.01em; margin: 0 0 14px; font-weight: 650; text-wrap: balance; }
+  p { max-width: 68ch; }
+  p.note { color: var(--muted); font-size: 15px; }
+
+  /* actor legend */
+  .cast { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 6px 0 8px; }
+  .actor {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 13px 15px; box-shadow: var(--shadow);
+  }
+  .actor .name { font-weight: 640; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .actor .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .actor .role { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+
+  /* diagram sheet — fixed light ground so mermaid renders legibly in both themes */
+  .sheet {
+    background: var(--sheet); border: 1px solid var(--sheet-border); border-radius: 16px;
+    padding: 10px 8px; margin-top: 8px; overflow-x: auto; box-shadow: var(--shadow);
+  }
+  .sheet pre.mermaid { margin: 0; background: transparent; min-width: 640px; text-align: center; }
+  .sheet-cap {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+    padding: 4px 10px 0;
+  }
+
+  /* the crux callout */
+  .crux {
+    margin-top: 30px; background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-left: 3px solid var(--accent); border-radius: 12px;
+    padding: 20px 22px;
+  }
+  .crux h3 { margin: 0 0 8px; font-size: 17px; letter-spacing: -.01em; color: var(--accent-ink); }
+  .crux p { margin: 0 0 10px; max-width: 66ch; }
+  .crux p:last-child { margin-bottom: 0; }
+  .crux b { color: var(--ink); }
+  .swap {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 14px 0 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
+  }
+  .chip { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 11px; }
+  .chip .k { color: var(--muted); }
+  .arrow { color: var(--accent); font-size: 16px; }
+
+  footer { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  footer code { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--faint); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+  a { color: var(--accent); text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); text-underline-offset: 2px; }
+</style>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, securityLevel: "loose" });
+</script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Bitcoin signet · protocol walkthrough</p>
+    <h1>Anatomy of a <em>blindjoin</em> round</h1>
+    <p class="lede">One CoinJoin round, start to finish — the message sequence, the coordinator's
+      phase machine, and the one moment that makes the coordinator unable to link your input to your output.</p>
+    <div class="meta">
+      <span class="tag">RSA blind signatures · RFC&nbsp;9474</span>
+      <span class="tag">two Tor circuits per client</span>
+      <span class="tag">fixed denomination</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>The cast</h2>
+    <p class="h2-title">Who is on the wire</p>
+    <div class="cast">
+      <div class="actor">
+        <div class="name"><span class="dot" style="background:var(--input)"></span>You · Alice circuit</div>
+        <div class="role">Your wallet on one Tor circuit — registers the input.</div>
+      </div>
+      <div class="actor">
+        <div class="name"><span class="dot" style="background:var(--output)"></span>You · Bob circuit</div>
+        <div class="role">Same wallet, a <em>fresh</em> Tor circuit — registers the output.</div>
+      </div>
+      <div class="actor">
+        <div class="name"><span class="dot" style="background:var(--accent)"></span>Coordinator</div>
+        <div class="role">Assembles the round. Blindly signs; never links in&nbsp;→&nbsp;out.</div>
+      </div>
+      <div class="actor">
+        <div class="name"><span class="dot" style="background:var(--cast)"></span>Bitcoin Core</div>
+        <div class="role">Confirms UTXOs, and broadcasts the finished CoinJoin.</div>
+      </div>
+      <div class="actor">
+        <div class="name"><span class="dot" style="background:var(--disc)"></span>PKARR DHT</div>
+        <div class="role">Decentralized discovery — where you find the coordinator.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sequence</h2>
+    <p class="h2-title">One round, message by message</p>
+    <p class="note">Read top to bottom. The shaded bands are the coordinator's phases. Note how the
+      input arrives on the Alice circuit and the output on the Bob circuit — the coordinator sees both,
+      but not that they belong to the same person.</p>
+    <div class="sheet">
+      <div class="sheet-cap">fig 1 — round sequence</div>
+      <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Menlo, monospace','fontSize':'13px','actorBkg':'#eef0fc','actorBorder':'#4b57c8','actorTextColor':'#191c26','actorLineColor':'#c2c7d8','signalColor':'#3a3f4d','signalTextColor':'#3a3f4d','labelBoxBkgColor':'#eef0fc','labelBoxBorderColor':'#4b57c8','labelTextColor':'#191c26','loopTextColor':'#3a3f4d','noteBkgColor':'#fdf1c4','noteTextColor':'#4a3c05','noteBorderColor':'#e4d38a','sequenceNumberColor':'#ffffff','activationBkgColor':'#e3e6f5','activationBorderColor':'#4b57c8','primaryColor':'#eef0fc','primaryBorderColor':'#4b57c8','primaryTextColor':'#191c26','lineColor':'#8a90a6'}}}%%
+sequenceDiagram
+    participant P as PKARR DHT
+    box transparent You · one wallet, two Tor circuits
+    participant A as Alice circuit
+    participant B as Bob circuit
+    end
+    participant C as Coordinator
+    participant N as Bitcoin Core
+
+    Note over A,N: 1 · Discovery
+    A->>P: resolve coordinator (denomination, onion, params)
+    P-->>A: onion address + round parameters
+
+    rect rgb(230, 245, 242)
+    Note over A,N: 2 · Input registration — Alice circuit
+    Note over A: pick a UTXO ≥ denom + fee, then BLIND a fresh token
+    A->>C: UTXO + BIP-322 ownership proof + blinded token
+    C->>N: gettxout — exists, unspent, value ok?
+    N-->>C: confirmed
+    C->>C: blind-sign the token (cannot see its contents)
+    C-->>A: blind signature
+    Note over A: UNBLIND → a valid coordinator signature on a token it has never seen
+    end
+
+    Note over A,C: ✦ unlinkability wall — blinded token in ≠ unblinded token out
+
+    rect rgb(240, 235, 251)
+    Note over B,C: 3 · Output registration — Bob circuit (fresh Tor circuit)
+    B->>C: unblinded token + signature + output address
+    C->>C: verify signature (RFC 9474), token binds to address + amount
+    C-->>B: accepted
+    end
+
+    rect rgb(251, 244, 231)
+    Note over A,C: 4 · Signing
+    Note over C: assemble ONE canonical CoinJoin PSBT — N inputs, N equal outputs + change
+    A->>C: GET round tx
+    C-->>A: the assembled PSBT
+    Note over A: check MY outcome — my output exact, fee ≤ cap, ≥ anonymity floor
+    A->>C: partial signature (signs only my input)
+    end
+
+    rect rgb(230, 246, 237)
+    Note over C,N: 5 · Broadcast
+    Note over C: all partial signatures collected
+    C->>N: testmempoolaccept, then sendrawtransaction
+    N-->>C: txid
+    Note over C: round state zeroed — a fresh round begins immediately
+    end
+      </pre>
+    </div>
+  </section>
+
+  <div class="crux">
+    <h3>Why the coordinator can't link you</h3>
+    <p>The whole design turns on one trick. At <b>input registration</b> you don't hand the coordinator
+      your token — you hand it a <b>blinded</b> version it cannot read, and it signs that blindly. You then
+      <b>unblind</b> the result, leaving you with a genuine coordinator signature on a token the coordinator
+      has <b>never seen in the clear</b>.</p>
+    <div class="swap">
+      <span class="chip"><span class="k">in&nbsp;(Alice):</span> blinded token</span>
+      <span class="arrow">→ unblind →</span>
+      <span class="chip"><span class="k">out&nbsp;(Bob):</span> unblinded token</span>
+    </div>
+    <p>When you come back on a <b>different Tor circuit</b> to register your output, you present the
+      unblinded token. It verifies — but the coordinator has no way to tie it back to any specific blinded
+      token from input registration. Inputs and outputs sit on opposite sides of a wall it cannot see
+      through. Every hop runs over Tor, so there's no network-level shortcut either.</p>
+  </div>
+
+  <section>
+    <h2>State machine</h2>
+    <p class="h2-title">What the coordinator is doing at any moment</p>
+    <p class="note">The round is a small state machine. The happy path is
+      <span class="mono">Idle → InputReg → OutputReg → Signing → Broadcast → Idle</span>; anything that goes
+      wrong routes through <span class="mono">Blame</span>, which bans the misbehaving UTXO and resets.</p>
+    <div class="sheet">
+      <div class="sheet-cap">fig 2 — coordinator phases</div>
+      <pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, Menlo, monospace','fontSize':'13px','primaryColor':'#eef0fc','primaryBorderColor':'#4b57c8','primaryTextColor':'#191c26','mainBkg':'#eef0fc','nodeBorder':'#4b57c8','lineColor':'#8a90a6','textColor':'#191c26','labelColor':'#191c26','edgeLabelBackground':'#fcfdff','background':'#fcfdff','defaultLinkColor':'#8a90a6'}}}%%
+stateDiagram-v2
+    direction LR
+    classDef phase fill:#eef0fc,stroke:#4b57c8,stroke-width:1px,color:#191c26
+    [*] --> Idle
+    Idle --> InputReg: start round · fresh RSA key
+    InputReg --> OutputReg: quorum reached
+    InputReg --> Idle: quorum not met
+    OutputReg --> Signing: all outputs in
+    OutputReg --> Blame: outputs missing
+    Signing --> Broadcast: all partial sigs in
+    Signing --> Blame: timeout · ban non-signers
+    Broadcast --> Idle: tx accepted on-chain
+    Broadcast --> Blame: broadcast failed · attribute + ban
+    Blame --> Idle: reset
+    class Idle,InputReg,OutputReg,Signing,Broadcast,Blame phase
+      </pre>
+    </div>
+    <p class="note" style="margin-top:14px">The coordinator never rests at <span class="mono">Idle</span> —
+      it immediately re-arms a fresh round with a brand-new per-round RSA key, so a new signature can never be
+      correlated against an old one. Once a round broadcasts, its sensitive state is zeroed.</p>
+  </section>
+
+  <footer>
+    A model of the protocol in <code>github.com/johnzilla/blindjoin</code>, from the README + code.
+    blindjoin is <b>experimental, signet-only, and unaudited</b> — the unlinkability shown here is a design
+    goal, not an independently verified guarantee. Don't use it with real funds.
+  </footer>
+</div>
+</body>
+</html>
