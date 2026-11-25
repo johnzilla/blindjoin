@@ -482,6 +482,31 @@ prose below is the threat-model treatment.
   at runtime. **Disposition: ACCEPTED**; no remediation needed unless a
   runtime path appears in a future dep update.
 
+- **RUSTSEC-2026-0387 — `crypto-bigint 0.5.5` timing variability in
+  constant-time operations.** Reached only transitively through
+  `arti-client 0.41`'s NIST-curve TLS stack
+  (`p256`/`p384`/`p521`/`ecdsa` → `elliptic-curve 0.13` →
+  `crypto-bigint 0.5.5`). blindjoin's own cryptography is RSA blind
+  signatures (`blind-rsa-signatures`, pinned to `rsa 0.9.x`) and
+  `secp256k1` via rust-bitcoin — neither depends on `crypto-bigint`. The
+  advisory concerns bigint arithmetic inside Tor's TLS handshake, which is
+  not on any blindjoin protocol path. blindjoin's own `crypto-bigint 0.7.x`
+  edge has already been bumped to `>=0.7.6`; only arti's `0.5.5` copy
+  remains, and it cannot move without upgrading arti (0.41 → 0.48+ carries
+  the RustCrypto NIST stack to `crypto-bigint 0.7`). **Disposition:
+  ACCEPTED**; closure tracked with the planned arti upgrade.
+
+- **RUSTSEC-2026-0459 — `libsqlite3-sys 0.36.0` via C SQLite
+  CVE-2026-119375.** Reached only transitively through `arti-client 0.41`
+  → `tor-dirmgr` → `rusqlite 0.38` → `libsqlite3-sys 0.36`. This SQLite
+  instance is arti's on-disk directory cache (consensus + descriptor
+  storage), populated from the Tor directory system over arti's own
+  authenticated channels. It is not exposed to CoinJoin participants or any
+  blindjoin protocol input: the coordinator and client present no SQL
+  surface to untrusted peers. The fix (`libsqlite3-sys >=0.39.0`) requires
+  `rusqlite >=0.43`, which only a newer arti pulls. **Disposition:
+  ACCEPTED**; closure tracked with the planned arti upgrade.
+
 ### Residual Risks: Protocol-level
 
 - **Heterogeneous-input chain-analysis tradeoff (v1.4 ADR Decision #2).**
