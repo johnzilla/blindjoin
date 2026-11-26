@@ -336,8 +336,7 @@ blindjoin/
       strategy.rs    # Join strategy and round participation
   docker/            # Docker Compose stack
     docker-compose.yml
-    Dockerfile        # Multi-target Dockerfile (coordinator, client, liquidity-bot)
-    digests.txt       # Canonical base-image digest manifest (v1.6) — bumped only via CODEOWNERS-gated PR
+    Dockerfile        # Multi-target Dockerfile; base images pinned by @sha256: in the FROM lines
     bitcoind/bitcoin.conf
   docs/
     PROTOCOL.md           # BIP-style wire-protocol spec (draft; Milestone 1)

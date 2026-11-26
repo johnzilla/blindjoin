@@ -1,10 +1,9 @@
-# Phase 25 REPRO-01 / D-01: pin the exact Rust stable toolchain across local
-# dev, CI, and the reproducible-build verifier. Single source of truth for
-# the toolchain version; the channel value below is grep-asserted to match
-# the `with: toolchain:` values in .github/workflows/{release,ci}.yml by the
-# rust-toolchain-pin-check CI job (see ci.yml).
+# Pin the exact Rust stable toolchain for local dev and CI. Single source of
+# truth for the version; when bumping, keep the `with: toolchain:` values in
+# .github/workflows/{ci,release,docker,audit-cron}.yml in sync with the channel
+# below by hand (there is no automated pin-check job).
 #
-# Verified at planning time (2026-06-02): rustc 1.95.0 (59807616e 2026-04-14).
+# Verified 2026-06-02: rustc 1.95.0 (59807616e 2026-04-14).
 [toolchain]
 channel = "1.95.0"
 profile = "minimal"
