@@ -357,7 +357,7 @@ pub fn p2sh_p2wpkh_final_script_sig(pubkey: &bitcoin::secp256k1::PublicKey) -> S
 /// `ecdsa::Signature::from_der` (verify.rs:347) and accepts any valid DER length.
 /// This grinding loop is therefore now belt-and-suspenders (71/72 is a subset
 /// every version accepts) and REMOVABLE — kept for now to keep the 0.0.11 security
-/// bump focused. Tracked in `.planning/BACKLOG.md` § BIP322-GRIND.
+/// bump focused. Tracked in [`TODO.md`](../../../TODO.md) § Tech debt (BIP322-GRIND).
 ///
 /// The retry uses a u32 counter as the noncedata seed so the helper is itself
 /// deterministic: same (key, message) always converges to the same final

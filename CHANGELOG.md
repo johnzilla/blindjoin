@@ -7,8 +7,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 Each entry is a high-level summary of what shipped in the milestone — one
 or two bullets per requirement-class. For the engineering detail behind
-each milestone see [`.planning/MILESTONES.md`](.planning/MILESTONES.md)
-and [`.planning/RETROSPECTIVE.md`](.planning/RETROSPECTIVE.md); for the
+each milestone see the git history (per-milestone tags and commits); for the
 threat-model treatment of v1.4 / v1.5 invariants see
 [`docs/AUDIT-CHARTER.md`](docs/AUDIT-CHARTER.md).
 

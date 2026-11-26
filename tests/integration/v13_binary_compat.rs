@@ -29,8 +29,8 @@
 //! manual verification recipe. The ROADMAP success criterion #5 is discharged via the
 //! documented UAT path per CD-25.
 //!
-//! **Pinned SHA:** `.planning/phases/18-mixed-script-e2e-liquidity-bot/v13_pinned_sha.txt`
-//! line 1 (40 hex chars). First-run build cost: ~30-45s on M1 dev.
+//! **Pinned SHA:** `V13_PINNED_SHA` below (the v1.3 client commit this compat
+//! test builds and runs against). First-run build cost: ~30-45s on M1 dev.
 //!
 //! Run (to observe the known failure): cargo test -p coordinator --features v13-binary-compat --test integration v13_binary_compat -- --include-ignored --nocapture
 
@@ -132,18 +132,12 @@ async fn v13_client_p2wpkh_against_v14_coordinator() {
     // ----- Step 0a: graceful skip if bitcoind not available -----
     let exe = require_bitcoind!();
 
-    // ----- Step 0b: read pinned SHA + idempotent worktree + cargo build -----
-    // CWD when integration test binary runs is coordinator/ (the package root).
-    // The .planning/ directory lives at the workspace root (one level up).
-    let sha_path = "../.planning/phases/18-mixed-script-e2e-liquidity-bot/v13_pinned_sha.txt";
-    let sha_contents = std::fs::read_to_string(sha_path)
-        .expect("v13_pinned_sha.txt must be present");
-    let sha = sha_contents
-        .lines()
-        .next()
-        .expect("SHA on line 1 of v13_pinned_sha.txt")
-        .trim()
-        .to_string();
+    // ----- Step 0b: pinned SHA + idempotent worktree + cargo build -----
+    // The v1.3 client commit this compat test builds against. Pinned inline
+    // (previously read from a file under the old GSD planning tree, now removed);
+    // update this const if the v1.3 baseline is ever re-pinned.
+    const V13_PINNED_SHA: &str = "05f21438a7072987773bfe2eafaac5c51c68c61a";
+    let sha = V13_PINNED_SHA.to_string();
     assert_eq!(sha.len(), 40, "expected 40-char SHA, got: '{}'", sha);
 
     let worktree = format!("/tmp/blindjoin-v13-{}", &sha[..8]);
