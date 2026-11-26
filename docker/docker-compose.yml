@@ -3,7 +3,7 @@
 # Startup order: bitcoind → coordinator → liquidity-bot (healthcheck-gated)
 #
 # Usage:
-#   cp .env.example .env          # fill in BOT_UTXO, BOT_UTXO_VALUE_SATS, BOT_WIF
+#   cp .env.example .env          # fill in BOT_UTXO, BOT_WIF
 #   docker compose up -d
 #   docker compose logs -f coordinator
 #
