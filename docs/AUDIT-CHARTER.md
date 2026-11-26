@@ -525,6 +525,45 @@ prose below is the threat-model treatment.
   output script choice (Wasabi 2.0.3-style) which is currently
   out-of-scope per REQUIREMENTS.
 
+- **Output script type not enforced server-side (heterogeneous outputs
+  allowed).** At `/round/output`, `register_output_logic`
+  (`coordinator/src/round/output_reg.rs`) validates a registered output for
+  network validity and the M3 token↔output binding, but does NOT check that
+  the output's script type equals the round's advertised
+  `output_script_type`. The client-side match check runs only on the PKARR
+  discovery path (`client/src/discover.rs` D-76); the `--coordinator-url`
+  direct path uses synthetic capabilities and bypasses it, so a participant
+  can register an output whose type differs from the advertised `ost`. This
+  is distinct from — and the complement of — V1.4-MIN-02 above: that entry
+  covers the fingerprint of a *uniform*-output round, this one records that
+  uniformity is not actually enforced.
+
+  **Why accepted (not rejected server-side):** the v1.4 heterogeneous-input
+  capability is exercised precisely through this direct-URL path (see the
+  `mixed_script_e2e` integration test), where participants with different
+  single-type wallets necessarily produce different-type outputs. Enforcing
+  a uniform output type server-side (rejecting any output whose type ≠
+  `output_script_type`) would break that capability, because a wallet's input
+  and output script types are coupled through one descriptor.
+
+  **Consequences bounded by the fee path, not left open:** a heavier-than-
+  advertised output cannot wedge a round or underpay the fee.
+  `build_coinjoin_psbt` prices every output from its ACTUAL script, and the
+  INPUT_REG admission gate `estimate_fee_share`
+  (`coordinator/src/bitcoin/fee.rs`) is pessimistic on outputs — it prices
+  every output at `MAX_STANDARD_OUTPUT_VBYTES` (43, the heaviest standard
+  output) so the registration bar always covers the heaviest registrable
+  build (closes the H1 / N-1 output-dimension wedge). The residual is purely
+  the privacy weakening of non-uniform outputs, folded into the V1.4-MIN-02
+  tradeoff above.
+
+  **Disposition: ACCEPTED.** The strict alternative — a server-side mirror of
+  the client's CRIT-01 discipline that rejects outputs whose type ≠
+  `output_script_type` — is available and would be adopted if a future change
+  (e.g. alongside the planned arti upgrade) reworks the client to decouple
+  output type from the input/wallet descriptor so mixed-input rounds can keep
+  uniform outputs.
+
 - **TEST-EXT-01/02/03 differential-fixture gap.** No automated
   cross-implementation differential tests (e.g., vs `ACken2/bip322-js`);
   no regtest on-chain anchor test that broadcasts a real CoinJoin
