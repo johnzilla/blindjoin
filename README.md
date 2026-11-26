@@ -52,6 +52,7 @@ As of v1.4, the coordinator accepts mixed-script-type rounds (any combination of
 - **[Security policy](SECURITY.md)** — how to report a vulnerability (`johnturner@gmail.com`), audit-readiness status, and the supply-chain posture: SLSA v1.0 build provenance on every image and release tarball, plus base-image digest pinning.
 - **[Changelog](CHANGELOG.md)** — release notes per milestone, Keep-a-Changelog format.
 - **[FAQ](FAQ.md)** — common questions about what blindjoin is, what it protects against, and when to use it.
+- **[Architecture](ARCHITECTURE.md)** — the on-ramp for reading or reviewing the code: crate/module map, one-round data flow, and the **invariants ledger** (each invariant → where it is enforced → the test that pins it, with the commands to run them).
 - **[Protocol specification (draft)](docs/PROTOCOL.md)** — BIP-style normative spec of the coordinator–client wire protocol. Work-in-progress; review and issue feedback welcome.
 - **[Technical design](blindjoin-technical-spec.md)** — architectural background and design rationale.
 - **[External audit charter](docs/AUDIT-CHARTER.md)** — in-scope modules with file:symbol refs, threat models per module, 9 cross-shape rejection properties, v=2 PSBT handling boundary, RSA SecretKey zeroization window, out-of-scope dependencies, residual risks accepted with rationale, and glossary mapping project terms to plain audit language. Read this first if you're auditing the codebase.
@@ -354,6 +355,7 @@ blindjoin/
       release.yml            # Cross-compiled binary releases (gated on test+clippy)
       docker.yml             # Multi-arch Docker image publishing (gated on test+clippy)
   .bitcoind-version  # Pinned Bitcoin Core version used by CI's integration test job
+  ARCHITECTURE.md    # Module map, data flow, invariants ledger + how to verify
   CONTRIBUTING.md    # Local prerequisites + how to run integration tests
   TODO.md            # Open and recently-resolved tech-debt items
 ```
