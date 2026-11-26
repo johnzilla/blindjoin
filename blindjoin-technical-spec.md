@@ -2,7 +2,11 @@
 
 A standalone, open-source CoinJoin coordinator and client for Bitcoin signet/testnet, discoverable via Pubky ([PKARR](https://github.com/pubky/pkarr)), private via Tor, built in Rust. MIT licensed. No fees. No company. No terms of service.
 
-> **Note:** This document is the architectural and design-rationale companion to the normative wire-protocol specification at [`docs/PROTOCOL.md`](docs/PROTOCOL.md). For implementation-level message formats, field semantics, and round-lifecycle MUST/SHOULD requirements, refer to PROTOCOL.md. This document covers the higher-level system design.
+> **Note:** This document is the architectural and design-rationale companion to the normative wire-protocol specification at [`docs/PROTOCOL.md`](docs/PROTOCOL.md). It covers the higher-level system design — architecture, threat model, and the reasoning behind key choices. Concrete, drift-prone detail is intentionally **not** duplicated here; it lives in the canonical sources:
+>
+> - **Wire message formats & round-lifecycle MUST/SHOULD:** [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and the Rust types in [`shared/src/protocol.rs`](shared/src/protocol.rs).
+> - **Configuration:** [`blindjoin.toml.example`](blindjoin.toml.example) and the config table in the [README](README.md#configuration).
+> - **Deployment stack:** [`docker/docker-compose.yml`](docker/docker-compose.yml).
 
 ---
 
@@ -31,8 +35,8 @@ DISCOVERY LAYER — Pubky / [PKARR](https://github.com/pubky/pkarr)
 ┌──────────────────────────────────────────────────────┐
 │  Coordinator publishes [PKARR](https://github.com/pubky/pkarr) record to DHT:           │
 │    • .onion address                                   │
-│    • Round parameters (denomination, min participants) │
-│    • Software version, uptime, rounds completed        │
+│    • Round parameters (denomination, participants)     │
+│    • Wire version, network, supported script types     │
 │  Participants resolve coordinator via [PKARR](https://github.com/pubky/pkarr) lookup     │
 └────────────────────┬─────────────────────────────────┘
                      │ DHT lookup
@@ -200,25 +204,9 @@ The blame protocol does not compromise privacy — the coordinator already knows
 
 ### Coordinator Announcement
 
-The coordinator publishes a [PKARR](https://github.com/pubky/pkarr) record to the Mainline DHT containing:
+The coordinator publishes a signed [PKARR](https://github.com/pubky/pkarr) record to the Mainline DHT announcing its `.onion` address, advertised Bitcoin network, round parameters (denomination, participant bounds, status), and the supported input/output script types. The record is signed by the coordinator's [PKARR](https://github.com/pubky/pkarr) key and resolvable by anyone querying the DHT; it is refreshed on a heartbeat (every 5 minutes) and on state transitions.
 
-```json
-{
-  "type": "blindjoin-coordinator",
-  "version": "0.1.0",
-  "onion": "abc123...xyz.onion",
-  "network": "signet",
-  "denomination_sats": 1000000,
-  "min_participants": 3,
-  "max_participants": 20,
-  "status": "idle",
-  "rounds_completed": 42,
-  "uptime_hours": 168,
-  "updated_at": "2026-04-07T21:00:00Z"
-}
-```
-
-This record is signed by the coordinator's [PKARR](https://github.com/pubky/pkarr) key and resolvable by anyone querying the DHT. The coordinator refreshes this record on a heartbeat (every 5 minutes) and on state transitions (round start, round complete).
+> **Wire detail (canonical):** The exact compact field names (`v`, `onion`, `n`, `ds`, `mp`, `st`, `sst`, `ost`) and their semantics are specified in [`docs/PROTOCOL.md` § Discovery](docs/PROTOCOL.md) and produced by [`coordinator/src/discovery/pkarr_pub.rs`](coordinator/src/discovery/pkarr_pub.rs); the client-side resolver and its fail-fast checks (network mismatch, unsupported script type) live in [`client/src/discover.rs`](client/src/discover.rs).
 
 ### Client Discovery
 
@@ -277,13 +265,15 @@ All four hardening knobs (`rate_limit_info_per_min`, `rate_limit_writes_per_min`
 
 ## Dependency Map
 
+This table captures *why* each dependency was chosen. Exact pinned versions are not reproduced here (they drift) — the authoritative versions live in the workspace `Cargo.toml` / `Cargo.lock` and the versioned table in [`docs/PROTOCOL.md` § Cryptographic primitives](docs/PROTOCOL.md).
+
 ### Cryptography (no custom implementations)
 
 | Crate | Purpose | Author / Provenance |
 |-------|---------|---------------------|
 | `blind-rsa-signatures` | [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) RSA blind signatures | Frank Denis (jedisct1), author of libsodium |
 | `bitcoin` (rust-bitcoin) | Bitcoin primitives, script, serialization | Rust Bitcoin community, widely audited |
-| `bdk` (Bitcoin Dev Kit) | Wallet operations, PSBT, coin selection | Spiral (fka Square Crypto) funded |
+| `bdk_wallet` (Bitcoin Dev Kit) | Wallet operations, PSBT, coin selection | Spiral (fka Square Crypto) funded |
 | `secp256k1` | ECDSA signing/verification (via rust-bitcoin) | Rust wrapper around Bitcoin Core's libsecp256k1 |
 
 ### Networking
@@ -313,363 +303,52 @@ All four hardening knobs (`rate_limit_info_per_min`, `rate_limit_writes_per_min`
 
 ## Repository Structure
 
-```
-blindjoin/
-├── Cargo.toml
-├── LICENSE                        # MIT
-├── README.md
-├── blindjoin.toml.example             # Example configuration
-│
-├── coordinator/                   # Coordinator binary
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs                # Entry point: Tor setup, [PKARR](https://github.com/pubky/pkarr) publish, start API
-│       ├── config.rs              # Configuration: network, denomination, timeouts
-│       ├── round/
-│       │   ├── mod.rs
-│       │   ├── state.rs           # Round state machine (FSM)
-│       │   ├── input_reg.rs       # Phase 1: input registration + blind signing
-│       │   ├── output_reg.rs      # Phase 2: output registration + token verification
-│       │   ├── signing.rs         # Phase 3: PSBT construction + signature collection
-│       │   └── blame.rs           # Phase 4: blame protocol + banning
-│       ├── blind/
-│       │   ├── mod.rs
-│       │   └── rsa.rs             # Thin wrapper around blind-rsa-signatures crate
-│       ├── bitcoin/
-│       │   ├── mod.rs
-│       │   ├── rpc.rs             # Bitcoin Core JSON-RPC client
-│       │   ├── utxo.rs            # UTXO validation and tracking
-│       │   └── tx.rs              # CoinJoin transaction construction
-│       ├── network/
-│       │   ├── mod.rs
-│       │   ├── tor.rs             # Tor hidden service setup via arti
-│       │   └── api.rs             # JSON-RPC API handlers (axum)
-│       └── discovery/
-│           ├── mod.rs
-│           └── pkarr.rs           # [PKARR](https://github.com/pubky/pkarr) record publishing + heartbeat
-│
-├── client/                        # CLI participant client
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs                # CLI entry point
-│       ├── config.rs              # Client configuration
-│       ├── discover.rs            # Find coordinators via [PKARR](https://github.com/pubky/pkarr) or direct .onion
-│       ├── wallet.rs              # Key management, UTXO selection (via bdk)
-│       ├── round/
-│       │   ├── mod.rs
-│       │   ├── input.rs           # Phase 1: register input, blind token
-│       │   ├── output.rs          # Phase 2: register output with unblinded token
-│       │   └── sign.rs            # Phase 3: verify TX, sign input, submit
-│       └── network/
-│           ├── mod.rs
-│           └── tor.rs             # Tor client connection (new circuit per phase)
-│
-├── liquidity-bot/                 # Auto-joining bot for testing
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs                # Watches for rounds, auto-joins with signet coins
-│       └── strategy.rs            # Join logic: which rounds to join, when
-│
-├── shared/                        # Shared types between coordinator and client
-│   ├── Cargo.toml
-│   └── src/
-│       ├── lib.rs
-│       ├── protocol.rs            # Message types: InputRegRequest, OutputRegRequest, etc.
-│       ├── types.rs               # Common types: RoundId, Denomination, ParticipantId
-│       └── errors.rs              # Error types
-│
-├── tests/
-│   ├── integration/
-│   │   ├── full_round.rs          # End-to-end: 5 clients complete a CoinJoin on signet
-│   │   ├── blame.rs               # Client refuses to sign, blame protocol activates
-│   │   ├── sybil.rs               # Coordinator with majority sybil inputs
-│   │   └── discovery.rs           # Client finds coordinator via [PKARR](https://github.com/pubky/pkarr)
-│   └── unit/
-│       ├── blind_sig.rs           # Blind signature round-trip tests
-│       ├── state_machine.rs       # FSM transition tests
-│       └── tx_construction.rs     # CoinJoin TX validity tests
-│
-└── docker/
-    ├── Dockerfile.coordinator     # Multi-stage Rust build
-    ├── Dockerfile.client          # Client image
-    ├── Dockerfile.bot             # Liquidity bot image
-    ├── docker-compose.yml         # Full stack: bitcoind + tor + coordinator + bot
-    ├── bitcoind/
-    │   └── bitcoin.conf           # Signet configuration
-    └── tor/
-        └── torrc                  # Hidden service configuration
-```
+A Cargo workspace of four crates. (Only the crate-level layout is given here; the exact file tree is best read from the repository itself, which stays authoritative as modules move.)
+
+- **`coordinator/`** — the coordinator binary: round state machine + manager, the blind-signature engine (`blind/`), Bitcoin RPC and CoinJoin transaction construction (`bitcoin/`), the axum HTTP API (`api/`), the embedded-Tor adapter (`network/tor.rs`), and PKARR publishing (`discovery/`).
+- **`client/`** — the CLI participant: coordinator discovery (`discover.rs`), BDK wallet (`wallet.rs`), the per-phase round flow (`round/`), and per-phase Tor circuits.
+- **`liquidity-bot/`** — an auto-joining bot that fills rounds with signet coins during testing/early adoption.
+- **`shared/`** — wire types shared by coordinator and client: `protocol.rs` (request/response + `WIRE_VERSION`), `bip322/` (ownership-proof dispatcher), `token.rs`, `errors.rs`.
+
+Integration tests live under `tests/integration/`; crate unit tests live inline (`#[cfg(test)]`). The container build is a single multi-stage [`docker/Dockerfile`](docker/Dockerfile) with per-binary `target` stages (there is no per-service Dockerfile and no Tor sidecar — Tor is in-process via `arti-client`), orchestrated by [`docker/docker-compose.yml`](docker/docker-compose.yml).
 
 ---
 
 ## Configuration
 
-### Coordinator (`blindjoin.toml`)
+The coordinator is configured by a TOML file (layered with `BLINDJOIN__*` environment overrides), covering the Bitcoin network and RPC endpoint, the round parameters (denomination, participant bounds, phase timeouts, fee rate), the public-endpoint hardening knobs (rate limits, request timeout, connection cap), the allowed input/output script types (`[bip]`), Tor mode, and PKARR discovery settings.
 
-```toml
-[network]
-bitcoin_network = "signet"             # signet | testnet4 | mainnet
-bitcoin_rpc_url = "http://127.0.0.1:38332"
-bitcoin_rpc_user = "blindjoin"
-bitcoin_rpc_pass = "blindjoin"
-
-[coordinator]
-denomination_sats = 1_000_000          # 0.01 BTC fixed denomination
-min_participants = 3                    # Minimum to start a round
-max_participants = 20                   # Maximum per round
-round_timeout_input_reg_secs = 60
-round_timeout_output_reg_secs = 60
-round_timeout_signing_secs = 30
-blame_ban_duration_secs = 3600         # 1 hour ban for non-signers
-fee_rate_sat_per_vbyte = 2             # Coordinator-suggested fee rate
-
-# Public-endpoint hardening (v1.2 Phase 8); all validated at startup
-rate_limit_info_per_min = 600          # GET /info, GET /round/tx; 429 + Retry-After on flood (global bucket)
-rate_limit_writes_per_min = 120        # POST /round/input, /round/output, /round/sign
-request_timeout_secs = 30              # Uniform handler deadline; HTTP 408 on stall
-max_concurrent_connections = 256       # Tor accept-loop semaphore cap (tor_mode only)
-
-[tor]
-hidden_service_dir = "./tor/hidden_service"
-socks_port = 9050
-control_port = 9051
-
-[discovery]
-pkarr_enabled = true
-heartbeat_interval_secs = 300           # Re-publish [PKARR](https://github.com/pubky/pkarr) record every 5 min
-seed_keys = []                          # Optional: known coordinator directory keys
-```
+> **Canonical:** the full, current set of keys with defaults and validation rules is [`blindjoin.toml.example`](blindjoin.toml.example) and the annotated config table in the [README](README.md#configuration); the parser and startup validation are in [`coordinator/src/config.rs`](coordinator/src/config.rs). (Note: Tor is embedded via `arti-client` — there is no `[tor]` socks/control-port section.)
 
 ---
 
 ## API Specification
 
-All endpoints are served over Tor hidden service only. JSON-RPC style over HTTP POST.
+The coordinator exposes a small HTTP/JSON API (served over its Tor hidden service in production): `GET /info` for status + round parameters + the round's RSA public key, `POST /round/input` / `POST /round/output` / `POST /round/sign` for the three participant phases, and `GET /round/tx` for the assembled PSBT to verify before signing.
 
-### Coordinator Endpoints
-
-#### `GET /info`
-Returns coordinator status, current round state, and parameters.
-
-```json
-{
-  "version": "0.1.0",
-  "network": "signet",
-  "denomination_sats": 1000000,
-  "min_participants": 3,
-  "round_state": "idle",
-  "participants_registered": 0,
-  "pkarr_key": "pk:abc123..."
-}
-```
-
-#### `POST /round/input`
-Register an input for the current round.
-
-**Request:**
-```json
-{
-  "utxo_outpoint": "txid:vout",
-  "ownership_proof": "<signed message proving UTXO ownership>",
-  "blinded_token": "<base64-encoded blinded message>"
-}
-```
-
-**Response:**
-```json
-{
-  "blind_signature": "<base64-encoded blind signature>",
-  "round_id": "uuid",
-  "change_address_index": 0
-}
-```
-
-#### `POST /round/output`
-Register an output using an unblinded token.
-
-**Request:**
-```json
-{
-  "unblinded_token": "<base64-encoded original message>",
-  "signature": "<base64-encoded unblinded signature>",
-  "output_address": "tb1q...",
-  "amount_sats": 1000000
-}
-```
-
-**Response:**
-```json
-{
-  "accepted": true,
-  "round_id": "uuid"
-}
-```
-
-#### `POST /round/sign`
-Submit a partial signature for the constructed transaction.
-
-**Request:**
-```json
-{
-  "round_id": "uuid",
-  "input_index": 0,
-  "partial_signature": "<base64-encoded signature>"
-}
-```
-
-#### `GET /round/tx`
-Retrieve the unsigned transaction for verification before signing.
-
-**Response:**
-```json
-{
-  "round_id": "uuid",
-  "psbt": "<base64-encoded PSBT>",
-  "fee_total_sats": 1200,
-  "fee_per_participant_sats": 240
-}
-```
+> **Canonical:** the exact request/response bodies, field names, and the versioned `OwnershipProof` envelope are normative in [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and defined as Rust types in [`shared/src/protocol.rs`](shared/src/protocol.rs); the handlers are in [`coordinator/src/api/handlers.rs`](coordinator/src/api/handlers.rs). The reproduced JSON that previously lived here drifted from the wire types, which is exactly what this pointer avoids.
 
 ---
 
 ## Docker Compose Stack
 
-```yaml
-version: "3.9"
+The project ships a Docker Compose stack that brings up `bitcoind` (signet) plus the coordinator from a single multi-stage [`docker/Dockerfile`](docker/Dockerfile). There is no Tor sidecar container — the coordinator runs its onion service in-process via `arti-client`. The coordinator's API is published on loopback only (`127.0.0.1:8080`), reachable over its `.onion` in production.
 
-services:
-  bitcoind:
-    image: bitcoin/bitcoin:27
-    command: >
-      -signet
-      -server
-      -rpcuser=blindjoin
-      -rpcpassword=blindjoin
-      -rpcallowip=0.0.0.0/0
-      -rpcbind=0.0.0.0
-    ports:
-      - "38332:38332"
-    volumes:
-      - bitcoin-data:/home/bitcoin/.bitcoin
-
-  tor:
-    image: goldy/tor-hidden-service
-    environment:
-      COORDINATOR_PORTS: "80:8080"
-    volumes:
-      - tor-keys:/var/lib/tor/hidden_service
-    depends_on:
-      - coordinator
-
-  coordinator:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.coordinator
-    environment:
-      BLINDJOIN_BITCOIN_RPC_URL: "http://bitcoind:38332"
-      BLINDJOIN_NETWORK: "signet"
-    depends_on:
-      - bitcoind
-
-  liquidity-bot:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.bot
-    environment:
-      BLINDJOIN_COORDINATOR_ONION: "file:///var/lib/tor/hidden_service/hostname"
-      BLINDJOIN_NETWORK: "signet"
-    depends_on:
-      - coordinator
-      - tor
-    volumes:
-      - tor-keys:/var/lib/tor/hidden_service:ro
-
-volumes:
-  bitcoin-data:
-  tor-keys:
-```
+> **Canonical:** the live, authoritative stack is [`docker/docker-compose.yml`](docker/docker-compose.yml); the operator quickstart is in the [README](README.md). The compose YAML is not reproduced here to avoid the drift this slim-down removed.
 
 ---
 
 ## Testing Strategy
 
-### Unit Tests
+The suite has three layers: **unit tests** (inline `#[cfg(test)]`) for the blind-signature round-trip and unlinkability, the FSM transitions/timeouts, fee math, and CoinJoin transaction construction; **signet integration tests** under `tests/integration/` that drive full end-to-end rounds, the blame/ban path, rate limiting, ban-list persistence, and v1.3↔v1.4 binary compatibility against a live `bitcoind`; and **adversarial/property cases** (token replay, invalid/spent UTXO, wrong denomination, tampered PSBT, cross-script-type spoofing). CI runs the lot with `cargo test --workspace` under `BLINDJOIN_REQUIRE_BITCOIND=1` so a missing `bitcoind` fails loudly rather than skipping.
 
-| Test | Validates |
-|------|-----------|
-| `blind_sig::round_trip` | Blind, sign, unblind, verify cycle using blind-rsa-signatures |
-| `blind_sig::unlinkability` | Two tokens from same signer cannot be correlated |
-| `state_machine::transitions` | FSM only allows valid state transitions |
-| `state_machine::timeouts` | Phases timeout correctly and trigger appropriate next state |
-| `tx_construction::valid` | Constructed CoinJoin TX passes Bitcoin consensus validation |
-| `tx_construction::equal_outputs` | All privacy outputs are exactly the denomination amount |
-| `utxo::double_register` | Same UTXO cannot register twice in one round |
-
-### Integration Tests
-
-| Test | Validates |
-|------|-----------|
-| `full_round` | 5 simulated clients complete a CoinJoin on signet; TX confirms |
-| `blame_non_signer` | 1 of 5 clients refuses to sign; blame protocol bans them; round restarts with 4 |
-| `blame_no_output` | Client registers input but never registers output; round times out gracefully |
-| `sybil_majority` | 3 of 5 participants are sybils from same operator; CoinJoin still valid (reduced anonymity set but protocol integrity maintained) |
-| `discovery_pkarr` | Client discovers coordinator via [PKARR](https://github.com/pubky/pkarr) DHT lookup; connects; completes round |
-| `tor_circuit_isolation` | Input registration and output registration use different Tor circuits (verified via Tor control protocol) |
-| `concurrent_rounds` | Two rounds execute simultaneously without state leakage |
-
-### Adversarial Tests
-
-| Test | Validates |
-|------|-----------|
-| `replay_token` | Client tries to reuse a blind signature token; coordinator rejects |
-| `invalid_utxo` | Client claims a non-existent or already-spent UTXO; coordinator rejects |
-| `wrong_denomination` | Client registers output with wrong amount; coordinator rejects |
-| `tampered_psbt` | Coordinator sends modified PSBT; client detects and refuses to sign |
+> **Canonical:** the actual tests live in [`tests/integration/`](tests/integration/) and inline in each crate; see [CONTRIBUTING.md](CONTRIBUTING.md) for the local integration-test loop.
 
 ---
 
 ## Development Roadmap
 
-### Phase 1: Foundation (Weeks 1-3)
-
-- [ ] Cargo workspace setup with coordinator, client, shared, liquidity-bot crates
-- [ ] Shared protocol message types and error types
-- [ ] Round state machine (FSM) with unit tests
-- [ ] Blind signature wrapper around blind-rsa-signatures with round-trip tests
-- [ ] Bitcoin RPC client for signet (UTXO queries, TX broadcast)
-
-### Phase 2: Core Protocol (Weeks 4-6)
-
-- [ ] Input registration handler (UTXO validation + blind signing)
-- [ ] Output registration handler (token verification + output recording)
-- [ ] CoinJoin transaction construction (PSBT building)
-- [ ] Signing phase (partial signature collection + assembly)
-- [ ] Blame protocol (non-signer detection + banning)
-- [ ] Coordinator API (axum JSON-RPC endpoints)
-
-### Phase 3: Client (Weeks 7-8)
-
-- [ ] CLI client with wallet management (bdk)
-- [ ] Round participation flow (input → blind → output → sign)
-- [ ] Tor circuit isolation between phases
-- [ ] Transaction verification before signing
-
-### Phase 4: Discovery & Deployment (Weeks 9-10)
-
-- [ ] [PKARR](https://github.com/pubky/pkarr) record publishing (coordinator)
-- [ ] [PKARR](https://github.com/pubky/pkarr) discovery (client)
-- [ ] Tor hidden service setup
-- [ ] Docker Compose stack (bitcoind + tor + coordinator + bot)
-- [ ] Liquidity bot (auto-join rounds)
-
-### Phase 5: Hardening (Weeks 11-12)
-
-- [ ] Full integration test suite on signet
-- [ ] Adversarial test suite
-- [ ] Memory zeroing audit (round state cleanup)
-- [ ] README, documentation, usage guide
-- [ ] Reproducible builds (Docker multi-stage)
-- [ ] GitHub release with pre-built binaries
+The original v1.0 build plan (foundation → core protocol → client → discovery/deployment → hardening) has shipped, along with later milestones (v1.2 public-endpoint hardening, v1.3 CI/test reliability, v1.4 BIP-322 multi-script support, v1.5/v1.6 audit charter and supply-chain provenance). For what shipped when, see [`CHANGELOG.md`](CHANGELOG.md) and the git history; for current open work see [`TODO.md`](TODO.md).
 
 ---
 
