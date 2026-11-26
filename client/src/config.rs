@@ -49,6 +49,23 @@ pub struct ClientConfig {
     #[arg(long, env = "BLINDJOIN_UTXO_ADDRESS")]
     pub utxo_address: Option<String>,
 
+    /// Derivation index for this round's CoinJoin output + change addresses (#15),
+    /// for descriptor wallets. Advance it every round so addresses are not reused
+    /// across rounds — reuse links a wallet's mixes on-chain. Ignored by
+    /// --generate-wallet (fresh seed per run) and --utxo-wif (single key). Prefer
+    /// --address-counter-file, which advances this automatically. If both are set,
+    /// the counter file wins. Interim until BIP-352 silent payments land (#15).
+    #[arg(long, env = "BLINDJOIN_ADDRESS_INDEX")]
+    pub address_index: Option<u32>,
+
+    /// Path to a small counter file that auto-advances the address index (#15).
+    /// Each run reads the index, uses it, and writes index+1 back (atomically). Use
+    /// one file per descriptor wallet. Indices are sequential and seed-recoverable
+    /// via the gap limit; losing the file risks address reuse, never funds. Interim
+    /// until BIP-352 silent payments land (#15).
+    #[arg(long, env = "BLINDJOIN_ADDRESS_COUNTER_FILE")]
+    pub address_counter_file: Option<std::path::PathBuf>,
+
     /// Script type for wallet descriptor generation. Selects BIP-84 (p2wpkh),
     /// BIP-86 (p2tr), or BIP-49 (p2sh-p2wpkh). Default p2wpkh for v1.3 backwards
     /// compatibility — existing wallets continue working unchanged.
