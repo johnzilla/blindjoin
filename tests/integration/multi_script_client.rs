@@ -128,7 +128,7 @@ async fn p2sh_p2wpkh_sign_roundtrip_verifies() {
 /// `DiscoveryError::UnsupportedScriptType` BEFORE any Tor circuit opens.
 ///
 /// The test asserts at the resolver-API boundary (no real DHT roundtrip
-/// needed): `capabilities_from_record_v("0.1.0", None, None)` is the
+/// needed): `capabilities_from_record_v("0.1.0", None, None, None)` is the
 /// load-bearing branch, and the subsequent allowlist check is the
 /// fail-fast gate. The structural pre-Tor ordering at
 /// `client/src/main.rs` (discover before `if cfg.use_tor`) per D-74 +
@@ -146,7 +146,7 @@ async fn v13_pkarr_record_with_p2tr_wallet_rejects_before_tor() {
 
     // Step 2: derive capabilities from a synthetic v0.1.0 PKARR record
     // (legacy v1.3 coordinator — no `sst`, no `ost`).
-    let caps = capabilities_from_record_v("0.1.0", None, None)
+    let caps = capabilities_from_record_v("0.1.0", None, None, None)
         .expect("legacy capabilities derivation succeeds");
     assert!(caps.is_legacy);
     assert_eq!(caps.supported_script_types, vec![ScriptType::P2wpkh]);
@@ -240,6 +240,7 @@ async fn v13_pkarr_record_with_p2wpkh_wallet_emits_v1_envelope() {
             is_legacy: true,
             supported_script_types: vec![ScriptType::P2wpkh],
             output_script_type: ScriptType::P2wpkh,
+            network: None,
         },
     };
 
@@ -296,6 +297,7 @@ async fn v14_pkarr_record_with_p2tr_wallet_emits_v2_envelope() {
     // advertising all 3 script types.
     let caps = capabilities_from_record_v(
         "0.2.0",
+        Some("signet"),
         Some("p2sh-p2wpkh,p2tr,p2wpkh"),
         Some("p2tr"),
     )

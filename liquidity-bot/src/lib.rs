@@ -111,6 +111,7 @@ pub async fn run(config: BotConfig) -> Result<()> {
             is_legacy: false,
             supported_script_types: vec![wallet.script_type()],
             output_script_type: wallet.script_type(),
+            network: None, // synthetic info; not derived from a PKARR record
         },
     };
 

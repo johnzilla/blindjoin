@@ -51,9 +51,10 @@ pub struct CoordinatorCapabilities {
     /// onward). `"manual"` for the non-PKARR `--coordinator-url` direct path
     /// (operator out-of-band trust per T-17-03-05).
     pub record_version: String,
-    /// True iff `record_version != "0.2.0"` OR `sst.is_none()`. Either
-    /// condition fires the WALLET-04 compat shim — defensive against
-    /// partial v0.2.0 records that bumped `v` but failed to populate `sst`.
+    /// True iff `record_version != shared::protocol::WIRE_VERSION` OR
+    /// `sst.is_none()`. Either condition fires the WALLET-04 compat shim —
+    /// defensive against partial current-version records that bumped `v` but
+    /// failed to populate `sst`.
     pub is_legacy: bool,
     /// Script types the coordinator accepts for input registration. Legacy
     /// records default to `vec![ScriptType::P2wpkh]` (v1.3 was P2WPKH-only).
@@ -65,6 +66,11 @@ pub struct CoordinatorCapabilities {
     /// Legacy records default to `ScriptType::P2wpkh`. Per D-07 mixed-output
     /// is OUT OF SCOPE; the wallet's output type must match this.
     pub output_script_type: ScriptType,
+    /// Advertised Bitcoin network from the PKARR `n` field, or `None` when the
+    /// record omits it. `discover_coordinator` fails fast (pre-Tor) on a
+    /// present-but-mismatched network; `None` is left unverified so records
+    /// that predate honest `n` advertising do not regress.
+    pub network: Option<String>,
 }
 
 /// Typed errors from `discover_coordinator`.
@@ -102,6 +108,17 @@ pub enum DiscoveryError {
         advertised: ScriptType,
         wanted: ScriptType,
     },
+    /// Advertised PKARR `n` network does not match the client's configured
+    /// network. Fail-fast before Tor: cross-network registration would be
+    /// rejected server-side at UTXO validation anyway, but catching it at
+    /// discovery saves a wasted circuit and gives an actionable error. Names
+    /// only public DHT data + the two network strings (no PII).
+    #[error("coordinator {pubkey} advertises network {advertised:?} but client is configured for {required:?}")]
+    NetworkMismatch {
+        pubkey: String,
+        advertised: String,
+        required: String,
+    },
 }
 
 /// PKARR `_blindjoin` TXT record decoded shape.
@@ -123,6 +140,12 @@ struct BlindjoinRecord {
     #[serde(rename = "v", default = "default_legacy_version")]
     version: String,
     onion: String,
+    /// Advertised Bitcoin network (`"signet"` | `"testnet4"` | `"mainnet"`),
+    /// compact-named `n` on the wire. `Option` because legacy/partial records
+    /// may omit it — a missing `n` is NOT treated as a mismatch (we cannot
+    /// verify what the coordinator did not advertise).
+    #[serde(default)]
+    n: Option<String>,
     #[serde(default)]
     sst: Option<String>,
     #[serde(default)]
@@ -153,12 +176,19 @@ fn parse_script_type_token(s: &str) -> Result<ScriptType, DiscoveryError> {
 #[doc(hidden)]
 pub fn capabilities_from_record_v(
     record_version: &str,
+    network: Option<&str>,
     sst: Option<&str>,
     ost: Option<&str>,
 ) -> Result<CoordinatorCapabilities, DiscoveryError> {
     // is_legacy fires on EITHER condition — defensive against partial
-    // v0.2.0 records that bumped `v` without populating `sst`.
-    let is_legacy = record_version != "0.2.0" || sst.is_none();
+    // records that carry the current `v` without populating `sst`.
+    //
+    // The current wire version is `shared::protocol::WIRE_VERSION`, the SAME
+    // constant the coordinator stamps into the PKARR `v` field (closed on the
+    // emit side in the WIRE_VERSION PR). Reading it here instead of a literal
+    // keeps emit and consume on one source of truth: a future wire bump moves
+    // both sides together rather than silently leaving this comparison behind.
+    let is_legacy = record_version != shared::protocol::WIRE_VERSION || sst.is_none();
 
     if is_legacy {
         return Ok(CoordinatorCapabilities {
@@ -166,6 +196,7 @@ pub fn capabilities_from_record_v(
             is_legacy: true,
             supported_script_types: vec![ScriptType::P2wpkh],
             output_script_type: ScriptType::P2wpkh,
+            network: network.map(str::to_string),
         });
     }
 
@@ -195,6 +226,7 @@ pub fn capabilities_from_record_v(
         is_legacy: false,
         supported_script_types,
         output_script_type,
+        network: network.map(str::to_string),
     })
 }
 
@@ -209,6 +241,32 @@ fn parse_blindjoin_record(rr: &pkarr::dns::ResourceRecord<'_>) -> Option<Blindjo
     let RData::TXT(txt) = &rr.rdata else { return None };
     let s = String::try_from(txt.clone()).ok()?;
     serde_json::from_str::<BlindjoinRecord>(&s).ok()
+}
+
+/// Pre-Tor network fail-fast: reject a coordinator whose advertised PKARR `n`
+/// network contradicts the client's configured network.
+///
+/// Lenient by design when `advertised` is `None`: a record that does not carry
+/// `n` cannot be contradicted, and such records predate honest `n` advertising.
+/// Cross-network registration still fails server-side at UTXO validation, so a
+/// missing `n` is a defense-in-depth gap, not a safety hole. Catching a
+/// present-but-mismatched network here saves a wasted Tor circuit and gives an
+/// actionable error instead of an opaque server-side rejection.
+fn ensure_network_matches(
+    advertised: Option<&str>,
+    required_network: &str,
+    pubkey: &str,
+) -> Result<(), DiscoveryError> {
+    if let Some(advertised) = advertised {
+        if advertised != required_network {
+            return Err(DiscoveryError::NetworkMismatch {
+                pubkey: pubkey.to_string(),
+                advertised: advertised.to_string(),
+                required: required_network.to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Resolve a coordinator URL + capabilities from a PKARR public key string
@@ -228,6 +286,7 @@ fn parse_blindjoin_record(rr: &pkarr::dns::ResourceRecord<'_>) -> Option<Blindjo
 pub async fn discover_coordinator(
     pkarr_pubkey: &str,
     required_script_type: ScriptType,
+    required_network: &str,
 ) -> Result<CoordinatorInfo, DiscoveryError> {
     // (a) Validate pubkey
     let public_key: PublicKey = pkarr_pubkey
@@ -264,9 +323,15 @@ pub async fn discover_coordinator(
     // (d) Derive capabilities (handles v0.1.0 vs v0.2.0 + sst CSV parsing).
     let capabilities = capabilities_from_record_v(
         &record.version,
+        record.n.as_deref(),
         record.sst.as_deref(),
         record.ost.as_deref(),
     )?;
+
+    // (d2) Network fail-fast (consumer half of honest `n` advertising). A
+    // coordinator on a different network is useless regardless of script type,
+    // so this runs BEFORE the script-type checks. See `ensure_network_matches`.
+    ensure_network_matches(capabilities.network.as_deref(), required_network, pkarr_pubkey)?;
 
     // (e) WALLET-03 fail-fast: input script-type allowlist miss.
     if !capabilities.supported_script_types.contains(&required_script_type) {
@@ -320,10 +385,11 @@ mod tests {
     /// preserves the CSV `sst` + scalar `ost`.
     #[test]
     fn parse_blindjoin_record_decodes_v0_2_0_record_with_sst_and_ost() {
-        let json = r#"{"type":"blindjoin-coordinator","v":"0.2.0","onion":"x.onion","sst":"p2sh-p2wpkh,p2tr,p2wpkh","ost":"p2wpkh"}"#;
+        let json = r#"{"type":"blindjoin-coordinator","v":"0.2.0","onion":"x.onion","n":"signet","sst":"p2sh-p2wpkh,p2tr,p2wpkh","ost":"p2wpkh"}"#;
         let r: BlindjoinRecord = serde_json::from_str(json).expect("valid v0.2.0 record");
         assert_eq!(r.version, "0.2.0");
         assert_eq!(r.onion, "x.onion");
+        assert_eq!(r.n.as_deref(), Some("signet"), "the `n` network field must be decoded");
         assert_eq!(r.sst.as_deref(), Some("p2sh-p2wpkh,p2tr,p2wpkh"));
         assert_eq!(r.ost.as_deref(), Some("p2wpkh"));
     }
@@ -336,6 +402,7 @@ mod tests {
         let r: BlindjoinRecord = serde_json::from_str(json).expect("valid v0.1.0 record");
         assert_eq!(r.version, "0.1.0", "default_legacy_version must fire when `v` absent");
         assert_eq!(r.onion, "y.onion");
+        assert!(r.n.is_none(), "legacy record omits `n`");
         assert!(r.sst.is_none());
         assert!(r.ost.is_none());
     }
@@ -357,7 +424,7 @@ mod tests {
     /// Test 4: legacy record → is_legacy=true + P2WPKH-only defaults.
     #[test]
     fn capabilities_is_legacy_true_for_v0_1_0() {
-        let caps = capabilities_from_record_v("0.1.0", None, None).expect("legacy ok");
+        let caps = capabilities_from_record_v("0.1.0", None, None, None).expect("legacy ok");
         assert!(caps.is_legacy);
         assert_eq!(caps.record_version, "0.1.0");
         assert_eq!(caps.supported_script_types, vec![ScriptType::P2wpkh]);
@@ -367,8 +434,13 @@ mod tests {
     /// Test 5: v0.2.0 record with sst+ost → is_legacy=false + parsed types.
     #[test]
     fn capabilities_is_legacy_false_for_v0_2_0_with_sst() {
-        let caps = capabilities_from_record_v("0.2.0", Some("p2tr,p2wpkh"), Some("p2tr"))
-            .expect("v0.2.0 ok");
+        let caps = capabilities_from_record_v(
+            shared::protocol::WIRE_VERSION,
+            Some("signet"),
+            Some("p2tr,p2wpkh"),
+            Some("p2tr"),
+        )
+        .expect("v0.2.0 ok");
         assert!(!caps.is_legacy);
         assert_eq!(caps.record_version, "0.2.0");
         // Preserved in declared order (alphabetical canonical per CD-11
@@ -378,13 +450,19 @@ mod tests {
             vec![ScriptType::P2tr, ScriptType::P2wpkh]
         );
         assert_eq!(caps.output_script_type, ScriptType::P2tr);
+        assert_eq!(caps.network.as_deref(), Some("signet"), "network must pass through");
     }
 
     /// Test 6: malformed sst token → MalformedRecord with the bad token named.
     #[test]
     fn capabilities_returns_malformed_record_for_invalid_sst_token() {
-        let err = capabilities_from_record_v("0.2.0", Some("p2tr,invalid-token,p2wpkh"), Some("p2tr"))
-            .expect_err("invalid sst token must error");
+        let err = capabilities_from_record_v(
+            shared::protocol::WIRE_VERSION,
+            Some("signet"),
+            Some("p2tr,invalid-token,p2wpkh"),
+            Some("p2tr"),
+        )
+        .expect_err("invalid sst token must error");
         match err {
             DiscoveryError::MalformedRecord { reason } => {
                 assert!(
@@ -400,7 +478,7 @@ mod tests {
     /// from the v1.3 test at lines 87-96, adapted for the new signature).
     #[tokio::test]
     async fn discover_coordinator_rejects_invalid_pubkey() {
-        let err = discover_coordinator("not-a-valid-pkarr-key", ScriptType::P2wpkh)
+        let err = discover_coordinator("not-a-valid-pkarr-key", ScriptType::P2wpkh, "signet")
             .await
             .unwrap_err();
         assert!(
@@ -442,6 +520,45 @@ mod tests {
             display.contains("does not support"),
             "error must contain ROADMAP SC#3 wording 'does not support', got: {display}"
         );
+    }
+
+    /// Test 9: matching advertised network passes the fail-fast.
+    #[test]
+    fn network_match_passes() {
+        assert!(ensure_network_matches(Some("signet"), "signet", "pk").is_ok());
+    }
+
+    /// Test 10: a mismatched advertised network is rejected pre-Tor, and the
+    /// error names both networks (no PII).
+    #[test]
+    fn network_mismatch_is_rejected() {
+        let err = ensure_network_matches(Some("mainnet"), "signet", "pk-abc")
+            .expect_err("cross-network coordinator must be rejected");
+        match err {
+            DiscoveryError::NetworkMismatch { pubkey, advertised, required } => {
+                assert_eq!(pubkey, "pk-abc");
+                assert_eq!(advertised, "mainnet");
+                assert_eq!(required, "signet");
+            }
+            other => panic!("expected NetworkMismatch, got: {other:?}"),
+        }
+    }
+
+    /// Test 11: a record that omits `n` is left unverified (lenient) — a missing
+    /// network must NOT regress discovery for records that predate honest `n`.
+    #[test]
+    fn network_absent_is_lenient() {
+        assert!(ensure_network_matches(None, "signet", "pk").is_ok());
+    }
+
+    /// Test 12: `network` passes through the legacy capabilities branch too, so a
+    /// legacy record that happens to carry `n` is still network-checkable.
+    #[test]
+    fn legacy_capabilities_preserve_network() {
+        let caps = capabilities_from_record_v("0.1.0", Some("testnet4"), None, None)
+            .expect("legacy ok");
+        assert!(caps.is_legacy);
+        assert_eq!(caps.network.as_deref(), Some("testnet4"));
     }
 
     // Note: test for "not found in DHT" requires a real DHT query with an unknown key.
