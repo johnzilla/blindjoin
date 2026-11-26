@@ -64,7 +64,10 @@ names come from each job's `name:` field in `ci.yml` and only appear in the
 ruleset picker after at least one CI run has reported them (add each as a
 **separate** check — pasting a comma-joined string registers one phantom check
 that never reports and blocks all merges). The `check` jobs in `release.yml`
-and `docker.yml` are separate from the PR checks and are not required for merge.
+and `docker.yml`, and the scheduled `cargo audit` in `audit-cron.yml`, are
+separate from the PR checks and are not required for merge — `audit-cron.yml`
+is a between-releases tripwire (weekly) that re-runs the gating audit against the
+committed `Cargo.lock`, not a merge gate.
 
 ## Verifying the configuration
 

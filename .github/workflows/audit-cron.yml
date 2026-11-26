@@ -1,0 +1,36 @@
+name: Scheduled audit
+
+# Tripwire for advisories published AGAINST the committed Cargo.lock between
+# commits. The per-PR `cargo audit` job in ci.yml only runs on push / pull_request,
+# so a RustSec advisory filed against an already-merged, unchanged dependency tree
+# would otherwise go unseen until the next code change. This job re-runs the same
+# audit on a schedule; a failure here notifies the workflow author via GitHub's
+# scheduled-run failure notification — the between-releases tripwire.
+#
+# It is intentionally NOT a required status check (it has no PR to gate). The
+# gating audit remains the `cargo audit` job in ci.yml. Both honor the ignores in
+# .cargo/audit.toml, each of which carries a written rationale.
+
+on:
+  schedule:
+    # Mondays 12:00 UTC. Weekly is enough to catch a new advisory well within a
+    # release cycle without creating daily failure noise on a quiet tree.
+    - cron: "0 12 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit (scheduled)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: "1.95.0"
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run audit
+        run: cargo audit
