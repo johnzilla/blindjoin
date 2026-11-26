@@ -179,8 +179,9 @@ containing:
 
 The coordinator MUST:
 
-1. Resolve the UTXO via its Bitcoin RPC; reject if spent, unmatured, or of
-   wrong denomination class.
+1. Resolve the UTXO via its Bitcoin RPC; reject if spent, unmatured, of the
+   wrong denomination class, or unable to cover the denomination plus its fee
+   share (the admission gate specified below).
 2. Verify the BIP-322 ownership proof; reject on any failure.
 3. Reject blinded tokens whose byte length exceeds the RSA modulus length.
 4. Reject any UTXO present on the persisted ban list.
@@ -189,6 +190,30 @@ The coordinator MUST:
 6. Issue an HMAC-SHA-256 session token bound to the round and UTXO,
    returned alongside the blind signature, used to authorize the future
    `/round/sign` submission without re-correlating to the input.
+
+**Admission gate (NORMATIVE).** Outputs are not yet known at input registration,
+so the coordinator admits an input only if its value covers the denomination plus
+a *pessimistic* per-participant fee share computed for a worst-case round. With
+`fee_rate` the coordinator's configured sat/vByte and `min_participants` its
+advertised minimum:
+
+    worst_input_vb = max vByte weight over the coordinator's advertised input types
+    gate_vsize     = 10
+                   + worst_input_vb × min_participants
+                   + MAX_STANDARD_OUTPUT_VBYTES × 2 × min_participants
+    fee_share      = (gate_vsize × fee_rate) / min_participants   (integer division)
+
+where `MAX_STANDARD_OUTPUT_VBYTES = 43` is the heaviest standard output (a 34-byte
+witness program) and prices one denomination plus one change output per
+participant. An input whose value is below `denomination_sats + fee_share` MUST be
+rejected (wire error `UtxoInsufficientValue`). The gate is deliberately
+pessimistic — it assumes the heaviest advertised input type and the heaviest
+standard outputs, and is evaluated at `min_participants` (the per-participant share
+is largest at the smallest round) — so any input admitted here is guaranteed to
+clear the actual build-time fee computed from the real registered scripts (see
+Phase: Signing), closing the wedge where an input passes registration only to fail
+assembly later. The realized fee an admitted participant pays is therefore never
+more than this gate estimate.
 
 **Canonical challenge (NORMATIVE).** The message signed by the BIP-322 Simple
 proof is the ASCII string:
