@@ -10,13 +10,14 @@
 | **Created** | 2026-05 |
 | **Implementation** | https://github.com/johnzilla/blindjoin |
 
-> **Status — Draft.** This document is the in-progress normative specification of
-> the blindjoin coordinator-client wire protocol, developed alongside the OpenSats
-> grant for blindjoin. Sections without **[TODO]** are normative as written.
-> Sections marked **[TODO]** are not yet specified normatively in this document;
-> until they are, the [reference implementation](https://github.com/johnzilla/blindjoin)
-> is authoritative for the behavior they will describe. Comments and review issues
-> welcome via the project issue tracker.
+> **Status — Draft (content-complete).** This document is the normative
+> specification of the blindjoin coordinator-client wire protocol, developed
+> alongside the OpenSats grant for blindjoin. Every section is now specified
+> normatively. Where this prose and the
+> [reference implementation](https://github.com/johnzilla/blindjoin) disagree, the
+> reference implementation is authoritative and the discrepancy is a specification
+> bug — please report it. Comments and review issues welcome via the project issue
+> tracker.
 
 ---
 
@@ -97,7 +98,7 @@ A coordinator MUST publish a [PKARR](https://github.com/pubky/pkarr) record to t
   `host:port` (development only).
 - The protocol version supported (current: `v0.2.0` for v1.4 coordinators; v1.3 used `0.1.0`).
 - The advertised fixed denomination, in satoshis.
-- The minimum and maximum participant counts.
+- The minimum participant count.
 - (v1.4+) The supported input script types (`sst`, CSV; alphabetical canonical
   order) and the output script type the coordinator will use for round outputs
   (`ost`, single kebab-case string). Clients that cannot sign for any
@@ -112,8 +113,41 @@ A coordinator SHOULD re-publish its [PKARR](https://github.com/pubky/pkarr) reco
 than 60 seconds and not longer than 600 seconds. The default in the reference
 implementation is 300 seconds (5 minutes), matching typical Mainline DHT TTL.
 
-**[TODO]** Specify the canonical TXT record format, including field tags,
-ordering, and size budget under DHT record-size limits.
+**Canonical record format (NORMATIVE).** The discovery record is a PKARR
+`SignedPacket` carrying a single DNS TXT resource record under the label
+`_blindjoin` with a TTL of 300 seconds. The TXT value is one compact JSON object
+whose fields, in canonical serialization order, are:
+
+| Tag | Meaning | Example |
+|---|---|---|
+| `type` | schema identifier; MUST be `"blindjoin-coordinator"` | `"blindjoin-coordinator"` |
+| `v` | protocol wire version (`shared::protocol::WIRE_VERSION`) | `"0.2.0"` |
+| `onion` | reachable address: `.onion` hostname (production) or `host:port` (development) | `"<56-char>.onion"` |
+| `n` | Bitcoin network | `"signet"` / `"testnet4"` / `"mainnet"` |
+| `ds` | advertised fixed denomination, in satoshis | `1000000` |
+| `mp` | minimum participant count | `3` |
+| `st` | current round status | `"idle"` / `"input_reg"` / … |
+| `sst` | supported input script types, CSV in alphabetical canonical order | `"p2sh-p2wpkh,p2tr,p2wpkh"` |
+| `ost` | output script type the coordinator uses for round outputs, single kebab-case value | `"p2wpkh"` |
+
+The packet MUST be signed by the coordinator's Ed25519 identity key; clients MUST
+verify the packet signature before trusting any field (restated from above). That
+public key is the coordinator's stable DHT identity and MUST NOT be rotated —
+rotating it is equivalent to standing up a new coordinator.
+
+**Size budget.** A DNS TXT character string is limited to 255 bytes; the serialized
+JSON value MUST stay within it. The reference implementation warns at 220 bytes to
+leave headroom and pins, in CI, that the worst-case production payload — a 62-byte
+Tor v3 `.onion` plus the full three-type `sst` CSV — stays under 220. A new field,
+or a fourth script type, that would breach the budget requires an explicit
+encoding-compaction decision (single-character tags, a bitmask, or a
+hash-of-set-then-fetch indirection) rather than silently overflowing the limit.
+
+**Forward compatibility.** Consumers MUST ignore unknown tags (the resolver sets no
+`deny_unknown_fields`), so new tags are additive and need no coordinated upgrade.
+Two tags deliberately keep verbose names: `type` identifies the schema for future
+consumers, and `onion` is read by the pre-`0.2.0` resolver and MUST keep that name
+for backward compatibility.
 
 ### Round lifecycle
 
@@ -156,7 +190,29 @@ The coordinator MUST:
    returned alongside the blind signature, used to authorize the future
    `/round/sign` submission without re-correlating to the input.
 
-**[TODO]** Specify the canonical blindjoin BIP-322 challenge string.
+**Canonical challenge (NORMATIVE).** The message signed by the BIP-322 Simple
+proof is the ASCII string:
+
+```
+blindjoin:round:<round_id>:utxo:<txid>:<vout>
+```
+
+where `<round_id>` is the current round's UUID in its canonical hyphenated
+lowercase form, `<txid>` is the registered UTXO's transaction id as a
+big-endian hex string (as displayed by Bitcoin Core), and `<vout>` is its output
+index in decimal. Binding the challenge to both the `round_id` and the specific
+outpoint ensures a proof captured from one round cannot be replayed into another,
+and that a proof for one UTXO cannot be presented for a different one. The client
+and coordinator MUST construct this string identically; the coordinator verifies
+against the value it computes from the live `round_id` and the registered
+outpoint, never from any client-supplied copy.
+
+The string is then run through BIP-322 Simple: it is hashed with the BIP-340
+tagged hash `SHA-256(SHA-256(tag) ‖ SHA-256(tag) ‖ message)` under the tag
+`BIP0322-signed-message`, and that digest drives the `to_spend` / `to_sign`
+virtual-transaction construction the per-script verifier checks. The sign and
+verify paths share one message-hash and `to_sign` builder, so the challenge
+digest cannot drift between them.
 
 #### Phase: Output Registration
 
@@ -567,19 +623,68 @@ Risks and in [`TODO.md`](../TODO.md).
 
 ### Why [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) (RSABSSA) rather than chaumian e-cash or Schnorr blind sigs
 
-**[TODO]** Discuss the trade-off between RSABSSA (RFC-standardized,
-mature primitive, larger signatures) versus Wasabi's chaumian e-cash
-construction (smaller, but not standardized as an IETF/IRTF deliverable)
-and emerging Schnorr blind signature schemes (smaller still, but lack
-mature implementations and clearly published security proofs at time of
-writing).
+blindjoin uses [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)
+RSABSSA-SHA384-PSS-Randomized. The choice follows from one hard project
+constraint — **no custom cryptography** — and the state of audited Rust
+primitives:
+
+- **RSABSSA (chosen).** [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)
+  is an IETF-published standard with a clearly stated security argument, and
+  `blind-rsa-signatures` (jedisct1) is a production-grade, audited Rust
+  implementation of it — the only RFC 9474-compliant one. The cost is size:
+  RSA-2048 blinded tokens and signatures are large relative to the alternatives,
+  and verification is heavier than elliptic-curve schemes. For a per-round,
+  bounded-participant protocol this is acceptable — the tokens are exchanged once
+  per round and never touch the chain.
+- **Chaumian e-cash (WabiSabi / Wasabi 2.x).** Smaller credentials, and supports
+  arbitrary-amount rather than fixed-denomination coordination. But it is not an
+  IETF/IRTF deliverable and — decisively — there is no production-grade Rust
+  implementation to depend on. Reimplementing it would violate the no-custom-crypto
+  constraint and create exactly the audit surface the project avoids. Recorded as
+  ADR Decision #1 in [docs/AUDIT-CHARTER.md](AUDIT-CHARTER.md).
+- **Schnorr blind signatures.** Smaller still, and a natural fit with Taproot. But
+  naive constructions are vulnerable to Wagner-style parallel (ROS) attacks; the
+  hardened schemes that fix this are recent and, at the time of writing, lack both
+  mature audited Rust implementations and the settled, widely-reviewed security
+  proofs [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) carries. Adopting
+  one now would again mean shipping unaudited crypto.
+
+The ordering is therefore: a standardized primitive with an audited Rust
+implementation beats a smaller-but-unstandardized or smaller-but-immature
+alternative, given that the protocol can absorb the size cost. If an audited Rust
+Schnorr-blind-signature or WabiSabi implementation reaches production maturity, the
+primitive is a candidate for revisiting — the blind-signature engine is isolated
+behind [`coordinator/src/blind/`](../coordinator/src/blind/).
 
 ### Why [PKARR](https://github.com/pubky/pkarr)/DHT rather than Nostr
 
-**[TODO]** Discuss the trade-off between Mainline DHT (no relay operator,
-peer-to-peer, established with millions of nodes for BitTorrent) and
-Nostr relays (operator-mediated but well-tooled and increasingly used
-by other CoinJoin discovery layers).
+Both PKARR-over-Mainline-DHT and Nostr-relay publication solve the same problem —
+letting a client find a coordinator's current address without a hardcoded list —
+but they differ in who can be coerced.
+
+- **PKARR / Mainline DHT (chosen).** A coordinator publishes a signed record to
+  the Mainline DHT (the same multi-million-node table that backs BitTorrent).
+  There is no operator between publisher and resolver: any participating node can
+  serve the record, records are self-authenticating under the publisher's Ed25519
+  key, and there is no registrar to subpoena, deplatform, or sanction. This
+  directly serves the design goal of *discovery without operators* (see
+  Motivation). The costs are a weaker freshness model — DHT propagation and TTLs
+  mean a stale record can resolve briefly (the replay-window residual in
+  [docs/AUDIT-CHARTER.md](AUDIT-CHARTER.md)) — and a tight record-size budget (the
+  TXT limit in [Discovery](#discovery)).
+- **Nostr relays.** Better-tooled, richer query semantics, and increasingly used
+  by other CoinJoin discovery layers. But a Nostr relay is operator-mediated
+  infrastructure: an operator can be compelled to drop events, and a client depends
+  on reaching relays that carry the coordinator's announcements. Given that the
+  independent-coordinator landscape has thinned precisely because operator-mediated
+  infrastructure is coercible (see Motivation), depending on relay operators would
+  reintroduce the single point of coercion the project is designed to remove.
+
+The decision mirrors the [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)
+one in spirit: accept a more constrained, less convenient mechanism in exchange
+for removing a party that can be coerced. A Nostr announcement remains a plausible
+*additive* discovery channel in future — the two are not mutually exclusive — but
+the DHT is the operator-free baseline.
 
 ### Why Tor circuit isolation per phase
 
