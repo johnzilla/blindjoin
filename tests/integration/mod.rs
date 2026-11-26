@@ -48,6 +48,7 @@ pub(crate) fn v14_p2wpkh_coordinator_info() -> client::discover::CoordinatorInfo
             is_legacy: false,
             supported_script_types: vec![shared::bip322::ScriptType::P2wpkh],
             output_script_type: shared::bip322::ScriptType::P2wpkh,
+            network: None,
         },
     }
 }
@@ -66,6 +67,7 @@ pub(crate) fn v14_coordinator_info(st: shared::bip322::ScriptType) -> client::di
             is_legacy: false,
             supported_script_types: vec![st],
             output_script_type: st,
+            network: None,
         },
     }
 }

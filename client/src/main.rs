@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
     // call inside the Tor branch would silently break WALLET-03; this
     // comment is the in-source proof of the structural invariant.
     let coordinator_info = if let Some(ref pkarr_key) = cfg.pkarr_pubkey {
-        let info = discover::discover_coordinator(pkarr_key, wallet.script_type())
+        let info = discover::discover_coordinator(pkarr_key, wallet.script_type(), &cfg.network)
             .await
             .map_err(|e| anyhow::anyhow!("PKARR discovery failed: {e}"))?;
         if info.capabilities.is_legacy {
@@ -102,6 +102,9 @@ async fn main() -> anyhow::Result<()> {
                     shared::bip322::ScriptType::P2shP2wpkh,
                 ],
                 output_script_type: wallet.script_type(),
+                // Direct --coordinator-url path: no PKARR record, so no
+                // advertised network to verify. None keeps the fail-fast lenient.
+                network: None,
             },
         }
     };
