@@ -1,29 +1,37 @@
-use crate::bitcoin::tx::{script_input_vbytes, script_output_vbytes};
+use crate::bitcoin::tx::{script_input_vbytes, MAX_STANDARD_OUTPUT_VBYTES};
 use crate::config::BipConfig;
 
 /// Worst-case pre-registration fee share estimate per participant.
 ///
 /// Used at INPUT_REG time before the coordinator knows which script types will
 /// actually register — MUST overestimate so `build_coinjoin_psbt`'s real per-
-/// input weight cannot exceed what `validate_utxo` already required from each
-/// participant. Over-charges a P2WPKH input in a round where P2SH-P2WPKH
-/// (91 vB) is allowed but not yet registered — acceptable, because the real
+/// input requirement cannot exceed what `validate_utxo` already required from
+/// each participant. Over-charges a P2WPKH input in a round where P2SH-P2WPKH
+/// (91 vB) is allowed but not yet registered, and over-charges light outputs in
+/// a round where a heavier output could register — acceptable, because the real
 /// `fee_share` at PSBT build time is the load-bearing number a participant
-/// actually pays.
+/// actually pays (the excess simply returns to their change).
 ///
-/// **Privacy property:** using `max(script_input_vbytes across allowed_set())`
-/// is uniform regardless of participant registration order — never leaks which
-/// script types are currently registered. Using anything narrower (e.g., the
-/// most-recently-registered script type) would leak ordering information
-/// across rounds.
+/// Pessimistic on all three dimensions the build can exceed a naive estimate:
+/// - **inputs:** `max(script_input_vbytes across allowed_set())` — the heaviest
+///   input the allowlist permits.
+/// - **outputs:** `MAX_STANDARD_OUTPUT_VBYTES` (43) for every denomination AND
+///   change output — the heaviest standard output an address can encode. The
+///   coordinator does not enforce that a registered output matches
+///   `output_script_type` (uniform-output is an accepted residual, see
+///   AUDIT-CHARTER V1.4-MIN-02) and `build_coinjoin_psbt` prices each output
+///   from its ACTUAL script, so the gate must assume the worst or a heavier
+///   output reopens the H1 wedge window (N-1).
+/// - **n:** callers pass `min_participants`; the share is non-increasing in n,
+///   so the smallest finalizing round is the most expensive per participant.
 ///
-/// Single canonical fee helper consumed by both the `get_tx` handler (display)
-/// and `assemble_and_broadcast` (broadcast) — both PSBT paths MUST agree
-/// byte-exactly (WR-04). Phase 20 only changes the formula inside this helper;
-/// the WR-04 single-source-of-truth contract is preserved.
+/// **Privacy property:** both the input-side `max(...)` and the output-side
+/// constant are uniform regardless of participant registration order — the
+/// estimate never leaks which script types are currently registered.
 ///
 /// # Arguments
-/// - `bip_config` — operator-configured allowlist + output script type
+/// - `bip_config` — operator-configured allowlist (output type no longer affects
+///   the estimate: outputs are priced at the max standard size)
 /// - `n`          — number of participants (inputs and outputs)
 /// - `fee_rate`   — sat/vbyte fee rate from coordinator config
 pub fn estimate_fee_share(bip_config: &BipConfig, n: u32, fee_rate: u64) -> u64 {
@@ -36,7 +44,8 @@ pub fn estimate_fee_share(bip_config: &BipConfig, n: u32, fee_rate: u64) -> u64 
         .map(script_input_vbytes)
         .max()
         .expect("BipConfig::validate ensures at least one allow_* flag is true");
-    let output_vb = script_output_vbytes(bip_config.output_script_type);
+    // N denomination + N change outputs, each at the heaviest standard size.
+    let output_vb = MAX_STANDARD_OUTPUT_VBYTES;
     let estimated_vsize = 10 + worst_input_vb * n + output_vb * 2 * n;
     (estimated_vsize * fee_rate) / n
 }
@@ -63,15 +72,29 @@ mod tests {
         }
     }
 
-    /// FEE-02 unit cross-check: with all 3 script types allowed and output=P2WPKH,
-    /// worst_input_vb = max(68, 58, 91) = 91; output_vb = 31; n=3; fee_rate=2:
-    ///   estimated_vsize = 10 + 91*3 + 31*2*3 = 10 + 273 + 186 = 469
-    ///   total_fee = 469 * 2 = 938
-    ///   fee_share = 938 / 3 = 312 sats/participant
+    /// FEE-02 unit cross-check: with all 3 script types allowed, worst_input_vb =
+    /// max(68, 58, 91) = 91; output_vb = MAX_STANDARD_OUTPUT_VBYTES = 43; n=3;
+    /// fee_rate=2:
+    ///   estimated_vsize = 10 + 91*3 + 43*2*3 = 10 + 273 + 258 = 541
+    ///   total_fee = 541 * 2 = 1082
+    ///   fee_share = 1082 / 3 = 360 sats/participant
     #[test]
     fn worst_case_picks_max_allowed_input_vbyte() {
         let bip = make_bip_config(true, true, true, ScriptType::P2wpkh);
-        assert_eq!(estimate_fee_share(&bip, 3, 2), 312);
+        assert_eq!(estimate_fee_share(&bip, 3, 2), 360);
+    }
+
+    /// N-1 fix: the gate prices outputs at MAX_STANDARD_OUTPUT_VBYTES, so it no
+    /// longer depends on the configured `output_script_type` — a round that
+    /// advertises P2WPKH outputs must gate identically to one advertising P2TR,
+    /// because a client can register a heavier output than advertised regardless.
+    #[test]
+    fn gate_is_independent_of_output_type() {
+        let w = make_bip_config(true, false, false, ScriptType::P2wpkh);
+        let t = make_bip_config(true, false, false, ScriptType::P2tr);
+        let s = make_bip_config(true, false, false, ScriptType::P2shP2wpkh);
+        assert_eq!(estimate_fee_share(&w, 3, 2), estimate_fee_share(&t, 3, 2));
+        assert_eq!(estimate_fee_share(&w, 3, 2), estimate_fee_share(&s, 3, 2));
     }
 
     /// Sanity: zero participants returns zero (early-return preserved).
@@ -102,25 +125,35 @@ mod tests {
         }
     }
 
-    /// H1 concrete boundary (defaults: P2WPKH-only, rate=2). The v1.4 build baseline
-    /// charges 266 sats/participant at n=3 (see tx.rs
-    /// `fee_share_p2wpkh_only_matches_v14_baseline`). The registration estimate at
-    /// min=3 must equal that, and the OLD max=20 estimate (261) must be strictly
-    /// lower — i.e. the exact ~5-sat gap the fix closes.
+    /// H1 n-pessimism (still holds under the output-pessimistic formula). P2WPKH-only,
+    /// rate=2, output priced at 43:
+    ///   @ min=3:  vsize = 10 + 68*3 + 43*6 = 472; fee_share = 944 / 3  = 314
+    ///   @ max=20: vsize = 10 + 68*20 + 43*40 = 3090; fee_share = 6180 / 20 = 309
+    /// The min bound (314) must be >= the larger-n estimate (309), so the gate armed
+    /// at min_participants covers every finalizing round size.
     #[test]
-    fn min_participants_estimate_covers_build_baseline() {
+    fn min_participants_estimate_is_the_pessimistic_bound() {
         let bip = make_bip_config(true, false, false, ScriptType::P2wpkh);
-        assert_eq!(estimate_fee_share(&bip, 3, 2), 266, "registration gate @ min=3");
-        assert_eq!(estimate_fee_share(&bip, 20, 2), 261, "old buggy gate @ max=20");
+        assert_eq!(estimate_fee_share(&bip, 3, 2), 314, "registration gate @ min=3");
+        assert_eq!(estimate_fee_share(&bip, 20, 2), 309, "larger round @ n=20");
+        assert!(estimate_fee_share(&bip, 3, 2) >= estimate_fee_share(&bip, 20, 2));
     }
 
-    /// P2WPKH-only allowed set with output=P2WPKH at n=3, fee_rate=2:
-    ///   worst_input_vb = 68; output_vb = 31; vsize = 10 + 68*3 + 31*6 = 400
-    ///   fee_share = 800 / 3 = 266 sats/participant
-    /// (Matches the FEE-03(a) v1.4 baseline that build_coinjoin_psbt also produces.)
+    /// N-1: the gate must stay STRICTLY ABOVE the all-P2WPKH v1.4 build baseline (266
+    /// sats/participant at n=3, see tx.rs `fee_share_p2wpkh_only_matches_v14_baseline`),
+    /// because `build_coinjoin_psbt` now prices outputs from their actual scripts and a
+    /// client can register a P2TR (43 vB) output in a P2WPKH round. The 48-sat margin
+    /// (314 vs 266 = (43-31) * 2 outputs * rate 2) is the reopened wedge window this
+    /// gate closes — a lighter gate would let a UTXO pass registration then fail the
+    /// build-time InsufficientFunds check.
     #[test]
-    fn p2wpkh_only_matches_v14_baseline() {
+    fn gate_exceeds_p2wpkh_build_baseline_to_cover_heavy_outputs() {
         let bip = make_bip_config(true, false, false, ScriptType::P2wpkh);
-        assert_eq!(estimate_fee_share(&bip, 3, 2), 266);
+        const P2WPKH_BUILD_BASELINE: u64 = 266;
+        assert_eq!(estimate_fee_share(&bip, 3, 2), 314);
+        assert!(
+            estimate_fee_share(&bip, 3, 2) >= P2WPKH_BUILD_BASELINE,
+            "gate must cover the P2WPKH build baseline with margin for heavier outputs",
+        );
     }
 }
