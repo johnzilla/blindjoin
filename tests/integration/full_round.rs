@@ -1590,7 +1590,14 @@ async fn coordinator_info_endpoint_fields() {
         "rsa_pubkey_der_b64 must be None when idle"
     );
     assert!(info.round_id.is_some(), "round_id must always be present");
-    assert!(!info.version.is_empty(), "version must be non-empty");
+    // /info advertises the WIRE protocol version, identical to the PKARR packet
+    // `v` — NOT the crate build version (CARGO_PKG_VERSION). Clients gate compat
+    // on this, so the two discovery surfaces must never drift.
+    assert_eq!(
+        info.version,
+        shared::protocol::WIRE_VERSION,
+        "/info version must equal the wire-protocol version, not the crate version"
+    );
 
     eprintln!(
         "coordinator_info_endpoint_fields PASSED: round_state={}",
