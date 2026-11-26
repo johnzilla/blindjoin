@@ -157,10 +157,22 @@ pub fn build_coinjoin_psbt(
     }
 
     // Build transaction inputs (canonical outpoint order — see M6 note above)
+    //
+    // Sequence::MAX (0xFFFFFFFF) — NON-signaling, deliberately NOT
+    // ENABLE_RBF_NO_LOCKTIME (0xFFFFFFFD). The protocol is single-broadcast
+    // with no fee-bump or retry flow (PROTOCOL.md), so BIP-125 opt-in
+    // replaceability serves no legitimate purpose here and is a live abuse
+    // vector: a participant who signed the round could, post-broadcast,
+    // replace the CoinJoin in the mempool with a higher-fee spend of just
+    // their own (shared) input — a BIP-125 conflict that evicts the entire
+    // round for the cost of one fee, after the round has already gone Idle
+    // (no blame attribution possible). Opting every input out of RBF closes
+    // that cheap eviction path under default mempool policy. lock_time is
+    // ZERO (see below), so MAX forfeits no locktime behaviour.
     let tx_inputs: Vec<TxIn> = ordered.iter().map(|inp| TxIn {
         previous_output: inp.outpoint,
         script_sig: ScriptBuf::new(),
-        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        sequence: Sequence::MAX,
         witness: Witness::new(),
     }).collect();
 
@@ -276,6 +288,29 @@ mod tests {
         let mut sorted = outpoints.clone();
         sorted.sort();
         assert_eq!(outpoints, sorted, "inputs must be in ascending outpoint order");
+    }
+
+    /// Every CoinJoin input MUST be non-replaceable (Sequence::MAX, 0xFFFFFFFF).
+    /// Pins the anti-eviction property: a signaling sequence (<= 0xFFFFFFFD) would
+    /// let any participant RBF-evict the round post-broadcast. See the rationale at
+    /// the tx_inputs construction site in build_coinjoin_psbt.
+    #[test]
+    fn coinjoin_psbt_inputs_are_non_replaceable() {
+        let inputs = make_inputs(3, 1_100_000);
+        let outputs = make_outputs(3);
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh).unwrap();
+        for txin in &psbt.unsigned_tx.input {
+            assert_eq!(
+                txin.sequence,
+                Sequence::MAX,
+                "input must use the non-signaling Sequence::MAX; a replaceable \
+                 sequence reopens the BIP-125 post-broadcast eviction path",
+            );
+            assert!(
+                !txin.sequence.is_rbf(),
+                "input must not signal BIP-125 replaceability",
+            );
+        }
     }
 
     #[test]
