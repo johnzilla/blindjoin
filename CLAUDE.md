@@ -147,11 +147,11 @@ This is infrastructure, not a product. MIT licensed. No fees. No company. No ter
 
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+See [ARCHITECTURE.md § Conventions](ARCHITECTURE.md#conventions) — no custom crypto, PII discipline in logs, ephemeral round state, additive wire evolution, exact pins for fragile deps, `file::symbol` anchors, size-matched process.
 
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the crate/module map, round data flow, and the invariants ledger (each invariant → where it is enforced → the test that pins it). Normative wire behavior is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## Project Skills
 
