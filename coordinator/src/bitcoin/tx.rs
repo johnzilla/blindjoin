@@ -55,6 +55,21 @@ pub const fn script_output_vbytes(st: ScriptType) -> u64 {
     }
 }
 
+/// vbytes of the heaviest standard output a client can register.
+///
+/// Every address `parse_address_to_script` accepts encodes a standard
+/// scriptPubKey, the largest of which carries a 34-byte witness program
+/// (P2WSH `OP_0 <32>` or P2TR `OP_1 <32>`): 8 value + 1 len + 34 = 43 vB.
+/// P2PKH is 34, P2SH 32, P2WPKH 31 — all smaller. The registration gate
+/// (`estimate_fee_share`) prices every output at this bound because, at
+/// INPUT_REG time, the coordinator does not yet know which output scripts
+/// will register, and `build_coinjoin_psbt` now prices each output from its
+/// ACTUAL (≤ 43 vB) script. Pricing the gate below 43 would let a UTXO funded
+/// for light outputs pass registration, then fail the build-time
+/// InsufficientFunds check once a heavier output is registered — reopening the
+/// H1 round-wedge + mass-wrongful-ban window along the output dimension (N-1).
+pub const MAX_STANDARD_OUTPUT_VBYTES: u64 = 43;
+
 /// Exact output vbytes for an ARBITRARY scriptPubKey.
 ///
 /// A transaction output carries no witness, so its vbytes equal its serialized
@@ -550,6 +565,64 @@ mod tests {
             12 * fee_rate,
             "a heavier (P2TR, +12 vB) registered output must be priced from its real \
              script, not the assumed output_script_type",
+        );
+    }
+
+    /// N-1 regression (H1 reopened via the output dimension): a UTXO funded at exactly
+    /// the registration gate (`estimate_fee_share` at min_participants) MUST clear the
+    /// heaviest build `build_coinjoin_psbt` can produce — all outputs the max-standard
+    /// 43 vB (P2TR/P2WSH). If the gate underprices outputs, such a UTXO passes
+    /// registration but fails the build-time InsufficientFunds check, wedging the round
+    /// and wrongly banning every registered input as a non-signer.
+    ///
+    /// Varies the output script type (the gap the previous H1 tests missed): inputs
+    /// P2WPKH (lightest), but both denomination AND change outputs P2TR (heaviest).
+    #[test]
+    fn registration_gate_covers_build_with_heaviest_outputs() {
+        use crate::bitcoin::fee::estimate_fee_share;
+        use crate::config::BipConfig;
+
+        let min_participants = 3u32;
+        let fee_rate = 2u64;
+        let denomination = 1_000_000u64;
+        // Defaults-style: P2WPKH-only allowed, advertises P2WPKH outputs.
+        let bip = BipConfig {
+            allow_p2wpkh: true,
+            allow_p2tr: false,
+            allow_p2sh_p2wpkh: false,
+            output_script_type: ScriptType::P2wpkh,
+        };
+        let gate_share = estimate_fee_share(&bip, min_participants, fee_rate);
+
+        // Each input funded at exactly the gate bar: denomination + gate_share.
+        let n = min_participants as usize;
+        let inputs: Vec<ParticipantInput> = (0..n)
+            .map(|i| ParticipantInput {
+                outpoint: dummy_outpoint(i as u8),
+                value_sats: denomination + gate_share,
+                script_pubkey: p2wpkh_script(i as u8),
+                change_address: p2tr_script((i + 100) as u8), // heaviest change
+                script_type: ScriptType::P2wpkh,
+            })
+            .collect();
+        // Heaviest denomination outputs (P2TR) — registrable despite the P2WPKH
+        // advertisement, since the coordinator does not enforce output type.
+        let outputs: Vec<ParticipantOutput> = (0..n)
+            .map(|i| ParticipantOutput { script_pubkey: p2tr_script((i + 200) as u8) })
+            .collect();
+
+        // Must NOT fail InsufficientFunds: the gate bar covers the heaviest build.
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination, fee_rate)
+            .expect("a UTXO funded at the registration gate must clear the heaviest build");
+
+        // And the realized per-input fee_share must not exceed what the gate required.
+        let total_in: u64 = inputs.iter().map(|i| i.value_sats).sum();
+        let total_out: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
+        let build_fee_share = (total_in - total_out) / (n as u64);
+        assert!(
+            build_fee_share <= gate_share,
+            "build fee_share {build_fee_share} exceeded registration gate {gate_share} \
+             — H1 wedge window reopened via the output dimension",
         );
     }
 }
