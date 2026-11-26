@@ -10,8 +10,7 @@ description: >
 
   Composite source-of-truth for v1.6+: ci.yml, release.yml, and docker.yml
   all `uses: ./.github/actions/install-bitcoind` so the verification gate
-  does not drift between workflows. See `.planning/quick/260531-thw-*/`
-  for the extraction context (P0-5).
+  does not drift between workflows.
 
 runs:
   using: composite
