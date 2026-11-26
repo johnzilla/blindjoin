@@ -100,7 +100,13 @@ services:
       # cannot lose a ban that returned Ok() to the caller.
       - coordinator-data:/app/data
     ports:
-      - "8080:8080"
+      # Bind to loopback ONLY. In production the coordinator API is reached over
+      # its Tor onion service; this host mapping exists for local operator access
+      # and the container healthcheck. Publishing on 0.0.0.0 ("8080:8080") would
+      # expose the clearnet HTTP API on every host interface — a deanonymization
+      # and abuse surface for a privacy tool. Operators who need remote access
+      # should front it with their own authenticated reverse proxy, not this map.
+      - "127.0.0.1:8080:8080"
     depends_on:
       bitcoind:
         condition: service_healthy
