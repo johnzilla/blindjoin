@@ -54,7 +54,10 @@ pub async fn get_info(State(state): State<AppState>) -> Json<InfoResponse> {
         .map(hex::encode);
 
     Json(InfoResponse {
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        // Wire-protocol version (shared::protocol::WIRE_VERSION), NOT the crate
+        // build version: clients gate compat on this and it must match the PKARR
+        // packet `v`. The build version appears in logs, not on the wire.
+        version: shared::protocol::WIRE_VERSION.to_string(),
         network: state.config.network.bitcoin_network.clone(),
         denomination_sats: state.config.coordinator.denomination_sats,
         min_participants: state.config.coordinator.min_participants,

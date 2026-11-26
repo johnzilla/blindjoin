@@ -434,6 +434,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let keypair = pkarr_keypair.clone();
         let denom = cfg.coordinator.denomination_sats;
         let min_p = cfg.coordinator.min_participants;
+        let network = cfg.network.bitcoin_network.clone();
         // Phase 16-03: derive PKARR advertisement args from cfg.bip per D-40 + D-41.
         // `supported_strs` owns the strings; `supported_refs` borrows them for
         // build_coordinator_packet's `&[&str]` arg. Map ScriptType -> wire-form
@@ -455,7 +456,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
             shared::bip322::ScriptType::P2shP2wpkh => "p2sh-p2wpkh",
         };
         if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
-            &keypair, &addr, denom, min_p, "idle",
+            &keypair, &addr, &network, denom, min_p, "idle",
             &supported_refs, output_st,
         ) {
             tokio::spawn(async move {
@@ -475,6 +476,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
         let addr = public_addr.clone();   // resolved address (onion or clearnet)
         let denom = cfg.coordinator.denomination_sats;
         let min_p = cfg.coordinator.min_participants;
+        let network = cfg.network.bitcoin_network.clone();
         let interval_secs = cfg.discovery.heartbeat_interval_secs;
 
         // Phase 16-03: derive supported / output_script_type ONCE at heartbeat
@@ -512,7 +514,7 @@ pub async fn run(cfg: CoordinatorConfig) -> anyhow::Result<()> {
                     round.phase.as_str().to_string()
                 };
                 if let Ok(packet) = discovery::pkarr_pub::build_coordinator_packet(
-                    &keypair, &addr, denom, min_p, &status,
+                    &keypair, &addr, &network, denom, min_p, &status,
                     &supported_refs, output_st,
                 ) {
                     if let Err(e) = p.publish_record(packet).await {
