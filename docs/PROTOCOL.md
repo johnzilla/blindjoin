@@ -187,10 +187,110 @@ and circuits.
 
 #### Phase: Signing
 
-**[TODO]** Specify PSBT construction order (input ordering, output ordering),
-fee allocation per participant, signing-message canonicalization, and the
-participant's `/round/sign` submission flow including session-token
-verification.
+Once every registered participant has registered an output, the coordinator
+transitions `OutputReg → Signing` and assembles the canonical CoinJoin
+transaction. The transaction is deterministic: given the same registered inputs
+and outputs it is byte-identical on every build.
+
+**Canonical transaction construction (NORMATIVE).** The reference builder is
+[`build_coinjoin_psbt`](../coordinator/src/bitcoin/tx.rs). All three build sites —
+the `GET /round/tx` display path, the per-submission signature verification, and
+the final broadcast assembly — MUST produce a byte-identical transaction, or a
+participant signs a different sighash than the one broadcast and silently wedges
+the round. The construction rules are:
+
+- **Version / locktime.** `nVersion` MUST be `2` and `nLockTime` MUST be `0`.
+- **Input ordering.** Inputs MUST be sorted in ascending `OutPoint` order (by
+  `txid`, then `vout`) — *not* registration order. This makes the ordering
+  independent of participant registration timing and of hash-map iteration order.
+- **Input sequence.** Every input MUST set `nSequence = 0xFFFFFFFF`
+  (`Sequence::MAX`), which does **not** signal BIP-125 replaceability. Opt-in RBF
+  MUST NOT be used: the protocol performs a single broadcast with no fee-bump
+  path, and a replaceable input would let a participant who has already signed
+  replace the CoinJoin in the mempool with a higher-fee spend of their own input
+  *after* the round has returned to `Idle` — evicting the whole round for the cost
+  of one fee, with no blame attribution possible. Because `nLockTime` is zero,
+  `Sequence::MAX` forfeits no locktime behaviour.
+- **Outputs.** One equal-value denomination output per registered output (value =
+  the round's fixed `denomination_sats`), followed by per-participant change
+  outputs in the same canonical input order. A change output is emitted only if
+  its value is at least the dust threshold (294 sats under the reference relay
+  policy); change below the threshold is folded into the fee and no output is
+  emitted. The coordinator does not enforce the script type of registered
+  outputs; each output is priced and placed from its actual scriptPubKey.
+- **Fee allocation.** The estimated virtual size is `10 (fixed overhead) + Σ
+  per-input vbytes + Σ per-output vbytes`, where per-input vbytes are selected by
+  the coordinator-derived input script type and per-output vbytes are taken from
+  each output's actual scriptPubKey (denomination and change alike; change is
+  upper-bounded by assuming every participant produces one). `total_fee =
+  estimated_vsize × fee_rate_sat_per_vbyte`, and each participant bears
+  `fee_share = total_fee / N` (integer division; the sub-satoshi remainder is
+  absorbed into the realized fee). Each participant's change is `input_value −
+  denomination_sats − fee_share`; an input that cannot cover `denomination_sats +
+  fee_share` fails assembly. The input script type used for weighting is
+  coordinator-derived from the on-chain scriptPubKey at input validation and is
+  never taken from a client-supplied field.
+
+**Transaction retrieval.** A participant retrieves the transaction to sign with
+`GET /round/tx`, which returns a [`RoundTxResponse`](../shared/src/protocol.rs)
+`{ round_id, psbt, fee_total_sats, fee_per_participant_sats }` while the round is
+in `Signing` (any other phase returns `409 WRONG_PHASE`). Clients MUST verify that
+`round_id` matches the round they registered in before signing. The `psbt` field
+is authoritative: clients SHOULD verify the transaction they are about to sign —
+the presence and value of their own output and change, the input set, and the
+total fee — by inspecting the PSBT directly, rather than trusting the advisory
+`fee_total_sats` / `fee_per_participant_sats` summary fields (an output-pessimistic
+upper-bound estimate).
+
+**Signature submission.** A participant signs its input and POSTs `/round/sign`
+with a [`SignRequest`](../shared/src/protocol.rs) `{ round_id, utxo_outpoint
+("txid:vout"), partial_signature, session_token }`, where `partial_signature` is
+base64 of the consensus-serialized witness for that input and `session_token` is
+the 32-byte token returned at input registration. Before recording the signature
+the coordinator MUST, in order:
+
+1. Confirm the round is in `Signing` (re-checked under the write lock).
+2. Verify the session token. The token is `HMAC-SHA-256(key = round_secret,
+   data = txid ‖ vout_le32)`, compared in constant time. This authorizes the
+   submission against a specific `(round, UTXO)` pair without re-correlating it to
+   the registration connection.
+3. Confirm the outpoint is a registered input of the round.
+4. Reject a second submission for an input that already has a recorded signature.
+   Without this, a participant could overwrite a valid signature with malformed
+   bytes and force a blame round.
+5. Cryptographically verify the witness against the canonical transaction's
+   sighash for that input, and reject — **without recording** — any signature that
+   does not verify.
+
+Rule 5 is load-bearing. The signature is verified at submission against the *same*
+transaction that will be broadcast, so a malformed or invalid signature is refused
+at the door and the sender remains unsigned (and therefore a bannable non-signer
+at the signing deadline). Verifying only in aggregate at broadcast would let a
+single participant submit garbage, have every honest participant "sign", and
+collapse the round with blame attributable to no one.
+
+**Per-script signing rules (NORMATIVE).** The reference verifier is
+[`sig_verify.rs`](../coordinator/src/bitcoin/sig_verify.rs). All ECDSA inputs MUST
+use `SIGHASH_ALL`; `SIGHASH_SINGLE`, `SIGHASH_NONE`, and any `ANYONECANPAY`
+variant MUST be rejected, as they would let a participant disclaim commitment to
+the other outputs of the shared transaction.
+
+| Input type | Sighash | Witness stack | Coordinator checks |
+|---|---|---|---|
+| P2WPKH | BIP-143 over the input's scriptPubKey, `SIGHASH_ALL` | `[DER-sig‖0x01, compressed pubkey]` | pubkey hashes to the input's witness program |
+| P2SH-P2WPKH | BIP-143 over the unwrapped P2WPKH redeem script, `SIGHASH_ALL` | `[DER-sig‖0x01, compressed pubkey]` | the input's P2SH script commits to the redeem script; the coordinator reconstructs the `scriptSig` redeem push deterministically from the pubkey |
+| P2TR (key path) | BIP-341 over all prevouts (`SIGHASH_DEFAULT` for a 64-byte signature; a 65-byte signature's explicit type byte is accepted only if `SIGHASH_ALL`) | `[schnorr sig]` | the signature verifies against the input's x-only output key |
+
+**Completion and the hand-off to Broadcast.** When the final submission completes
+the signature set, the coordinator assembles the final transaction (pure
+computation, no network I/O) while holding the round lock and, as the last action
+under that lock, transitions `Signing → Broadcast` *before* any broadcast RPC.
+This ordering is a race-safety invariant: once the round is in `Broadcast` the
+signing-deadline monitor no longer watches it, so the off-lock broadcast can never
+race a signing-timeout blame. Any failure before the transition leaves the round
+in `Signing`, so the signing deadline still governs a failed assembly. The
+broadcast itself runs off the lock in a detached task (see Phase: Broadcast) so it
+completes even if the submitting client's connection drops.
 
 #### Phase: Broadcast
 
@@ -246,8 +346,81 @@ crashed or hung broadcast cannot wedge the coordinator.
 
 #### Phase: Blame
 
-**[TODO]** Specify the non-signer detection, blame outcome enumeration
-(`FullAbort`, `RestartWithout`), and the ban-list persistence schema.
+`Blame` is the coordinator's response to a round that cannot complete. It is
+entered from three edges, is never driven by a client request (there is no blame
+endpoint), and always ends by returning the round to `Idle` — which drops and
+zeroes all sensitive round state per [Memory hygiene](#memory-hygiene) — after
+which the phase monitor re-arms a fresh round (unless a backoff is armed; see
+below). Participants observe a blame only indirectly: `GET /info` reports the
+phase returning to `Idle` under a new `round_id`.
+
+**Entry edges.**
+
+1. **Output-registration timeout with missing outputs** (`OutputReg → Blame`). If
+   fewer outputs than inputs have been registered when the output-registration
+   deadline passes, at least one participant did not register an output. Outputs
+   are unlinkable by design (a valid blind signature carries no link to the input
+   that obtained it), so the coordinator CANNOT identify which participant
+   defaulted and MUST NOT ban any UTXO for a missing output. It detects the gap in
+   aggregate only, abandons the round, and restarts. Accepting non-attribution
+   here, rather than breaking unlinkability to assign blame, is a deliberate
+   design choice.
+2. **Signing timeout with non-signers** (`Signing → Blame`). At the signing
+   deadline, every registered input without a recorded, verified partial signature
+   is a non-signer. Non-signers *are* attributable — the defaulting input is known
+   — so each is banned. Because an invalid signature is rejected without being
+   recorded (Phase: Signing, rule 5), a participant who submitted garbage is
+   indistinguishable from one who never submitted and is banned identically.
+3. **Broadcast failure** (`Broadcast → Blame`). Specified under Phase: Broadcast.
+   The coordinator re-validates each registered input against the mempool-aware
+   UTXO set and bans any input that has been spent since registration (the
+   double-spend griefing case); a failure that attributes no spent input bans no
+   one.
+
+**Blame outcomes.** The signing-timeout path yields one of:
+
+- `RestartWithout { banned_utxos }` — one or more non-signers were found and
+  banned. The round returns to `Idle` and a fresh round is armed on the next
+  monitor tick; the banned UTXOs fail the ban-list check at input registration for
+  the ban duration, so they cannot rejoin.
+- `FullAbort` — returned when either (a) the signing timeout fired but no input
+  was actually missing (a restart would gain nothing), or (b) the consecutive-blame
+  cap has been reached (see below). On `FullAbort` the coordinator pauses the round
+  re-armer for `blame_full_abort_backoff_secs` (when configured) instead of
+  restarting immediately.
+
+**Consecutive-blame cap (anti-churn).** The coordinator tracks a consecutive-blame
+counter to distinguish a griefer it can exclude from a condition that will recur
+every round:
+
+- A *productive* blame — one that banned a non-signer or attributed a spent input
+  — resets the counter to zero and the coordinator restarts immediately, because
+  the responsible UTXO is now excluded and cannot recur.
+- An *unproductive* blame — one that attributed no one (e.g. a signing timeout
+  with all inputs present but assembly still failing, or a broadcast rejected for a
+  fee rate too low for current mempool conditions) — increments the counter. On
+  reaching `CONSECUTIVE_BLAME_CAP` (2 in the reference implementation) the
+  coordinator arms the `FullAbort` backoff and resets the counter, so a recurring
+  wedge backs the coordinator off rather than burning fresh rounds indefinitely.
+
+**Ban-list schema (NORMATIVE).** Bans are keyed by UTXO outpoint, but the raw
+outpoint is NEVER stored; the key is `hex(SHA-256(utxo_outpoint_string))`, so a
+leaked ban file does not disclose which coins were banned.
+
+- *In memory*: a map from the hashed key to `{ banned_at, expires_at }` (Unix
+  seconds). A UTXO is banned iff an entry exists and the current time is strictly
+  before `expires_at`. The ban list is consulted on every input registration.
+- *On disk*: an append-only, newline-delimited JSON file (one `BanRecord {
+  utxo_hash, banned_at, expires_at }` per line). Each append is followed by an
+  `fsync` so a ban survives a power loss or OOM kill on the coordinator host. On
+  startup the coordinator loads all unexpired entries (expired records and
+  unparseable lines are skipped) and then compacts the file atomically
+  (write-to-temp, `fsync`, rename) to physically drop expired records, bounding its
+  growth. The ban duration is `blame_ban_duration_secs` from configuration.
+
+Both the signing-timeout and broadcast-failure paths write bans through this same
+store and share the consecutive-blame counter, so the two agree on when the
+re-armer should back off.
 
 ### Memory hygiene
 
