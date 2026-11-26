@@ -55,6 +55,24 @@ pub const fn script_output_vbytes(st: ScriptType) -> u64 {
     }
 }
 
+/// Exact output vbytes for an ARBITRARY scriptPubKey.
+///
+/// A transaction output carries no witness, so its vbytes equal its serialized
+/// size: 8 (value) + CompactSize(script_pubkey.len()) + script_pubkey.len().
+/// Unlike [`script_output_vbytes`], this prices any script shape — including types
+/// outside the [`ScriptType`] enum (P2PKH, P2WSH, bare) that a client bypassing
+/// PKARR discovery (the `--coordinator-url` path) could register — so the fee
+/// estimate is taken from the real registered scripts rather than a single assumed
+/// type. Agrees with `script_output_vbytes` on the three enum types (22→31, 34→43,
+/// 23→32).
+pub fn output_vbytes_for_script(spk: &bitcoin::Script) -> u64 {
+    let len = spk.len() as u64;
+    // CompactSize encoding width; output scripts are always < 0xFD bytes in practice,
+    // but encode the general rule so an unusual script is still counted exactly.
+    let compact = if len < 0xFD { 1 } else if len <= 0xFFFF { 3 } else { 5 };
+    8 + compact + len
+}
+
 #[derive(Debug, Clone)]
 pub struct ParticipantInput {
     pub outpoint: OutPoint,
@@ -102,7 +120,6 @@ pub fn build_coinjoin_psbt(
     outputs: &[ParticipantOutput],
     denomination_sats: u64,
     fee_rate_sat_per_vbyte: u64,
-    output_script_type: ScriptType,
 ) -> Result<Psbt, TxError> {
     if inputs.is_empty() {
         return Err(TxError::NoParticipants);
@@ -122,23 +139,39 @@ pub fn build_coinjoin_psbt(
     let mut ordered: Vec<&ParticipantInput> = inputs.iter().collect();
     ordered.sort_by_key(|i| i.outpoint);
 
-    // Estimate size assuming all participants have change outputs (upper bound).
+    // Estimate size by pricing EVERY input and output from its actual script, not a
+    // single assumed type (FEE-02 per-input weights; FEE-04 per-output weights).
     //
-    // Phase 20 Task 2 (FEE-02): per-input weight sum reads the coordinator-derived
-    // ScriptType from each ParticipantInput; output weight uses the operator-
-    // configured `output_script_type` (Phase 16 D-37: single output type per
-    // round). Single canonical source of truth — both `get_tx` (display) and
-    // `assemble_and_broadcast` (broadcast) MUST call this fn with the same
-    // `output_script_type` value sourced from `config.bip.output_script_type`
-    // (WR-04: byte-identical PSBTs).
-    let num_change_outputs = n;
+    // Per-input weight reads the coordinator-derived ScriptType from each
+    // ParticipantInput (never client-declared — CRIT-01). Each denomination output is
+    // priced from its real registered scriptPubKey and each (upper-bound) change
+    // output from the participant's real change scriptPubKey. This keeps the estimate
+    // accurate when a participant registers a heavier output than the round's
+    // advertised `output_script_type` — e.g. a P2TR/P2WSH output in a P2WPKH round via
+    // the `--coordinator-url` path. The previous uniform `output_script_type` pricing
+    // under-counted those extra bytes, driving the realized fee rate below the
+    // configured rate (down to a broadcast-failing sub-min-relay rate in the worst
+    // case with many heavy outputs at fee_rate = 1).
+    //
+    // WR-04 byte-identity across the `get_tx` (display) and `assemble_and_broadcast`
+    // (broadcast) build paths now follows from both passing the SAME registered inputs
+    // and outputs — there is no shared `output_script_type` argument left to keep in
+    // sync between the two call sites.
     let total_input_vb: u64 = inputs.iter()
         .map(|inp| script_input_vbytes(inp.script_type))
         .sum();
-    let output_vb = script_output_vbytes(output_script_type);
+    let denomination_output_vb: u64 = outputs.iter()
+        .map(|out| output_vbytes_for_script(&out.script_pubkey))
+        .sum();
+    // Upper bound: assume every participant's change output materializes (one per
+    // input), each priced from the participant's real change scriptPubKey.
+    let change_output_vb: u64 = ordered.iter()
+        .map(|inp| output_vbytes_for_script(&inp.change_address))
+        .sum();
     let estimated_vsize = TX_OVERHEAD_VBYTES
         + total_input_vb
-        + (n + num_change_outputs) * output_vb;
+        + denomination_output_vb
+        + change_output_vb;
     let total_fee = estimated_vsize * fee_rate_sat_per_vbyte;
     // PRESERVE VERBATIM: integer floor — D-125 byte-equality assertion in
     // `fee_share_p2wpkh_only_matches_v14_baseline` depends on this. Do NOT
@@ -227,6 +260,13 @@ mod tests {
         ScriptBuf::from_bytes(bytes)
     }
 
+    fn p2tr_script(byte: u8) -> ScriptBuf {
+        // 34-byte P2TR: OP_1 <32-byte x-only key>
+        let mut bytes = vec![0x51, 0x20];
+        bytes.extend([byte; 32]);
+        ScriptBuf::from_bytes(bytes)
+    }
+
     fn make_inputs(n: usize, value_sats: u64) -> Vec<ParticipantInput> {
         make_inputs_typed(&vec![ScriptType::P2wpkh; n], value_sats)
     }
@@ -264,8 +304,8 @@ mod tests {
         reversed.reverse();
         let outputs = make_outputs(3);
 
-        let psbt_fwd = build_coinjoin_psbt(&forward, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
-        let psbt_rev = build_coinjoin_psbt(&reversed, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
+        let psbt_fwd = build_coinjoin_psbt(&forward, &outputs, denomination_sats, 2).unwrap();
+        let psbt_rev = build_coinjoin_psbt(&reversed, &outputs, denomination_sats, 2).unwrap();
 
         assert_eq!(
             psbt_fwd.serialize(), psbt_rev.serialize(),
@@ -284,7 +324,7 @@ mod tests {
         let denomination_sats = 1_000_000;
         let inputs = make_inputs(n, 1_100_000);
         let outputs = make_outputs(n);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2).unwrap();
         let denom_outputs: Vec<_> = psbt.unsigned_tx.output.iter()
             .filter(|o| o.value.to_sat() == denomination_sats)
             .collect();
@@ -295,7 +335,7 @@ mod tests {
     fn coinjoin_psbt_is_valid_psbt() {
         let inputs = make_inputs(3, 1_100_000);
         let outputs = make_outputs(3);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2).unwrap();
         // Serialize and deserialize — must succeed
         let serialized = psbt.serialize();
         let reparsed = Psbt::deserialize(&serialized).expect("PSBT must be valid");
@@ -312,7 +352,7 @@ mod tests {
         // Set input value = denomination + estimated_fee_share + 100 (dust)
         let inputs = make_inputs(n, denomination_sats + 500 + 100); // 100 is below dust
         let outputs = make_outputs(n);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2, ScriptType::P2wpkh).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, denomination_sats, 2).unwrap();
         // The test assertion: total output value < total input value (fee was paid)
         let total_in: u64 = inputs.iter().map(|i| i.value_sats).sum();
         let total_out: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
@@ -323,7 +363,7 @@ mod tests {
     fn coinjoin_psbt_insufficient_funds_error() {
         let inputs = make_inputs(3, 100); // way too small
         let outputs = make_outputs(3);
-        let result = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh);
+        let result = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2);
         assert!(matches!(result, Err(TxError::InsufficientFunds { .. })));
     }
 
@@ -331,7 +371,7 @@ mod tests {
     fn coinjoin_psbt_witness_utxo_set() {
         let inputs = make_inputs(3, 1_100_000);
         let outputs = make_outputs(3);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2).unwrap();
         for (i, psbt_input) in psbt.inputs.iter().enumerate() {
             assert!(psbt_input.witness_utxo.is_some(),
                 "Input {} must have witness_utxo set for SegWit signing", i);
@@ -401,7 +441,6 @@ mod tests {
         let outputs = make_outputs(n);
         let psbt = build_coinjoin_psbt(
             &inputs, &outputs, denomination_sats, 2,
-            ScriptType::P2wpkh,                   // output_script_type
         ).unwrap();
         // Derive fee_share from PSBT: total_in - total_out should equal 800 (total_fee)
         // and per-participant burden derives as 800/3 = 266.
@@ -426,7 +465,6 @@ mod tests {
         let outputs = make_outputs(n);
         let psbt = build_coinjoin_psbt(
             &inputs, &outputs, denomination_sats, 2,
-            ScriptType::P2wpkh,                   // single output type per round (D-37)
         ).unwrap();
         let total_in: u64 = inputs.iter().map(|i| i.value_sats).sum();
         let total_out: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
@@ -435,6 +473,48 @@ mod tests {
             fee_share.saturating_sub(266) >= 1,
             "Mixed-script fee_share must exceed P2WPKH-only baseline by >=1 sat \
              (got {fee_share}; would be 266 if per-script branch silently reverted)"
+        );
+    }
+
+    /// FEE-04 (the #3 fix): denomination outputs are priced from their ACTUAL
+    /// registered script, not the round's assumed `output_script_type`. A single P2TR
+    /// output (43 vB) in an otherwise-P2WPKH round (31 vB) must raise the collected fee
+    /// by exactly its 12 extra vbytes × fee_rate. Before this fix a client that
+    /// registered a heavier output than the advertised type underpaid, diluting the
+    /// realized fee rate below the configured rate.
+    #[test]
+    fn fee_prices_denomination_outputs_from_actual_script() {
+        let n = 2;
+        let denomination_sats = 1_000_000u64;
+        let fee_rate = 2u64;
+        // Both inputs P2WPKH with P2WPKH change — only the denomination output type
+        // varies between the two scenarios below, isolating output pricing.
+        let inputs = make_inputs(n, 1_100_000);
+
+        let all_p2wpkh = vec![
+            ParticipantOutput { script_pubkey: p2wpkh_script(200) },
+            ParticipantOutput { script_pubkey: p2wpkh_script(201) },
+        ];
+        let one_p2tr = vec![
+            ParticipantOutput { script_pubkey: p2wpkh_script(200) },
+            ParticipantOutput { script_pubkey: p2tr_script(201) },
+        ];
+
+        // Collected fee = total_in - total_out. Both scenarios yield an even total_fee
+        // (540 and 564 at fee_rate=2), so the fee_share floor absorbs no remainder and
+        // the collected fee equals total_fee exactly.
+        let collected_fee = |outs: &[ParticipantOutput]| -> u64 {
+            let psbt = build_coinjoin_psbt(inputs.as_slice(), outs, denomination_sats, fee_rate).unwrap();
+            let total_in: u64 = inputs.iter().map(|i| i.value_sats).sum();
+            let total_out: u64 = psbt.unsigned_tx.output.iter().map(|o| o.value.to_sat()).sum();
+            total_in - total_out
+        };
+
+        assert_eq!(
+            collected_fee(&one_p2tr) - collected_fee(&all_p2wpkh),
+            12 * fee_rate,
+            "a heavier (P2TR, +12 vB) registered output must be priced from its real \
+             script, not the assumed output_script_type",
         );
     }
 }
