@@ -6,6 +6,17 @@ use crate::bip322::ScriptType;
 // All structs silently drop unknown fields, allowing protocol evolution without breaking
 // older clients or coordinators.
 
+/// blindjoin wire-protocol version, advertised identically on the GET `/info`
+/// `version` field and the PKARR packet `v` field — a single source of truth so
+/// the two discovery surfaces cannot drift.
+///
+/// Distinct from the crate's build version (`CARGO_PKG_VERSION`): clients gate
+/// compatibility on THIS value (see the legacy-record detection in
+/// `client/src/discover.rs`, `record.version != "0.2.0"`), so it bumps only on a
+/// protocol wire-format change, never on an ordinary release. The crate version
+/// is surfaced through logs/tracing, not the wire.
+pub const WIRE_VERSION: &str = "0.2.0";
+
 /// GET /info response — coordinator status and round parameters.
 ///
 /// rsa_pubkey_hash: hex SHA-256(DER pubkey bytes) — client MUST verify
