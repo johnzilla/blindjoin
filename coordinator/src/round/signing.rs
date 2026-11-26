@@ -333,15 +333,15 @@ fn build_canonical_psbt(
         participant_outputs.push(ParticipantOutput { script_pubkey: script });
     }
 
-    // WR-04 invariant: `output_script_type` MUST come from the SAME source as the
-    // get_tx call site (`config.bip.output_script_type`) so the broadcast PSBT is
-    // byte-identical to the one clients signed against in the display path.
+    // WR-04 invariant: this broadcast PSBT must be byte-identical to the one clients
+    // signed against in the get_tx display path. Both paths feed the same registered
+    // inputs/outputs to build_coinjoin_psbt, which now prices fees from each actual
+    // registered script — so there is no output_script_type argument to keep in sync.
     build_coinjoin_psbt(
         &participant_inputs,
         &participant_outputs,
         config.coordinator.denomination_sats,
         config.coordinator.fee_rate_sat_per_vbyte,
-        config.bip.output_script_type,
     ).map_err(|e| ApiError {
         code: ErrorCode::BroadcastRejected,
         message: format!("PSBT construction failed: {e}"),

@@ -514,17 +514,16 @@ pub async fn get_tx(
         participant_outputs.push(ParticipantOutput { script_pubkey: script });
     }
 
-    // WR-04 invariant: `output_script_type` MUST come from the SAME source as
-    // the signing.rs::assemble_and_broadcast call site (state.config.bip
-    // .output_script_type / config.bip.output_script_type — same Arc<Coord-
-    // Config>), so the broadcast PSBT is byte-identical to the one clients
-    // signed against in this display path.
+    // WR-04 invariant: this display PSBT must be byte-identical to the one built at
+    // the signing.rs::assemble_and_broadcast broadcast call site. Both feed the same
+    // registered inputs/outputs to build_coinjoin_psbt, which prices fees from each
+    // actual registered script — so there is no output_script_type argument to keep
+    // in sync between the two call sites.
     let psbt = build_coinjoin_psbt(
         &participant_inputs,
         &participant_outputs,
         denomination_sats,
         fee_rate,
-        state.config.bip.output_script_type,
     ).map_err(|e| {
         api_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
             format!("PSBT build failed: {e}"), Some(&round_id_str))
