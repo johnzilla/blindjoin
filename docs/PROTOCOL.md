@@ -453,23 +453,115 @@ without coordinated upgrade.
 
 ## Security considerations
 
-**[TODO]** A full normative threat-model treatment is not yet written into this
-specification. In the interim, the residual-risk analysis that exists today — the
-adversary model, the Marvin-attack applicability analysis for the ephemeral
-per-round RSA key, and each accepted residual with its rationale — is maintained
-in [docs/AUDIT-CHARTER.md](AUDIT-CHARTER.md) and
-[`.cargo/audit.toml`](../.cargo/audit.toml).
+This section states blindjoin's security goals, the adversary classes the
+protocol is designed against, and how each attack class is addressed by the
+mechanisms specified above. It is the protocol-level threat model. The
+code-level mitigations (`file:symbol` references, the RSA zeroization drop-chain,
+the cross-shape rejection tests) and the full disposition of every accepted
+residual risk are maintained in the companion
+[docs/AUDIT-CHARTER.md](AUDIT-CHARTER.md); the `cargo audit` advisory
+dispositions are in [`.cargo/audit.toml`](../.cargo/audit.toml).
 
-The threat model to be specified normatively here covers:
+### Security goals
 
-- Adversary classes: malicious coordinator, malicious participant, sybil
-  participant, network observer, global passive adversary, chain analyst.
-- Attack classes: input/output correlation, sybil attacks on anonymity
-  set, coordinator-side timing sidechannels (including the
-  [Marvin Attack](https://rustsec.org/advisories/RUSTSEC-2023-0071)
-  applicability analysis given ephemeral per-round keys), Tor traffic
-  correlation, RBF-based fee-manipulation attacks.
-- Accepted residual risks and the rationale for accepting each.
+1. **Unlinkability (primary).** The coordinator MUST NOT be able to link a
+   participant's registered input to its registered output. This guarantee is
+   structural — it rests on the [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)
+   blind signature and per-phase Tor circuit isolation, not on coordinator policy
+   or good behaviour.
+2. **No custody.** The coordinator never holds participant funds. It assembles and
+   broadcasts a transaction that participants sign with their own keys; because
+   every input commits to the full output set under `SIGHASH_ALL`, the coordinator
+   cannot move coins to any address a participant did not register without
+   invalidating the signatures it has collected.
+3. **Bounded griefing.** A malicious participant can abort a round, but MUST NOT be
+   able to do so repeatedly at zero cost; disruption is attributed and penalized
+   wherever attribution does not break goal 1.
+
+### Adversary classes
+
+| Adversary | Capabilities assumed | Protocol stance |
+|---|---|---|
+| **Malicious coordinator** | Full control of the coordinator process: sees all wire traffic, chooses round parameters, may refuse service or selectively register inputs. | Cannot break unlinkability (goal 1) or steal funds (goal 2). Can deny service — see the trust-model residual below. |
+| **Malicious participant** | Registers real UTXOs with valid ownership proofs; may submit malformed data, refuse to sign, double-spend a registered input, or attempt to spoof a script type. | Confined by ownership proofs, verify-before-record, non-replaceable inputs, and the blame/ban machinery. |
+| **Sybil participant** | Controls many funded UTXOs; floods a round to shrink the effective anonymity set. | Bounded only economically (proof-of-UTXO-ownership + operator `min_participants`); see residual below. |
+| **Network observer (partial)** | Observes some links, possibly including both of a participant's phase connections. | Defeated for input↔output correlation by per-phase circuit isolation. |
+| **Global passive adversary** | Observes all Tor traffic. | Out of scope: Tor's own threat model governs; blindjoin inherits it. |
+| **Chain analyst** | Observes only the on-chain CoinJoin transaction and the DHT. | Sees equal-value outputs with no coordinator-held link to inputs; the residual signal is the round-shape fingerprint below. |
+
+### Attack classes and protocol response
+
+- **Input/output correlation (coordinator).** The coordinator issues an
+  [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) blind signature over a
+  blinded commitment at input registration and never sees the unblinded output
+  until it is presented on a *separate* Tor circuit at output registration. The
+  blind signature carries no link to the input that obtained it. This is the
+  mechanism behind goal 1.
+- **Input/output correlation (network).** The output-registration circuit MUST be
+  distinct from the input-registration circuit (NORMATIVE — see Phase: Output
+  Registration), so even an observer who sees both connections cannot correlate
+  them by guard node.
+- **Output substitution (coordinator).** `SIGHASH_ALL` on every input commits each
+  signer to the exact output set; the coordinator cannot add, drop, or re-point an
+  output after collecting signatures without invalidating them (goal 2).
+- **Ownership / script-type spoofing (participant).** Every registered input
+  carries a BIP-322 ownership proof, and the coordinator derives the script type
+  from the on-chain scriptPubKey — never from the client-declared field — rejecting
+  a mismatch before verification. See AUDIT-CHARTER §V1.4-CRIT-01.
+- **Round poisoning via bad signatures (participant).** Each partial signature is
+  verified against the canonical transaction's sighash at submission and rejected
+  without being recorded if invalid (Phase: Signing, rule 5), so a participant
+  cannot have every honest peer "sign" and then collapse the round with blame
+  attributable to no one.
+- **Post-broadcast RBF eviction (participant).** All inputs are non-replaceable
+  (`Sequence::MAX`; see Phase: Signing), so a signer cannot replace the broadcast
+  CoinJoin in the mempool with a higher-fee spend of their own input after the
+  round has returned to Idle.
+- **Double-spend griefing (participant).** A participant who spends a registered
+  input out from under the round causes a broadcast failure; the coordinator
+  re-validates inputs and bans the provably-spent one (Phase: Blame, edge 3).
+- **Repeated free aborts (participant).** Non-signers are banned for
+  `blame_ban_duration_secs`, and the consecutive-blame cap backs the coordinator
+  off a recurring wedge (Phase: Blame). Ban records are stored hashed, so the ban
+  list itself discloses no outpoints.
+- **Coordinator-side timing sidechannel ([Marvin Attack](https://rustsec.org/advisories/RUSTSEC-2023-0071)).**
+  The RSA signing key is a fresh per-round ephemeral (RSA-2048), destroyed on the
+  transition to Idle (see Memory hygiene), and the number of blind-sign operations
+  against it is bounded by `max_participants`. The Marvin Attack's preconditions —
+  a long-lived key and effectively unlimited chosen-ciphertext timing measurements
+  — therefore do not obtain. Full drop-chain and disposition: AUDIT-CHARTER §RSA
+  Secret Key Zeroization Window and §Residual Risks: cargo-audit Advisories.
+- **Sybil shrinking of the anonymity set.** Not cryptographically preventable
+  beyond proof-of-UTXO-ownership; mitigated operationally by a higher
+  `min_participants` floor, which raises the attacker's capital cost. Accepted
+  residual.
+
+### Accepted residual risks
+
+The protocol knowingly accepts the following, each documented with its full
+rationale and disposition in AUDIT-CHARTER §Residual Risks Accepted:
+
+- **Single-coordinator trust (availability).** DHT discovery makes coordinators
+  *replaceable*, not byzantine-fault-tolerant within a round: a malicious
+  coordinator can refuse to broadcast or selectively register inputs. Participant
+  funds are never at risk (goal 2); only liveness is, and the remedy is
+  re-discovery of another coordinator.
+- **Anonymity-set fingerprints.** Heterogeneous input script types, and
+  output script types that are not enforced server-side, leave a partial
+  round-shape signal for a chain analyst — accepted as a tradeoff for the larger
+  anonymity sets that heterogeneous rounds allow (AUDIT-CHARTER §V1.4-MIN-02 and
+  the output-script residual).
+- **Sybil dilution** bounded only by operator `min_participants` policy.
+- **PKARR replay window.** A stale discovery record may briefly resolve to a
+  former address; relies on PKARR versioning and an operator rotation grace period.
+- **Static fee estimation.** Acceptable on signet; mempool-aware / dynamic fees are
+  REQUIRED before any mainnet deployment.
+- **Upstream `cargo audit` advisories** in transitive Tor/DHT dependencies, none on
+  a blindjoin protocol path; tracked in [`.cargo/audit.toml`](../.cargo/audit.toml).
+
+Forward-looking items (dynamic fees for mainnet, differential
+cross-implementation test fixtures) are tracked as gaps in AUDIT-CHARTER §Residual
+Risks and in [`TODO.md`](../TODO.md).
 
 ## Rationale
 
