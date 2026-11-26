@@ -1,7 +1,4 @@
-use std::sync::Arc;
-use std::time::Duration;
 use std::collections::{HashMap, HashSet};
-use tokio::sync::RwLock;
 use bitcoin::OutPoint;
 use hmac::{Hmac, Mac, KeyInit};
 use sha2::Sha256;
@@ -108,29 +105,6 @@ pub fn install_round(state: &mut RoundState, material: RoundMaterial) -> Result<
 
     state.transition_to(Phase::InputReg)?;
     Ok(())
-}
-
-/// Spawn a phase timer that fires after `timeout`.
-/// If the round is still in `expected_phase` when the timer fires,
-/// calls `on_timeout` to evaluate quorum and perform the transition.
-///
-/// The returned future should be spawned via tokio::spawn. The JoinHandle
-/// can be aborted if the phase advances early (e.g., max_participants reached).
-///
-/// Per D-16: input_reg and output_reg timeouts are 60s, signing timeout is 30s.
-#[allow(dead_code)]
-pub async fn run_phase_timer(
-    round: Arc<RwLock<RoundState>>,
-    expected_phase: Phase,
-    timeout: Duration,
-    on_timeout: impl FnOnce(&mut RoundState) + Send + 'static,
-) {
-    tokio::time::sleep(timeout).await;
-    let mut guard = round.write().await;
-    if guard.phase == expected_phase {
-        on_timeout(&mut guard);
-    }
-    // If phase already advanced — no-op. Timer task exits cleanly.
 }
 
 /// Generate an HMAC-SHA256 session token for a given (round_secret, UTXO) pair.
@@ -268,59 +242,5 @@ mod tests {
 
         assert_ne!(first_hash, second_hash, "fresh RSA keypair per round (D-02)");
         assert_ne!(first_secret, second_secret, "fresh round_secret per round (D-05)");
-    }
-
-    #[tokio::test]
-    async fn phase_timer_fires_on_expected_phase() {
-        use crate::round::state::RoundState;
-
-        let state = Arc::new(RwLock::new(RoundState::new_idle()));
-        // Put state into InputReg
-        {
-            let mut guard = state.write().await;
-            guard.transition_to(Phase::InputReg).unwrap();
-        }
-
-        let state_clone = Arc::clone(&state);
-        run_phase_timer(
-            state_clone,
-            Phase::InputReg,
-            Duration::from_millis(10),
-            |round_state| {
-                // Simulate timeout: advance to OutputReg
-                round_state.transition_to(Phase::OutputReg).unwrap();
-            },
-        ).await;
-
-        let guard = state.read().await;
-        assert_eq!(guard.phase, Phase::OutputReg, "Timer should have advanced phase");
-    }
-
-    #[tokio::test]
-    async fn phase_timer_noop_when_phase_already_advanced() {
-        use crate::round::state::RoundState;
-
-        let state = Arc::new(RwLock::new(RoundState::new_idle()));
-        // Put state into OutputReg (already past InputReg)
-        {
-            let mut guard = state.write().await;
-            guard.transition_to(Phase::InputReg).unwrap();
-            guard.transition_to(Phase::OutputReg).unwrap();
-        }
-
-        let state_clone = Arc::clone(&state);
-        // Timer fires expecting InputReg, but we're already in OutputReg — should no-op
-        run_phase_timer(
-            state_clone,
-            Phase::InputReg,
-            Duration::from_millis(10),
-            |round_state| {
-                // This should NOT be called
-                round_state.transition_to(Phase::OutputReg).unwrap();
-            },
-        ).await;
-
-        let guard = state.read().await;
-        assert_eq!(guard.phase, Phase::OutputReg, "Phase should remain OutputReg (timer was no-op)");
     }
 }
