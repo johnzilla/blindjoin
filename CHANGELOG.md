@@ -13,6 +13,44 @@ threat-model treatment of v1.4 / v1.5 invariants see
 
 ## [Unreleased]
 
+Hardening, correctness, and documentation work since 1.8.1 — no milestone tag cut
+yet. Highlights:
+
+### Security
+
+- Opt every CoinJoin input out of RBF (`Sequence::MAX`), closing the
+  post-broadcast mempool-eviction grief where a signer could evict the round for
+  one fee after it returned to idle.
+- Bind the coordinator HTTP API to loopback by default, and add a weekly
+  scheduled `cargo audit` tripwire alongside the merge-gating one.
+- Clear 23 `cargo audit` advisories via surgical lockfile bumps.
+
+### Fixed
+
+- Price CoinJoin outputs, and the input-registration admission gate, from the
+  actual / worst-case scripts, so mixed-script rounds pay the correct on-chain fee
+  and an admitted input cannot fail assembly and wedge the round.
+- Discovery correctness: advertise the real wire version and Bitcoin network on
+  `GET /info` and the PKARR record; the client now consumes both and verifies
+  `round_id` on `GET /round/tx` before signing.
+
+### Removed
+
+- Remove the GSD planning tooling: the `.planning/` artifact tree and the GSD
+  scaffolding / skill-routing in `CLAUDE.md`.
+
+### Documentation
+
+- `docs/PROTOCOL.md` is now a content-complete normative specification — every
+  phase (input / output registration, Signing, Blame, Broadcast), the security
+  threat model, the PKARR discovery record format, the BIP-322 challenge string,
+  and the design rationale.
+- New `ARCHITECTURE.md` reviewer on-ramp with an invariants ledger (each invariant
+  → where it is enforced → the test that pins it), linked from the README.
+- Truth-up pass across the contributor-facing docs: README supply-chain claims,
+  `branch-protection.md`, the external audit-charter residuals, and `CLAUDE.md`
+  (dead skill routes removed, dependency table matched to the shipped code).
+
 ## [1.8.1] — 2026-08-03
 
 Security patch: move off the yanked `bip322 0.0.10` onto the patched `0.0.11`.
@@ -391,10 +429,10 @@ Closed the v1.5 unsigned-build supply-chain gap. Every release tarball and ghcr.
 
 12 of 14 v1 requirements shipped. SIGN-03 (PGP YubiKey path) deferred indefinitely 2026-06-02 (cosign+SLSA covers the threat model; PGP would be ongoing key-rotation cost for negligible solo-project benefit). REPRO-04 (reproducible-builds.org registry submission) descoped 2026-06-03.
 
-- **Base-image digest pinning (DRIFT-01/02/03):** `docker/digests.txt` is the canonical manifest for `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. `release.yml` + `docker.yml` thread the values into builds via the [`.github/actions/read-base-digests/`](.github/actions/read-base-digests/) composite action. [`digest-drift-check.yml`](.github/workflows/digest-drift-check.yml) runs on `workflow_dispatch`, exits non-zero on drift. `docker/digests.txt` is CODEOWNERS-gated.
+- **Base-image digest pinning (DRIFT-01/02/03):** `docker/digests.txt` is the canonical manifest for `debian:bookworm-slim` and `lukemathwalker/cargo-chef:latest-rust-1`. `release.yml` + `docker.yml` thread the values into builds via the `.github/actions/read-base-digests/` composite action. `digest-drift-check.yml` runs on `workflow_dispatch`, exits non-zero on drift. `docker/digests.txt` is CODEOWNERS-gated.
 - **Image attestations (ATTEST-01..04):** Every tagged ghcr.io push gets `cosign sign` (keyless OIDC), `actions/attest-build-provenance` (SLSA v1.0), `actions/attest-sbom` + `anchore/sbom-action` (SPDX SBOM via Syft). cosign-installer pinned at v3.10.1 / cosign 2.6.3. `sigstore-pin-check` CI job catches floating tags on the four sigstore/sbom actions.
 - **Release tarball signatures (SIGN-01/02):** Every `blindjoin-linux-amd64.tar.gz` ships a cosign `.bundle` companion and a SLSA `.sigstore` provenance bundle via the same `actions/attest-build-provenance` machinery.
-- **Reproducible builds (REPRO-01/02/03):** `rust-toolchain.toml` pins rustc 1.95.0; `Cargo.toml` adds `[profile.release] strip = "symbols"`; `release.yml` build job runs on the pinned `ubuntu-24.04` with deterministic `RUSTFLAGS` + `CARGO_INCREMENTAL=0` + `SOURCE_DATE_EPOCH` from the tagged commit + `cargo build --release --locked` + deterministic 5-flag `tar` piped through `gzip -n`. Recipe + per-tag expected sha256: [docs/REPRODUCIBLE-BUILD.md](docs/REPRODUCIBLE-BUILD.md). On-demand verifier: [`reproducible-verify.yml`](.github/workflows/reproducible-verify.yml).
+- **Reproducible builds (REPRO-01/02/03):** `rust-toolchain.toml` pins rustc 1.95.0; `Cargo.toml` adds `[profile.release] strip = "symbols"`; `release.yml` build job runs on the pinned `ubuntu-24.04` with deterministic `RUSTFLAGS` + `CARGO_INCREMENTAL=0` + `SOURCE_DATE_EPOCH` from the tagged commit + `cargo build --release --locked` + deterministic 5-flag `tar` piped through `gzip -n`. Recipe + per-tag expected sha256: `docs/REPRODUCIBLE-BUILD.md`. On-demand verifier: `reproducible-verify.yml`.
 - **SECURITY.md** rewritten with single-recipe verify commands for image and tarball signatures and a single-line pointer to the reproducibility recipe.
 
 **Theater strip after Phase 25 close** (commits `bf102ab` + `54e5ea5`, ~1,400 lines deleted): removed scaffolded auto-issue creation systems with two-title schemes + label-create + dedup (both digest-drift and reproducibility verifiers), removed monthly/daily cron schedules in favor of `workflow_dispatch:` only, collapsed multi-path verify recipes to single commands, removed the colon-delimited expected-sha256 lookup file in favor of inline env values, removed the reproducible-builds.org registry submission procedure, removed `rust-toolchain-pin-check` and the two `crit-01-grep-check` CI gates (the latter enforced presence of a comment rather than behavior), removed SECURITY.md disclosure-policy ceremony and strikethrough bookkeeping, stripped planning cross-references and auditor-pose comments throughout workflow files. Real cryptographic verification and supply-chain pinning intact.
