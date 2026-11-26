@@ -12,6 +12,54 @@ use config::ClientConfig;
 use http::CoordinatorClient;
 use wallet::ClientWallet;
 
+/// #15 interim: resolve the CoinJoin output/change derivation index for a
+/// descriptor wallet so addresses are not reused across rounds. A counter file
+/// (auto-advancing) takes precedence over an explicit `--address-index`; with
+/// neither, index 0 with a loud reuse warning. The planned fix is BIP-352 silent
+/// payments, which removes the need for an index entirely (issue #15).
+fn resolve_address_index(cfg: &ClientConfig) -> anyhow::Result<u32> {
+    if let Some(path) = cfg.address_counter_file.as_deref() {
+        return next_index_from_counter_file(path);
+    }
+    if let Some(i) = cfg.address_index {
+        return Ok(i);
+    }
+    tracing::warn!(
+        "neither --address-counter-file nor --address-index is set: this descriptor \
+         wallet will derive its CoinJoin output and change at index 0 every round, \
+         reusing addresses and linking your mixes on-chain. Set --address-counter-file \
+         to advance automatically, or --address-index to a fresh value per round. \
+         Interim measure; BIP-352 silent payments is the planned fix (issue #15)."
+    );
+    Ok(0)
+}
+
+/// Read the current index from `path` (0 if absent), then atomically persist
+/// index+1 so the next run gets a fresh index. Sequential indices are recoverable
+/// from the seed via the wallet gap limit; losing this file risks address reuse,
+/// never funds.
+fn next_index_from_counter_file(path: &std::path::Path) -> anyhow::Result<u32> {
+    use std::io::Write;
+    let current: u32 = match std::fs::read_to_string(path) {
+        Ok(s) => s.trim().parse().map_err(|e| {
+            anyhow::anyhow!("address counter file {} is not a u32: {e}", path.display())
+        })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(e) => return Err(anyhow::anyhow!("reading {}: {e}", path.display())),
+    };
+    let next = current
+        .checked_add(1)
+        .ok_or_else(|| anyhow::anyhow!("address index overflow at u32::MAX in {}", path.display()))?;
+    let tmp = path.with_extension("tmp");
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        write!(f, "{next}")?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(current)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -45,7 +93,11 @@ async fn main() -> anyhow::Result<()> {
         // --descriptor path: requires --utxo-address
         let utxo_address = cfg.utxo_address.as_deref()
             .ok_or_else(|| anyhow::anyhow!("--utxo-address is required when using --descriptor"))?;
+        // #15 interim: advance the output/change derivation index per round so a
+        // descriptor wallet reused across rounds does not repeat addresses.
+        let address_index = resolve_address_index(&cfg)?;
         ClientWallet::from_descriptor(descriptor, utxo, utxo_address, network, cfg.script_type)?
+            .with_address_index(address_index)
     } else {
         // WIF path (backward compat, default for testing). Per Phase 17 D-61
         // from_wif takes NO script_type parameter; the wallet's script_type is
