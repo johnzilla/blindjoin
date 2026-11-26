@@ -18,7 +18,6 @@ Key routing rules:
 - Save progress, checkpoint, resume → invoke checkpoint
 - Code quality, health check → invoke health
 
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **blindjoin**
@@ -36,9 +35,7 @@ This is infrastructure, not a product. MIT licensed. No fees. No company. No ter
 - **Scope**: Signet-first; mainnet is a config flag, not a code change
 - **Privacy**: No PII logging; round state zeroed after broadcast
 - **License**: MIT — public good, not a business
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
 ## Recommended Stack
@@ -147,42 +144,15 @@ This is infrastructure, not a product. MIT licensed. No fees. No company. No ter
 - [github.com/jgraef/arti-axum](https://github.com/jgraef/arti-axum) — arti-axum community crate [LOW-MEDIUM confidence; needs Sprint 0 validation]
 - [tokio.rs](https://tokio.rs/) — Tokio 1.51.x LTS until March 2027 [HIGH confidence]
 - [aarambhdevhub.medium.com — Rust Web Frameworks in 2026](https://aarambhdevhub.medium.com/rust-web-frameworks-in-2026-axum-vs-actix-web-vs-rocket-vs-warp-vs-salvo-which-one-should-you-2db3792c79a2) — axum 0.8.x recommended for 2026 [MEDIUM confidence]
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
 Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
 
-<!-- GSD:skills-start source:skills/ -->
 ## Project Skills
 
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
-<!-- GSD:skills-end -->
-
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
