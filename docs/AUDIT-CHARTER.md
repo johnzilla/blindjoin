@@ -212,6 +212,13 @@ had a non-None target) and that `state.inner.is_none()` after (so the
 Drop chain fired). This is the load-bearing AUDIT-03 assertion per the
 REQUIREMENTS.
 
+**Impact class (issue #14).** Recovering the key enables forging blind signatures —
+an integrity/liveness exposure (unauthorized token issuance), **not** deanonymization:
+blinding is performed client-side and the coordinator's key cannot link inputs to
+outputs. The per-round key and its zeroization therefore bound a forgery window, not
+a privacy one; see §5 for the scope distinction between zeroizing the key and
+zeroizing the round state.
+
 **Conclusion:** The Marvin Attack's preconditions (long-lived key + unlimited
 measurements) do not obtain in this codebase. Constant-time RSA decryption
 is delegated to the upstream `rsa` crate's potential future rewrite, which
@@ -317,6 +324,17 @@ The per-round RSA private key lives in the coordinator's memory for the
 duration of an active round and is structurally dropped (and
 cryptographically zeroized) at the end of the round. This section is the
 threat-model treatment of that window in its bounded form, post-AUDIT-03.
+
+**Scope — what zeroizing the key protects (issue #14).** Zeroizing the RSA *key*
+bounds an **integrity/liveness** exposure: a recovered key forges blind signatures.
+It is **not** a privacy control — blinding is client-side, and the key cannot link
+inputs to outputs, so its disclosure does not deanonymize participants. The
+**forward-privacy** control is the zeroization of the *round state* — the registered
+inputs/outputs, redeemed tokens, and blinding data cleared by `Drop for
+RoundStateInner` — which is what prevents reconstruction of input↔output links after
+a post-round coordinator compromise. Both run at the same
+`transition_to(Phase::Idle)` chokepoint and share the drop chain below; the earlier
+framing of key zeroization as a privacy mitigation was incorrect.
 
 **The lifetime claim.** `RoundSecretKey` (at
 `coordinator/src/blind/rsa.rs::RoundSecretKey`) wraps `BjSecretKey` —
@@ -460,7 +478,9 @@ configuration file's rationale comments are the operational record; the
 prose below is the threat-model treatment.
 
 - **RUSTSEC-2023-0071 — `rsa` crate Marvin Attack timing sidechannel.**
-  Mitigated by AUDIT-03 `RoundSecretKey` + `Option<RsaBlindSigner>`
+  Integrity/liveness exposure (key recovery enables blind-signature forgery), **not**
+  a privacy one — blinding is client-side and the key cannot link inputs to outputs
+  (issue #14). Mitigated by AUDIT-03 `RoundSecretKey` + `Option<RsaBlindSigner>`
   bounded lifetime (see [§5](#rsa-secret-key-zeroization-window) for the
   full chain). The Marvin Attack model's preconditions (long-lived key +
   unlimited measurements) do not obtain in this codebase: per-round

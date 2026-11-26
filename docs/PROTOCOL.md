@@ -546,10 +546,14 @@ dispositions are in [`.cargo/audit.toml`](../.cargo/audit.toml).
 ### Security goals
 
 1. **Unlinkability (primary).** The coordinator MUST NOT be able to link a
-   participant's registered input to its registered output. This guarantee is
-   structural — it rests on the [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html)
-   blind signature and per-phase Tor circuit isolation, not on coordinator policy
-   or good behaviour.
+   participant's registered input to its registered output. The intended basis is
+   the [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) blind signature plus
+   per-phase Tor circuit isolation. **Status: not met against a malicious
+   coordinator.** The client does not enforce blind-signing-key consistency, so an
+   equivocating coordinator can serve a distinct key per client and re-link input
+   to output (issue #10). Client change/output address reuse (issue #15) further
+   breaks unlinkability on-chain. Both are open; see
+   [Known gaps and open issues](#known-gaps-and-open-issues).
 2. **No custody.** The coordinator never holds participant funds. It assembles and
    broadcasts a transaction that participants sign with their own keys; because
    every input commits to the full output set under `SIGHASH_ALL`, the coordinator
@@ -563,7 +567,7 @@ dispositions are in [`.cargo/audit.toml`](../.cargo/audit.toml).
 
 | Adversary | Capabilities assumed | Protocol stance |
 |---|---|---|
-| **Malicious coordinator** | Full control of the coordinator process: sees all wire traffic, chooses round parameters, may refuse service or selectively register inputs. | Cannot break unlinkability (goal 1) or steal funds (goal 2). Can deny service — see the trust-model residual below. |
+| **Malicious coordinator** | Full control of the coordinator process: sees all wire traffic, chooses round parameters, may refuse service or selectively register inputs. | Cannot steal funds (goal 2). **Can currently break unlinkability (goal 1)** by equivocating on the per-client blind-signing key (issue #10, open). Can also deny service — see the trust-model residual below. |
 | **Malicious participant** | Registers real UTXOs with valid ownership proofs; may submit malformed data, refuse to sign, double-spend a registered input, or attempt to spoof a script type. | Confined by ownership proofs, verify-before-record, non-replaceable inputs, and the blame/ban machinery. |
 | **Sybil participant** | Controls many funded UTXOs; floods a round to shrink the effective anonymity set. | Bounded only economically (proof-of-UTXO-ownership + operator `min_participants`); see residual below. |
 | **Network observer (partial)** | Observes some links, possibly including both of a participant's phase connections. | Defeated for input↔output correlation by per-phase circuit isolation. |
@@ -576,8 +580,11 @@ dispositions are in [`.cargo/audit.toml`](../.cargo/audit.toml).
   [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474.html) blind signature over a
   blinded commitment at input registration and never sees the unblinded output
   until it is presented on a *separate* Tor circuit at output registration. The
-  blind signature carries no link to the input that obtained it. This is the
-  mechanism behind goal 1.
+  blind signature carries no link to the input that obtained it — **provided every
+  participant is signed under the same key.** The client does not currently verify
+  key consistency, so a coordinator that issues a distinct key per client can
+  re-link input to output (issue #10, open); closing that gap is a prerequisite for
+  goal 1, not a property the current code delivers.
 - **Input/output correlation (network).** The output-registration circuit MUST be
   distinct from the input-registration circuit (NORMATIVE — see Phase: Output
   Registration), so even an observer who sees both connections cannot correlate
@@ -605,17 +612,43 @@ dispositions are in [`.cargo/audit.toml`](../.cargo/audit.toml).
   `blame_ban_duration_secs`, and the consecutive-blame cap backs the coordinator
   off a recurring wedge (Phase: Blame). Ban records are stored hashed, so the ban
   list itself discloses no outpoints.
-- **Coordinator-side timing sidechannel ([Marvin Attack](https://rustsec.org/advisories/RUSTSEC-2023-0071)).**
-  The RSA signing key is a fresh per-round ephemeral (RSA-2048), destroyed on the
-  transition to Idle (see Memory hygiene), and the number of blind-sign operations
-  against it is bounded by `max_participants`. The Marvin Attack's preconditions —
-  a long-lived key and effectively unlimited chosen-ciphertext timing measurements
-  — therefore do not obtain. Full drop-chain and disposition: AUDIT-CHARTER §RSA
-  Secret Key Zeroization Window and §Residual Risks: cargo-audit Advisories.
+- **Coordinator signing-key recovery ([Marvin timing, RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071)).**
+  This bears on **integrity/liveness, not unlinkability.** Recovering the
+  coordinator's RSA private key lets an attacker forge blind signatures (mint
+  unauthorized tokens); it does **not** deanonymize participants — blinding is
+  client-side and the key cannot unlink inputs from outputs. The key is a fresh
+  per-round ephemeral (RSA-2048) and the number of blind-sign operations against it
+  is bounded by `max_participants`, so the attack's preconditions (a long-lived key,
+  effectively unlimited timing measurements) do not obtain. Disposition:
+  AUDIT-CHARTER §Residual Risks: cargo-audit Advisories.
 - **Sybil shrinking of the anonymity set.** Not cryptographically preventable
   beyond proof-of-UTXO-ownership; mitigated operationally by a higher
   `min_participants` floor, which raises the attacker's capital cost. Accepted
   residual.
+
+### Known gaps and open issues
+
+Distinct from the accepted residuals below, these are open, independently-reported
+defects/limitations that the claims above depend on or are bounded by. They are
+tracked on the issue tracker and are **not yet fixed**:
+
+- **Blind-signing-key consistency (issues #10, #11, #12).** The client does not
+  verify it received the same signing key and round parameters as other
+  participants, so a malicious coordinator can tag clients by key or `round_id` and
+  break unlinkability (goal 1). `round_id` is an opaque UUID rather than a hash of
+  the round parameters (#11), and clients cannot observe each other's ownership
+  proofs to detect equivocation (#12). These must be closed before goal 1 holds
+  against a malicious coordinator.
+- **Change/output address reuse (issue #15).** The reference client derives its
+  CoinJoin output and change addresses at a fixed keychain index, reusing them
+  across rounds (including a re-attempt after a failed round) and linking
+  participations on-chain. A privacy defect in the client, independent of the
+  coordinator.
+- **Toxic change / fixed denomination (issue #13).** The fixed-denomination +
+  unit-token construction produces change that links to the input and, when later
+  spent, links across transactions. Inherent to this construction; a
+  value-credential (homomorphic-amount) redesign is out of scope for this version
+  and is recorded as a known limitation, not a solved problem.
 
 ### Accepted residual risks
 
