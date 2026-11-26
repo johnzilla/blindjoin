@@ -507,7 +507,7 @@ prose below is the threat-model treatment.
   authenticated channels. It is not exposed to CoinJoin participants or any
   blindjoin protocol input: the coordinator and client present no SQL
   surface to untrusted peers. The fix (`libsqlite3-sys >=0.39.0`) requires
-  `rusqlite >=0.43`, but arti's `tor-dirmgr` caps `rusqlite` below 0.41, so no
+  `rusqlite >=0.41`, but arti's `tor-dirmgr` caps `rusqlite` below 0.41, so no
   current arti release pulls a patched `libsqlite3-sys` (the 0.41→0.48 upgrade,
   investigated 2026-11-26, only reaches `libsqlite3-sys 0.38.2` — still
   `<0.39`). **Disposition: ACCEPTED**; closure awaits upstream arti raising
