@@ -30,6 +30,12 @@ pub async fn verify_and_sign(
 ) -> Result<()> {
     // 1. Get the assembled PSBT
     let tx_resp = client.get_tx().await?;
+
+    // 1a. The PSBT MUST belong to the round we registered into (see
+    //     `verify_round_matches`): refuse a stale/swapped `/round/tx` response
+    //     before inspecting or signing it.
+    verify_round_matches(tx_resp.round_id, state.round_id)?;
+
     let psbt_bytes = B64.decode(&tx_resp.psbt)?;
     let mut psbt = Psbt::deserialize(&psbt_bytes)
         .map_err(|e| anyhow!("PSBT parse error: {e}"))?;
@@ -71,6 +77,22 @@ pub async fn verify_and_sign(
         session_token: session_token_b64,
     };
     client.post_sign(req).await?;
+    Ok(())
+}
+
+/// The `/round/tx` PSBT MUST belong to the round we registered into. The
+/// coordinator is untrusted: a stale or swapped response (a PSBT from a
+/// different/earlier round) would otherwise be validated against THIS session's
+/// economic parameters and signed. Our BIP-143/341 signature commits only to the
+/// PSBT's own inputs/outputs, so a mismatched `round_id` is a clear signal the
+/// coordinator served the wrong transaction — refuse before inspecting or signing.
+fn verify_round_matches(response_round_id: uuid::Uuid, expected_round_id: uuid::Uuid) -> Result<()> {
+    if response_round_id != expected_round_id {
+        return Err(anyhow!(
+            "coordinator returned a PSBT for round {response_round_id} but we \
+             registered into round {expected_round_id} — refusing to sign"
+        ));
+    }
     Ok(())
 }
 
@@ -175,6 +197,21 @@ mod tests {
     /// Distinct dummy script_pubkey keyed by a tag byte (so outputs don't collide).
     fn script(tag: u8) -> ScriptBuf {
         ScriptBuf::from_bytes(vec![tag; 22])
+    }
+
+    #[test]
+    fn round_id_match_passes() {
+        let id = uuid::Uuid::new_v4();
+        assert!(verify_round_matches(id, id).is_ok());
+    }
+
+    #[test]
+    fn round_id_mismatch_is_rejected() {
+        let registered = uuid::Uuid::new_v4();
+        let served = uuid::Uuid::new_v4();
+        assert_ne!(registered, served);
+        let err = verify_round_matches(served, registered).unwrap_err().to_string();
+        assert!(err.contains("refusing to sign"), "unexpected error: {err}");
     }
 
     fn outpoint(vout: u32) -> OutPoint {
