@@ -86,9 +86,15 @@ pub fn load_or_generate_keypair(path: &str) -> Result<Keypair> {
 /// RESEARCH §V1.4-MOD-02.
 ///
 /// References: D-39, D-40, D-41, D-42, D-43, D-55, B3 compact-name migration.
+/// `network` is the advertised Bitcoin network (`cfg.network.bitcoin_network`:
+/// `"signet"` | `"testnet4"` | `"mainnet"`) — NOT a hardcoded constant, so a
+/// coordinator booted on testnet4/mainnet advertises its real network on the DHT
+/// `n` field instead of mislabelling itself "signet".
+#[allow(clippy::too_many_arguments)] // each arg is a distinct advertised PKARR field; a params struct would just relocate the same fields
 pub fn build_coordinator_packet(
     keypair: &Keypair,
     coordinator_addr: &str,
+    network: &str,
     denomination_sats: u64,
     min_participants: u32,
     status: &str,
@@ -97,9 +103,9 @@ pub fn build_coordinator_packet(
 ) -> Result<SignedPacket> {
     let record = serde_json::json!({
         "type": "blindjoin-coordinator",
-        "v": "0.2.0",
+        "v": shared::protocol::WIRE_VERSION,
         "onion": coordinator_addr,
-        "n": "signet",
+        "n": network,
         "ds": denomination_sats,
         "mp": min_participants,
         "st": status,
@@ -163,6 +169,7 @@ mod tests {
     /// matching the production warn measurement).
     fn build_record_json(
         coordinator_addr: &str,
+        network: &str,
         denomination_sats: u64,
         min_participants: u32,
         status: &str,
@@ -171,9 +178,9 @@ mod tests {
     ) -> String {
         let record = serde_json::json!({
             "type": "blindjoin-coordinator",
-            "v": "0.2.0",
+            "v": shared::protocol::WIRE_VERSION,
             "onion": coordinator_addr,
-            "n": "signet",
+            "n": network,
             "ds": denomination_sats,
             "mp": min_participants,
             "st": status,
@@ -189,6 +196,7 @@ mod tests {
         let packet = build_coordinator_packet(
             &keypair,
             "127.0.0.1:8080",
+            "signet",
             1_000_000,
             3,
             "idle",
@@ -205,6 +213,7 @@ mod tests {
         let packet = build_coordinator_packet(
             &keypair,
             "127.0.0.1:8080",
+            "signet",
             1_000_000,
             3,
             "input_reg",
@@ -267,6 +276,7 @@ mod tests {
         assert_eq!(onion.len(), 62, "fixture .onion must be 62 bytes (Tor v3 length)");
         let json_str = build_record_json(
             onion,
+            "signet",
             1_000_000,
             3,
             "idle",
@@ -293,6 +303,7 @@ mod tests {
         assert_eq!(localhost.len(), 14, "dev-mode fixture must be 14 bytes");
         let json_str = build_record_json(
             localhost,
+            "signet",
             1_000_000,
             3,
             "idle",
@@ -318,6 +329,7 @@ mod tests {
         let packet = build_coordinator_packet(
             &keypair,
             "127.0.0.1:8080",
+            "signet",
             1_000_000,
             3,
             "idle",
@@ -327,6 +339,33 @@ mod tests {
         .unwrap();
         let v = extract_txt_json(&packet);
         assert_eq!(v["v"], serde_json::json!("0.2.0"));
+        // Couple the packet to the single source of truth: the `v` field and the
+        // /info `version` field both read shared::protocol::WIRE_VERSION, so a
+        // future bump cannot change one surface without the other.
+        assert_eq!(v["v"], serde_json::json!(shared::protocol::WIRE_VERSION));
+    }
+
+    /// The `n` (network) field is taken from the caller's argument, NOT hardcoded
+    /// to "signet": a coordinator booted on testnet4 or mainnet must advertise its
+    /// real network on the DHT so a client filtering by network isn't misled.
+    #[test]
+    fn coordinator_packet_network_reflects_argument() {
+        let keypair = Keypair::random();
+        for net in ["signet", "testnet4", "mainnet"] {
+            let packet = build_coordinator_packet(
+                &keypair,
+                "127.0.0.1:8080",
+                net,
+                1_000_000,
+                3,
+                "idle",
+                &["p2wpkh"],
+                "p2wpkh",
+            )
+            .unwrap();
+            let v = extract_txt_json(&packet);
+            assert_eq!(v["n"], serde_json::json!(net), "n must echo the network arg");
+        }
     }
 
     /// `sst` is a CSV of supported script types in alphabetical canonical order
@@ -338,6 +377,7 @@ mod tests {
         let packet = build_coordinator_packet(
             &keypair,
             "127.0.0.1:8080",
+            "signet",
             1_000_000,
             3,
             "idle",
@@ -360,6 +400,7 @@ mod tests {
         let packet = build_coordinator_packet(
             &keypair,
             "127.0.0.1:8080",
+            "signet",
             1_000_000,
             3,
             "idle",
@@ -381,6 +422,7 @@ mod tests {
         let packet = build_coordinator_packet(
             &keypair,
             "127.0.0.1:8080",
+            "signet",
             1_000_000,
             3,
             "idle",
@@ -422,6 +464,7 @@ mod tests {
         let onion = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion";
         let json_str = build_record_json(
             onion,
+            "signet",
             1_000_000,
             3,
             "idle",
