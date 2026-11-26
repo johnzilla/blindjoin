@@ -43,10 +43,7 @@
   anchor test + v1.3↔v1.4 backwards-compat CI matrix), P2WSH
   multisig BIP-322, Wasabi 2.0.3-style mixed output scripts, and
   AUDIT-03 `let _ =` closure (per charter §7 Residual Risks:
-  Protocol-level). Full per-phase summary in
-  `.planning/phases/19-multi-script-signing-finish/`,
-  `.planning/phases/20-mixed-round-fee-accuracy/`, and
-  `.planning/phases/21-audit-charter-zeroization-tightening/`.
+  Protocol-level). Full per-phase detail is in the git history (phases 19–21).
 
 - [x] **B-02: BIP-322 multi-script support — SHIPPED as v1.4 milestone.**
   Coordinator accepts P2WPKH + P2TR + P2SH-P2WPKH ownership proofs under an
@@ -75,7 +72,7 @@
   the CD-7 two-phase try-parse `OwnershipProof` encoder (byte-identical v1.3
   array-of-hex in the legacy branch); v1.3→v1.4 verified inline by Phase 18-03
   against a pinned v1.3 binary at SHA `05f21438`. Tagged `v1.4.0`. Full
-  per-phase summary in `.planning/milestones/v1.4-ROADMAP.md`.
+  per-phase detail is in the git history.
 
 ## Resolved 2026-05-28
 
@@ -143,9 +140,7 @@
 
   Code review found 1 critical + 5 warnings + 5 info; 5 fixed atomically, 1
   deferred to Phase 10 (WR-05 bare-sleep migration in 4 already-ignored tests).
-  See `.planning/milestones/v1.2-phases/08-public-endpoint-hardening/` for v1.2
-  archive; see `.planning/phases/09-ci-integration-test-reliability/` for v1.3
-  Phase 9 artifacts.
+  See the git history for the v1.2 Phase 8 and v1.3 Phase 9 detail.
 
 ## Resolved 2026-05-26
 
@@ -181,8 +176,7 @@
   for the closure breakdown. The single remaining item — Tor connection-cap
   runtime test (Phase 8 HUMAN-UAT #3) — remains deferred to v1.4+ pending a
   dedicated Tor-mode integration harness (arti + flooding client, ≥257 concurrent
-  `.onion` streams). Tracked in `.planning/REQUIREMENTS.md` "Future Requirements"
-  section.
+  `.onion` streams). Still deferred pending that harness.
 
 - [x] **CI hygiene: full RUSTSEC-2026-0097 closure + Node 24 opt-in (quick
   task 260526-d7m + follow-up).** Bumped all three transitively-resolved rand
@@ -222,10 +216,10 @@
   Rate limiter uses `GlobalKeyExtractor` (Tor-safe — `PeerIpKeyExtractor`
   would have been a critical bug). Integration test at
   `tests/integration/rate_limiting.rs` exercises both 429 and 408 end-to-end
-  when bitcoind is available. Code review (`.planning/phases/08-public-endpoint-hardening/08-REVIEW.md`)
-  found 2 BLOCKER + 6 WARNING items, all fixed in 7 atomic `fix(08): ...`
+  when bitcoind is available. Code review found 2 BLOCKER + 6 WARNING items,
+  all fixed in 7 atomic `fix(08): ...`
   commits before the phase landed. Phase verification 11/11 must-haves
-  verified statically; 3 runtime items deferred to `08-HUMAN-UAT.md` for CI
+  verified statically; 3 runtime items deferred to manual UAT for CI
   sign-off with bitcoind on PATH.
 
 - [x] **Coordinator now bootstraps a round in production.** v1.1 shipped with the
@@ -258,12 +252,10 @@
 - [x] **Verification template hardened.** Added the heuristic to
   `~/.claude/agents/gsd-verifier.md`: when test setup constructs a production
   type, the verifier must cite the production analog (function + file:line) or
-  mark the must-have as FAILED. Project-side record at
-  `.planning/workstreams/fix-verification-gap/VERIFICATION-HEURISTIC.md`.
+  mark the must-have as FAILED.
 
 - [x] **Backdoor inventory complete.** Audited ~150 files for test-only
-  helpers that construct production state types. 0 HIGH, 2 MEDIUM, 7 LOW. See
-  `.planning/workstreams/fix-verification-gap/BACKDOOR-INVENTORY.md`.
+  helpers that construct production state types. 0 HIGH, 2 MEDIUM, 7 LOW.
 
 ## Resolved 2026-05-25
 
@@ -296,8 +288,33 @@
   phase transitions themselves go through the validator now, which was the
   load-bearing gap; wiring the fixture through the register handlers is a further
   purity step, not a correctness fix.
+- [ ] **BIP322-GRIND — remove the ECDSA length-grinding workaround.** Delete
+  `sign_ecdsa_compat_bip322_length` in
+  [`shared/src/bip322/mod.rs`](shared/src/bip322/mod.rs) and replace its call
+  sites in `p2wpkh::sign` / `p2sh_p2wpkh::sign` with a plain `secp.sign_ecdsa`.
+  Unblocked by the `bip322 = "=0.0.11"` bump: 0.0.6–0.0.10 hardcoded a `71 | 72`
+  witness-length check (rejecting the ~5% of valid RFC 6979 sigs that are 70/73
+  bytes); 0.0.11 parses via `ecdsa::Signature::from_der` and accepts any valid DER
+  length, so the grind is now belt-and-suspenders. **Not pure cleanup:** dropping
+  it changes the bytes the *client* emits for ~5% of keys, which a stale,
+  DHT-discovered coordinator still on a yanked 0.0.6–0.0.10 would reject as
+  malformed (~5% intermittent `INVALID_PROOF` at registration). Weigh that; if
+  kept it's cheap insurance. Belongs in its own signer-behavior commit, verified
+  against the full per-script vector + roundtrip suite — not bundled into a
+  dependency bump. Scope: ~1 fn deletion + 2 call-site edits + `cargo test -p shared`.
 
-### Scoped features (see BACKLOG.md)
-- [ ] **B-03:** Dynamic fee estimation (mempool-aware, safety margin, RBF)
+### Scoped features
+- [ ] **Dynamic fee estimation (mempool-aware, safety margin, RBF)** — REQUIRED
+  before any mainnet flip (see [`docs/AUDIT-CHARTER.md`](docs/AUDIT-CHARTER.md)
+  § Residual Risks: Operational). The coordinator currently uses a static
+  config fee rate at [coordinator/src/bitcoin/tx.rs](coordinator/src/bitcoin/tx.rs)
+  and [coordinator/src/bitcoin/fee.rs](coordinator/src/bitcoin/fee.rs).
+  Under-paying stalls rounds; over-paying is a privacy signal (uniform fee rate
+  distinguishes CoinJoin txs from organic spends). Scope: `estimatesmartfee`
+  polling against a confirmation-depth target, a configurable safety margin, and
+  an RBF strategy (the open design question is who pays for the bump —
+  coordinator vs per-participant); optional CPFP fallback. Medium-to-large.
 
-These are deferred features with full scoping in [`.planning/BACKLOG.md`](.planning/BACKLOG.md). **B-01 shipped 2026-05-26** as Phase 8 of the v1.2 Production Readiness milestone (see Resolved above). **B-02 shipped 2026-05-31** as the v1.4 BIP-322 Multi-Script Support milestone (see Resolved above). B-03 remains a candidate for future milestones (pre-mainnet requirement).
+Prior scoped features **B-01** (public-endpoint hardening) and **B-02** (BIP-322
+multi-script support) shipped in v1.2 Phase 8 and v1.4/v1.5 respectively (see
+Resolved sections above and the git history).

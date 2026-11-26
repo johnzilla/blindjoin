@@ -2,7 +2,7 @@
 
 blindjoin is MIT-licensed open infrastructure — anyone is welcome to run a coordinator, build a client, or contribute upstream. There are no fees, no terms of service, no company.
 
-This document is narrow on purpose: it covers the local-dev prerequisites and the integration-test loop. For protocol-level changes, see the relevant phase plan under `.planning/phases/`. The project README at the repo root is the marketing surface and operator quickstart; this file is the local-dev manual.
+This document is narrow on purpose: it covers the local-dev prerequisites and the integration-test loop. For protocol-level changes, see [`docs/PROTOCOL.md`](docs/PROTOCOL.md) and the git history. The project README at the repo root is the marketing surface and operator quickstart; this file is the local-dev manual.
 
 ## Local prerequisites
 
@@ -86,7 +86,7 @@ git tag -s v1.X.0 -m "v1.X <Milestone name>
 Key accomplishments:
 - ...
 
-See .planning/MILESTONES.md for full details."
+See the git history for full details."
 
 git push origin v1.X.0
 ```

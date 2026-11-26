@@ -650,9 +650,8 @@ prose below is the threat-model treatment.
 Scope: active v1.4 / v1.5 identifiers that appear in the in-scope code,
 threat models, or tests. ~30 entries. Retired pre-v1.4 identifiers
 (e.g., the v1.3 REPAIR-01 forensics tags, the original v1.0 PRIV-*
-numbering, the Phase 8 STREAM-* IDs) live in the
-`.planning/milestones/v1.0-1.3-*` archives and are not cited in v1.5
-code.
+numbering, the Phase 8 STREAM-* IDs) survive only in the v1.0–1.3 git
+history and are not cited in v1.5 code.
 
 | Project Term | Plain Audit Language |
 |---|---|
@@ -689,5 +688,5 @@ code.
 | [PKARR](https://github.com/pubky/pkarr) | Public-Key Addressable Resource Records — Pubky's signed-DNS-packet discovery layer over Mainline DHT |
 
 Retired pre-v1.4 identifiers (e.g., REPAIR-01 v1.3 forensics tags, v1.0
-PRIV-* numbering, Phase 8 STREAM-* IDs) live in
-`.planning/milestones/v1.0-1.3-*` archives.
+PRIV-* numbering, Phase 8 STREAM-* IDs) survive only in the v1.0–1.3 git
+history.

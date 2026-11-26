@@ -39,7 +39,7 @@ to 32 bytes with no `0x00` pad; 73 when both pad). ~5% of signatures land outsid
 > workaround below is therefore now belt-and-suspenders: it produces 71/72-byte sigs
 > that **every** version accepts, so it's retained for interop with disposable
 > coordinators that may still run a yanked 0.0.6–0.0.10. Removal is tracked in
-> `.planning/BACKLOG.md` § BIP322-GRIND.
+> [`TODO.md`](../../TODO.md) § Tech debt (BIP322-GRIND).
 
 The codebase already knew this and worked around it with
 `shared::bip322::sign_ecdsa_compat_bip322_length`, which re-signs (deterministic
