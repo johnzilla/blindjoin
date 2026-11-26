@@ -11,11 +11,12 @@
 | **Implementation** | https://github.com/johnzilla/blindjoin |
 
 > **Status — Draft.** This document is the in-progress normative specification of
-> the blindjoin coordinator-client wire protocol. It is being developed as
-> Milestone 1 deliverable of the OpenSats grant for blindjoin. Sections marked
-> **[TODO]** are present to fix the structure of the document and will be filled
-> in during the milestone. Sections without **[TODO]** are normative as written.
-> Comments and review issues welcome via the project issue tracker.
+> the blindjoin coordinator-client wire protocol, developed alongside the OpenSats
+> grant for blindjoin. Sections without **[TODO]** are normative as written.
+> Sections marked **[TODO]** are not yet specified normatively in this document;
+> until they are, the [reference implementation](https://github.com/johnzilla/blindjoin)
+> is authoritative for the behavior they will describe. Comments and review issues
+> welcome via the project issue tracker.
 
 ---
 
@@ -279,21 +280,22 @@ without coordinated upgrade.
 
 ## Security considerations
 
-**[TODO — full content delivered in companion document `THREAT-MODEL.md`,
-also in Milestone 1.]**
+**[TODO]** A full normative threat-model treatment is not yet written into this
+specification. In the interim, the residual-risk analysis that exists today — the
+adversary model, the Marvin-attack applicability analysis for the ephemeral
+per-round RSA key, and each accepted residual with its rationale — is maintained
+in [docs/AUDIT-CHARTER.md](AUDIT-CHARTER.md) and
+[`.cargo/audit.toml`](../.cargo/audit.toml).
 
-Topics that THREAT-MODEL.md will address normatively, with this document
-deferring to that file:
+The threat model to be specified normatively here covers:
 
 - Adversary classes: malicious coordinator, malicious participant, sybil
   participant, network observer, global passive adversary, chain analyst.
 - Attack classes: input/output correlation, sybil attacks on anonymity
   set, coordinator-side timing sidechannels (including the
   [Marvin Attack](https://rustsec.org/advisories/RUSTSEC-2023-0071)
-  applicability analysis given ephemeral per-round keys; see
-  [`.cargo/audit.toml`](../.cargo/audit.toml) for the current
-  residual-risk rationale), Tor traffic correlation, RBF-based
-  fee-manipulation attacks.
+  applicability analysis given ephemeral per-round keys), Tor traffic
+  correlation, RBF-based fee-manipulation attacks.
 - Accepted residual risks and the rationale for accepting each.
 
 ## Rationale
