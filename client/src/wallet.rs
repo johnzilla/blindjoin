@@ -80,6 +80,11 @@ pub struct BdkClientWallet {
     #[allow(dead_code)] // consumed by 17-02 sign dispatcher + 17-03 discovery check
     script_type: ScriptType,
     inner: Wallet,
+    /// Derivation index for the CoinJoin output + change addresses (#15). Default
+    /// 0; advanced per round via [`with_address_index`](Self::with_address_index)
+    /// so a wallet reused across rounds does not present the same addresses twice.
+    /// Interim measure — see the method docs for the intended silent-payments fix.
+    address_index: u32,
     /// Test-only mirror of the generated/loaded external descriptor string, so
     /// unit tests can deterministically assert the BIP-84/86/49 prefix without
     /// driving bdk_wallet's internal descriptor formatter.
@@ -137,6 +142,7 @@ impl BdkClientWallet {
             // D-61: from_wif is P2WPKH-only — hardcode here so the cross-phase
             // invariant (tests/integration/full_round.rs) stays bit-exact.
             script_type: ScriptType::P2wpkh,
+            address_index: 0,
             inner,
             #[cfg(test)]
             external_desc_str: descriptor,
@@ -295,6 +301,7 @@ impl BdkClientWallet {
             wif_key: None,
             external_leaf_sk,
             script_type,
+            address_index: 0,
             inner,
             #[cfg(test)]
             external_desc_str: external_desc.to_string(),
@@ -448,6 +455,7 @@ impl BdkClientWallet {
             wif_key: None,
             external_leaf_sk,
             script_type,
+            address_index: 0,
             inner,
             #[cfg(test)]
             external_desc_str: external_desc,
@@ -504,18 +512,44 @@ impl BdkClientWallet {
         &self.external_desc_str
     }
 
-    /// Derive the receive address for the CoinJoin output (index 0).
+    /// Derive the receive address for the CoinJoin output at `self.address_index`
+    /// (External keychain).
     ///
-    /// Uses peek_address — no wallet state mutation needed for single-use CLI wallet.
+    /// `peek_address` does not mutate wallet state; the index is supplied by the
+    /// caller via [`with_address_index`](Self::with_address_index) and must be
+    /// advanced per round (see that method for why and for the intended fix).
     pub fn coinjoin_output_address(&self) -> bitcoin::Address {
-        self.inner.peek_address(KeychainKind::External, 0).address
+        self.inner.peek_address(KeychainKind::External, self.address_index).address
     }
 
-    /// Derive the change address (index 0, internal keychain).
+    /// Derive the change address at `self.address_index` (Internal keychain).
     ///
-    /// Uses peek_address — no wallet state mutation needed for single-use CLI wallet.
+    /// Same index discipline as [`coinjoin_output_address`](Self::coinjoin_output_address).
     pub fn change_address(&self) -> bitcoin::Address {
-        self.inner.peek_address(KeychainKind::Internal, 0).address
+        self.inner.peek_address(KeychainKind::Internal, self.address_index).address
+    }
+
+    /// Set the derivation index for the CoinJoin output and change addresses (#15).
+    ///
+    /// Callers advance this per round — from a persisted counter or an explicit
+    /// `--address-index` — so a wallet reused across rounds (or re-run after a
+    /// failed round) does not present the same output/change addresses twice.
+    /// Fixed-index reuse links a wallet's CoinJoin participations on-chain, which
+    /// defeats the point of the mix.
+    ///
+    /// **This is an interim measure.** The intended fix is deriving the self-spend
+    /// outputs as BIP-352 silent payments — reuse-free, seed-recoverable by
+    /// scanning, and free of the gap-limit exposure a sequential counter has. That
+    /// is blocked on an unsettled BIP-352 Rust crate ecosystem (no audited crate;
+    /// conflicts with the no-custom-crypto constraint) and on a protocol-flow
+    /// change to reveal the round's input set before output registration. Tracked
+    /// in issue #15.
+    ///
+    /// `generate` wallets do not need this (a fresh seed per invocation never
+    /// reuses), and `from_wif` wallets cannot use it (a single key has one address).
+    pub fn with_address_index(mut self, index: u32) -> Self {
+        self.address_index = index;
+        self
     }
 
     /// Sign a PSBT input corresponding to our UTXO.
@@ -1016,5 +1050,25 @@ mod tests {
         let wallet = BdkClientWallet::from_wif(wif, DUMMY_OUTPOINT, Network::Regtest)
             .expect("from_wif should succeed for a valid WIF");
         assert_eq!(wallet.script_type(), ScriptType::P2wpkh);
+    }
+
+    /// #15 regression: advancing the address index must produce fresh output and
+    /// change addresses. A fixed index (the pre-fix behavior) reuses them across
+    /// rounds, which links a wallet's CoinJoin participations on-chain. Default
+    /// index 0 and index 1 must differ, on both keychains.
+    #[test]
+    fn address_index_yields_fresh_output_and_change_addresses() {
+        let w = BdkClientWallet::generate(DUMMY_OUTPOINT, Network::Signet, ScriptType::P2wpkh, false)
+            .expect("generate");
+        let out0 = w.coinjoin_output_address();
+        let chg0 = w.change_address();
+        // output (External) and change (Internal) at the same index already differ.
+        assert_ne!(out0, chg0, "output and change must not collide at one index");
+
+        let w = w.with_address_index(1);
+        let out1 = w.coinjoin_output_address();
+        let chg1 = w.change_address();
+        assert_ne!(out0, out1, "advancing the index must give a fresh output address");
+        assert_ne!(chg0, chg1, "advancing the index must give a fresh change address");
     }
 }
