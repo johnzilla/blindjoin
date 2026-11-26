@@ -338,7 +338,7 @@ mod tests {
     fn coinjoin_psbt_inputs_are_non_replaceable() {
         let inputs = make_inputs(3, 1_100_000);
         let outputs = make_outputs(3);
-        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2, ScriptType::P2wpkh).unwrap();
+        let psbt = build_coinjoin_psbt(&inputs, &outputs, 1_000_000, 2).unwrap();
         for txin in &psbt.unsigned_tx.input {
             assert_eq!(
                 txin.sequence,
