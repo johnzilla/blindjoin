@@ -4,13 +4,15 @@
 # Each entry below must include a written rationale. Adding an ignore without
 # a documented reason is a code-review-blocking change.
 #
-# Reviewed: 2026-11-25 (post-v1.8.1 advisory-DB catch-up; the RustSec DB
-# surfaced a batch of 2026 advisories across the transitive tree. 23 were
+# Reviewed: 2026-11-26 (arti-upgrade investigation: confirmed neither residual
+# below is closeable by an arti version bump — both are pinned by arti's own
+# upstream deps, and no current arti release, 0.48 latest, moves either; see
+# each entry). Prior: 2026-11-25 (post-v1.8.1 advisory-DB catch-up; the RustSec
+# DB surfaced a batch of 2026 advisories across the transitive tree. 23 were
 # cleared by surgical lockfile bumps that leave rsa/blind-rsa-signatures
-# pinned; the two below are reachable only through arti-client 0.41 and are
-# accepted until the planned arti upgrade. Prior review: 2026-06-01 (v1.5
-# release-readiness re-review; bumped from 2026-05-31 Phase 21 AUDIT-02 set
-# as part of the v1.5 ship gate).
+# pinned; the two below are reachable only through arti-client 0.41). Prior:
+# 2026-06-01 (v1.5 release-readiness re-review; bumped from 2026-05-31 Phase 21
+# AUDIT-02 set as part of the v1.5 ship gate).
 
 [advisories]
 ignore = [
@@ -65,9 +67,11 @@ ignore = [
     # rust-bitcoin); neither uses crypto-bigint. The advisory concerns
     # constant-time bigint math inside Tor's TLS handshake, not any
     # blindjoin code path. Our own crypto-bigint 0.7.x edge is already
-    # bumped to >=0.7.6; only arti's 0.5.5 copy remains, and it cannot move
-    # without upgrading arti (0.41 -> 0.48+ moves the RustCrypto NIST stack
-    # to crypto-bigint 0.7). Tracked for the planned arti upgrade.
+    # bumped to >=0.7.6; only arti's 0.5.5 copy remains. An arti version bump
+    # does NOT move it: the 0.5.5 copy is pinned by arti's own upstream
+    # dependency ssh-key-fork-arti (RustCrypto 0.13 line), and no current arti
+    # release (0.48 is latest, verified 2026-11-26) advances it. Closure awaits
+    # upstream arti moving off the RustCrypto 0.13 stack; accepted until then.
     # See docs/AUDIT-CHARTER.md#residual-risks-cargo-audit-advisories for the full rationale.
     "RUSTSEC-2026-0387",
 
@@ -79,8 +83,11 @@ ignore = [
     # from the Tor directory system over arti's own authenticated channels.
     # It is NOT exposed to CoinJoin participants or any blindjoin protocol
     # input; the coordinator and client present no SQL surface to untrusted
-    # peers. The fix (libsqlite3-sys >=0.39.0) requires rusqlite >=0.43,
-    # which only a newer arti pulls. Tracked for the planned arti upgrade.
+    # peers. The fix (libsqlite3-sys >=0.39.0) requires rusqlite >=0.43, but
+    # arti's tor-dirmgr caps rusqlite below 0.41, so no current arti release
+    # pulls a patched libsqlite3-sys (0.48, latest as of 2026-11-26, only
+    # reaches 0.38.2 — still <0.39). Closure awaits upstream arti raising that
+    # cap; accepted until then.
     # See docs/AUDIT-CHARTER.md#residual-risks-cargo-audit-advisories for the full rationale.
     "RUSTSEC-2026-0459",
 ]

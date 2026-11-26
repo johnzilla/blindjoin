@@ -492,9 +492,12 @@ prose below is the threat-model treatment.
   advisory concerns bigint arithmetic inside Tor's TLS handshake, which is
   not on any blindjoin protocol path. blindjoin's own `crypto-bigint 0.7.x`
   edge has already been bumped to `>=0.7.6`; only arti's `0.5.5` copy
-  remains, and it cannot move without upgrading arti (0.41 → 0.48+ carries
-  the RustCrypto NIST stack to `crypto-bigint 0.7`). **Disposition:
-  ACCEPTED**; closure tracked with the planned arti upgrade.
+  remains. An arti version bump does **not** move it: the `0.5.5` copy is
+  pinned by arti's own upstream dependency `ssh-key-fork-arti` (RustCrypto
+  0.13 line), and no current arti release moves it (the 0.41→0.48 upgrade was
+  investigated on 2026-11-26 and leaves `crypto-bigint 0.5.5` in place).
+  **Disposition: ACCEPTED**; closure awaits upstream arti moving off the
+  RustCrypto 0.13 stack — not deliverable by bumping the arti version alone.
 
 - **RUSTSEC-2026-0459 — `libsqlite3-sys 0.36.0` via C SQLite
   CVE-2026-119375.** Reached only transitively through `arti-client 0.41`
@@ -504,8 +507,11 @@ prose below is the threat-model treatment.
   authenticated channels. It is not exposed to CoinJoin participants or any
   blindjoin protocol input: the coordinator and client present no SQL
   surface to untrusted peers. The fix (`libsqlite3-sys >=0.39.0`) requires
-  `rusqlite >=0.43`, which only a newer arti pulls. **Disposition:
-  ACCEPTED**; closure tracked with the planned arti upgrade.
+  `rusqlite >=0.43`, but arti's `tor-dirmgr` caps `rusqlite` below 0.41, so no
+  current arti release pulls a patched `libsqlite3-sys` (the 0.41→0.48 upgrade,
+  investigated 2026-11-26, only reaches `libsqlite3-sys 0.38.2` — still
+  `<0.39`). **Disposition: ACCEPTED**; closure awaits upstream arti raising
+  the `rusqlite` cap — not deliverable by bumping the arti version alone.
 
 ### Residual Risks: Protocol-level
 
@@ -560,9 +566,9 @@ prose below is the threat-model treatment.
   **Disposition: ACCEPTED.** The strict alternative — a server-side mirror of
   the client's CRIT-01 discipline that rejects outputs whose type ≠
   `output_script_type` — is available and would be adopted if a future change
-  (e.g. alongside the planned arti upgrade) reworks the client to decouple
-  output type from the input/wallet descriptor so mixed-input rounds can keep
-  uniform outputs.
+  reworks the client to decouple output type from the input/wallet descriptor
+  so mixed-input rounds can keep uniform outputs. (This is independent of arti;
+  it is not gated on any Tor-stack upgrade.)
 
 - **TEST-EXT-01/02/03 differential-fixture gap.** No automated
   cross-implementation differential tests (e.g., vs `ACken2/bip322-js`);
