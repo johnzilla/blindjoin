@@ -132,6 +132,22 @@ raise **both** `coordinator.min_participants` (on the coordinator you trust or r
 Larger sets cost more coordination time and require more honest participants, so pick
 the largest value your liquidity can actually fill.
 
+**Change outputs are "toxic" — do not co-spend them with your mixed coin.** blindjoin
+mixes a single fixed denomination per round. Your CoinJoin output is the mixed,
+equal-value coin; any remainder returns as a change output that is **linkable to the
+input you registered** (the coordinator needs it to balance the transaction, and the
+protocol advises it as linkable). If you later spend that change **together with** your
+mixed output — or consolidate it with other coins you control — you re-link the mixed
+coin to your pre-mix history and undo the privacy the round bought; co-spending,
+address reuse, and wallet-fingerprintable patterns compose with cross-round
+intersection attacks and wallet fingerprinting to deanonymize. Until this is addressed
+at the protocol level, treat the change output as **not private**: do not co-spend it
+with the mixed output, and prefer to leave it unspent or handle it well apart from the
+mixed coin. This is a known, unmitigated limitation of the fixed-denomination model
+([#13](https://github.com/johnzilla/blindjoin/issues/13)); the structural fix
+(homomorphic value credentials, which avoid fixed-denomination change) is out of scope
+for this version — see [docs/PROTOCOL.md § Known gaps](docs/PROTOCOL.md#known-gaps-and-open-issues).
+
 ## Build from Source
 
 Requires Rust 1.89+ and cargo (the floor is set by `arti-client` 0.41).
