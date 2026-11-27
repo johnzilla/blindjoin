@@ -276,6 +276,19 @@
 ## Open
 
 ### Tech debt
+- [ ] **#15 — silent-payments self-spend outputs (replace the interim index).**
+  The client now advances a per-round derivation index
+  (`--address-counter-file` / `--address-index`) so the CoinJoin output + change
+  addresses are not reused across rounds ([`wallet.rs`](client/src/wallet.rs)
+  `with_address_index`). That is an INTERIM stopgap. The intended fix is deriving
+  the self-spend outputs as BIP-352 silent payments — reuse-free, seed-recoverable
+  by scanning, no gap-limit exposure. Blocked on: (1) no audited BIP-352 Rust crate
+  (ecosystem pre-1.0; conflicts with the no-custom-crypto rule — needs crate vetting
+  or an upstream rust-bitcoin primitive); (2) a protocol-flow change to reveal the
+  round's input set (`A = Σ input pubkeys` + outpoints) before output registration,
+  coupled to #11 (`round_id` as a parameter hash); (3) the duplicate-`A`
+  key-cancellation edge case (reject rounds with a repeated `A`). Release blocker
+  for the tool's privacy claims.
 - [x] **Migrate `make_input_reg_state` and `make_signing_state` to use production
   state-machine transitions.** Done. Both now build via production `start_round()`
   + `transition_to()` — no struct literals, no direct `state.phase = Phase::Signing`

@@ -18,3 +18,7 @@ CHECKPOINT.md
 # Runtime ban-file artifact (default ban_file_path) written to cwd by the coordinator/tests.
 ban_list.jsonl
 **/ban_list.jsonl
+
+# macOS Finder metadata — not repo state.
+.DS_Store
+**/.DS_Store

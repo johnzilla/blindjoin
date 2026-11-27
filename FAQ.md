@@ -69,6 +69,22 @@ It does **not** protect against:
 </details>
 
 <details>
+<summary>What happens to my change output? (Important: "toxic change")</summary>
+
+blindjoin mixes a single fixed denomination per round. Your CoinJoin output is the mixed, equal-value coin; anything left over comes back as a **change output linkable to the input you registered**.
+
+That change is **toxic**: spending it together with your mixed output — or consolidating it with other coins you control — re-links the mixed coin to your pre-mix history and undoes the round's privacy. Co-spending, address reuse, and wallet-fingerprintable patterns compose with cross-round intersection attacks and wallet fingerprinting to deanonymize.
+
+Until this is fixed at the protocol level, treat the change as **not private**:
+
+- Do **not** co-spend the change with the mixed output.
+- Prefer to leave change unspent, or handle it separately from the mixed coin.
+
+This is a known, unmitigated limitation of the fixed-denomination model ([#13](https://github.com/johnzilla/blindjoin/issues/13)). The structural fix — homomorphic value credentials (WabiSabi-style), which avoid fixed-denomination change — is out of scope for this version; see [docs/PROTOCOL.md § Known gaps](docs/PROTOCOL.md#known-gaps-and-open-issues).
+
+</details>
+
+<details>
 <summary>Do I need to run my own Bitcoin node?</summary>
 
 Yes. The coordinator requires a trusted Bitcoin Core node (Signet by default) for UTXO validation, PSBT construction, and broadcasting.

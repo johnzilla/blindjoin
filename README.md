@@ -132,6 +132,22 @@ raise **both** `coordinator.min_participants` (on the coordinator you trust or r
 Larger sets cost more coordination time and require more honest participants, so pick
 the largest value your liquidity can actually fill.
 
+**Change outputs are "toxic" — do not co-spend them with your mixed coin.** blindjoin
+mixes a single fixed denomination per round. Your CoinJoin output is the mixed,
+equal-value coin; any remainder returns as a change output that is **linkable to the
+input you registered** (the coordinator needs it to balance the transaction, and the
+protocol advises it as linkable). If you later spend that change **together with** your
+mixed output — or consolidate it with other coins you control — you re-link the mixed
+coin to your pre-mix history and undo the privacy the round bought; co-spending,
+address reuse, and wallet-fingerprintable patterns compose with cross-round
+intersection attacks and wallet fingerprinting to deanonymize. Until this is addressed
+at the protocol level, treat the change output as **not private**: do not co-spend it
+with the mixed output, and prefer to leave it unspent or handle it well apart from the
+mixed coin. This is a known, unmitigated limitation of the fixed-denomination model
+([#13](https://github.com/johnzilla/blindjoin/issues/13)); the structural fix
+(homomorphic value credentials, which avoid fixed-denomination change) is out of scope
+for this version — see [docs/PROTOCOL.md § Known gaps](docs/PROTOCOL.md#known-gaps-and-open-issues).
+
 ## Build from Source
 
 Requires Rust 1.89+ and cargo (the floor is set by `arti-client` 0.41).
@@ -263,6 +279,8 @@ cargo run -p client -- --pkarr-pubkey <coordinator-public-key> \
 The `--type` flag (also settable via the `BLINDJOIN_SCRIPT_TYPE` env var) accepts `p2wpkh`, `p2tr`, or `p2sh-p2wpkh` and selects the BIP descriptor template at wallet generation (BIP-84 / BIP-86 / BIP-49 respectively). It also tells the discovery layer which script type to require — pointing a `--type p2tr` client at a coordinator that has `bip.allow_p2tr = false` fails fast with `DiscoveryError::UnsupportedScriptType` **before** any Tor circuit opens, naming both the coordinator and the missing script type.
 
 When `--tor` is enabled, the client uses per-phase Tor circuit isolation: input registration flows through one circuit (alice) and output registration flows through a different circuit (bob). This prevents the coordinator from correlating phases by Tor circuit.
+
+**Address reuse — interim measure ([issue #15](https://github.com/johnzilla/blindjoin/issues/15)).** A descriptor wallet reused across rounds derives its CoinJoin output and change at the same keychain index unless you advance it — which would reuse addresses and link your mixes on-chain. Pass `--address-counter-file <path>` (a small file the client auto-increments each run) or `--address-index <n>` (a fresh value per round) so every round uses fresh addresses; indices are sequential and recoverable from the seed via the wallet gap limit. `--generate-wallet` is unaffected (a fresh seed per run never reuses) and the `--wif` path cannot advance (a single key has one address). This is a stopgap: the planned fix is deriving the self-spend outputs as **BIP-352 silent payments** (reuse-free, recoverable by scanning, no gap-limit exposure), which is currently blocked on an unsettled BIP-352 Rust crate ecosystem — no audited crate, conflicting with the project's no-custom-crypto rule — and on a protocol-flow change to reveal the round's input set before output registration. Until that lands, treat the index flags as required for any wallet used in more than one round.
 
 **Backwards compatibility.** A v1.4 client pointed at a pre-`0.2.0` (v1.3) coordinator detects the absence of `supported_script_types` on `/info` and falls back to the legacy witness-only `OwnershipProof` wire format. A v1.3 client unaware of v1.4 advertisement happily registers a P2WPKH UTXO against a v1.4 coordinator — the v1.4 coordinator's `OwnershipProof` decoder is a two-phase try-parse that accepts v1.3 array-of-hex shape as `version = 1`.
 
